@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <!-- Use the latest released C# language version -->
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!-- Sonar Analyzers configuration -->
+  <ItemGroup>
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="8.20.0.28934">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' != 'False'">
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugSymbols>True</DebugSymbols>
+    <DebugType>portable</DebugType>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+  </PropertyGroup>
+
+  <!-- tests projects -->
+  <ItemGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
+    <PackageReference Include="FluentAssertions" Version="5.10.3"/>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.9.1"/>
+    <PackageReference Include="xunit" Version="2.4.1"/>
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.3"/>
+    <PackageReference Include="JunitXml.TestLogger" Version="2.1.81"/>
+    <PackageReference Include="coverlet.msbuild" Version="3.0.3" />
+    <PackageReference Include="coverlet.collector" Version="3.0.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
