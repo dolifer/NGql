@@ -2,11 +2,10 @@
 using System.Net;
 using FluentAssertions;
 using Xunit;
-
 using static NGql.Core.QueryTextBuilder;
 
 // ReSharper disable RedundantCast
-namespace Core.Tests
+namespace NGql.Core.Tests
 {
     public class QueryTextBuilderTests
     {
