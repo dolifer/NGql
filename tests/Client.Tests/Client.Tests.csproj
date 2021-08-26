@@ -2,10 +2,12 @@
     <PropertyGroup>
         <TargetFramework>net5.0</TargetFramework>
         <Nullable>enable</Nullable>
-        <RootNamespace>NGql.Core.Tests</RootNamespace>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>NGql.Client.Tests</RootNamespace>
     </PropertyGroup>
-
+  
     <ItemGroup>
+      <ProjectReference Include="..\..\src\Client\Client.csproj" />
       <ProjectReference Include="..\..\src\Core\Core.csproj" />
     </ItemGroup>
 </Project>

@@ -1,9 +1,8 @@
 ﻿using System.Collections.Generic;
 using FluentAssertions;
-using NGql.Core;
 using Xunit;
 
-namespace Core.Tests
+namespace NGql.Core.Tests
 {
     public class WhereTests
     {

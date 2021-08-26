@@ -1,9 +1,8 @@
 ﻿using System.Collections.Generic;
 using FluentAssertions;
-using NGql.Core;
 using Xunit;
 
-namespace Core.Tests
+namespace NGql.Core.Tests
 {
     public class QueryTests
     {
@@ -97,7 +96,7 @@ namespace Core.Tests
                 .Select("id", "name");
 
             // act
-            var queryText = usersQuery.ToString();
+            string queryText = usersQuery;
 
             // assert
             queryText.Should().Be(@"query users{
@@ -115,9 +114,8 @@ namespace Core.Tests
                 .Select("id", "name");
 
             // act
-            var queryText = query
-                .Select(usersQuery)
-                .ToString();
+            string queryText = query
+                .Select(usersQuery);
 
             // assert
             queryText.Should().Be(@"query myQuery{
@@ -137,9 +135,27 @@ namespace Core.Tests
                 .Select("id", "name");
 
             // act
-            var queryText = query
-                .Select(usersQuery)
-                .ToString();
+            string queryText = query
+                .Select(usersQuery);
+
+            // assert
+            queryText.Should().Be(@"query myQuery{
+    alias:users{
+        id
+        name
+    }
+}");
+        }
+
+        [Fact]
+        public void ToString_Includes_SubQueryAlias()
+        {
+            // act
+            string queryText = new Query("myQuery")
+                .Include("users", x => x
+                    .AliasAs("alias")
+                    .Select("id", "name")
+                );
 
             // assert
             queryText.Should().Be(@"query myQuery{

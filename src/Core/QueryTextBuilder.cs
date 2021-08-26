@@ -13,33 +13,24 @@ namespace NGql.Core
         private readonly StringBuilder _stringBuilder = new();
         private const int IndentSize = 4;
 
-        public string Build(IQueryPart queryPart, int indent = 0, string? prefix = null)
+        public string Build(QueryBase queryBase, int indent = 0, string? prefix = null)
         {
             string pad = new(' ', indent);
             string prevPad = pad;
 
-            if (!string.IsNullOrWhiteSpace(queryPart.Alias))
+            if (!string.IsNullOrWhiteSpace(queryBase.Alias))
             {
-                _stringBuilder.Append(pad + $"{queryPart.Alias}:");
+                _stringBuilder.Append(pad + $"{queryBase.Alias}:");
                 pad = "";
             }
 
             prefix = !string.IsNullOrWhiteSpace(prefix) ? $"{prefix} " : string.Empty;
-            _stringBuilder.Append(pad + prefix + queryPart.Name);
+            _stringBuilder.Append(pad + prefix + queryBase.Name);
 
-            if (queryPart.Arguments.Count > 0)
-            {
-                _stringBuilder.Append('(');
-                AddArguments(queryPart);
-                _stringBuilder.Append(')');
-            }
-
+            AddArguments(queryBase);
             indent += IndentSize;
 
-            _stringBuilder.AppendLine("{");
-            AddFields(queryPart, indent);
-            _stringBuilder.Append(prevPad + "}");
-
+            AddFields(queryBase, prevPad, indent);
             return _stringBuilder.ToString();
         }
 
@@ -88,18 +79,19 @@ namespace NGql.Core
             }
         }
 
-        private void AddFields(IQueryPart queryPart, int indent = 0)
+        private void AddFields(QueryBase queryBase, string prevPad, int indent = 0)
         {
+            _stringBuilder.AppendLine("{");
             string padding = new(' ', indent);
 
-            foreach (var field in queryPart.FieldsList)
+            foreach (var field in queryBase.FieldsList)
             {
                 switch (field)
                 {
                     case string strValue:
                         _stringBuilder.AppendLine(padding + strValue);
                         break;
-                    case QueryPart subQuery:
+                    case QueryBase subQuery:
                         QueryTextBuilder builder = new();
                         _stringBuilder.AppendLine($"{builder.Build(subQuery, indent)}");
                         break;
@@ -107,12 +99,19 @@ namespace NGql.Core
                         throw new ArgumentException("Unsupported Field type found, must be `string` or `IQueryPart`");
                 }
             }
+
+            _stringBuilder.Append(prevPad + "}");
         }
 
-        private void AddArguments(IQueryPart queryPart)
+        private void AddArguments(QueryBase queryBase)
         {
+            if (queryBase.Arguments.Count == 0)
+                return;
+
+            _stringBuilder.Append('(');
+
             var hasValues = false;
-            foreach (var (key, value) in queryPart.Arguments)
+            foreach (var (key, value) in queryBase.Arguments)
             {
                 _stringBuilder.Append($"{key}:");
                 _stringBuilder.Append(BuildQueryParam(value) + ", ");
@@ -123,6 +122,8 @@ namespace NGql.Core
             {
                 _stringBuilder.Length -= 2;
             }
+
+            _stringBuilder.Append(')');
         }
 
         private static bool TryParsePrimitiveType(object value, out string? stringValue)
