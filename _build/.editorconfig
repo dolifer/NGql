@@ -1,0 +1,20 @@
+[*.cs]
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+dotnet_style_require_accessibility_modifiers = never:warning
+
+csharp_style_expression_bodied_methods = true:silent
+csharp_style_expression_bodied_properties = true:warning
+csharp_style_expression_bodied_indexers = true:warning
+csharp_style_expression_bodied_accessors = true:warning
+
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CA1724.severity = none
+dotnet_diagnostic.S3903.severity = none
+dotnet_diagnostic.CS0649.severity = none
+dotnet_diagnostic.SA1134.severity = none
+dotnet_diagnostic.SA1306.severity = none
+dotnet_diagnostic.SA1005.severity = none
+dotnet_diagnostic.S1075.severity = none

@@ -1,0 +1,26 @@
+name: Build & Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '5.0.x'
+      - name: Run ./build.sh Coverage
+        run: ./build.sh Coverage
+        env:
+            NugetApiKey: ${{ secrets.NUGET_API_KEY }}
+      - uses: actions/upload-artifact@v1
+        with:
+          name: coverage-report
+          path: artifacts/coverage-report
