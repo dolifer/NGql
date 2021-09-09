@@ -6,7 +6,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Client
 {
-    public class NGqlClient : INGqlClient
+    public sealed class NGqlClient : INGqlClient
     {
         private readonly GraphQLHttpClient _client;
 
