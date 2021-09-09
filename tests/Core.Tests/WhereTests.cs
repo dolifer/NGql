@@ -40,6 +40,25 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void Where_Dictionary_AddsToWhere()
+        {
+            // arrange
+            var query = new Query("name");
+            Dictionary<string, object> ageFilter = new()
+            {
+                {"from", 1},
+                {"to", 100}
+            };
+
+            // act
+            query.Where(ageFilter);
+
+            // assert
+            query.Arguments.Should().ContainKey("from").WhichValue.Should().Be(1);
+            query.Arguments.Should().ContainKey("to").WhichValue.Should().Be(100);
+        }
+
+        [Fact]
         public void Where_DictionaryArgument_AddsToWhere()
         {
             // arrange
