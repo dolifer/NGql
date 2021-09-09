@@ -5,7 +5,7 @@
     <Company>Denis Olifer</Company>
     <Authors>Denis Olifer</Authors>
     <Copyright>Copyright $([System.DateTime]::Now.Year) Maintainers of NGql</Copyright>
-    <PackageTags>continious-integration testing tools xunit fixtures</PackageTags>
+    <PackageTags>graphql graph gql query mutation</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/dolifer/NGql</PackageProjectUrl>
     <PackageIcon>icon.png</PackageIcon>
