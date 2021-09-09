@@ -6,7 +6,7 @@ namespace NGql.Core
     public sealed class Mutation : QueryBase
     {
         public Mutation(string name)
-            : base(name)
+            : base(name, "mutation")
         {
         }
 
@@ -30,7 +30,5 @@ namespace NGql.Core
             AddField(subQuery);
             return this;
         }
-
-        protected override string Prefix => "mutation";
     }
 }

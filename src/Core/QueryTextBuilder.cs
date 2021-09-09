@@ -27,6 +27,8 @@ namespace NGql.Core
             prefix = !string.IsNullOrWhiteSpace(prefix) ? $"{prefix} " : string.Empty;
             _stringBuilder.Append(pad + prefix + queryBase.Name);
 
+            AddVariables(queryBase);
+
             AddArguments(queryBase);
             indent += IndentSize;
 
@@ -100,7 +102,31 @@ namespace NGql.Core
                 }
             }
 
-            _stringBuilder.Append(prevPad + "}");
+            _stringBuilder.Append(prevPad);
+            _stringBuilder.Append('}');
+        }
+
+        private void AddVariables(QueryBase queryBase)
+        {
+            if (queryBase.Variables.Count == 0)
+                return;
+
+            _stringBuilder.Append('(');
+
+            var hasValues = false;
+            foreach (var (key, value) in queryBase.Variables)
+            {
+                _stringBuilder.Append($"{key}:");
+                _stringBuilder.Append(value + ", ");
+                hasValues = true;
+            }
+
+            if (hasValues)
+            {
+                _stringBuilder.Length -= 2;
+            }
+
+            _stringBuilder.Append(')');
         }
 
         private void AddArguments(QueryBase queryBase)

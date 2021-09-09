@@ -4,8 +4,7 @@ namespace NGql.Core.Abstractions
 {
     public abstract class QueryBase
     {
-        private readonly QueryTextBuilder _queryTextBuilder = new();
-        protected virtual string Prefix => string.Empty;
+        private readonly string _prefix;
 
         /// <summary>
         /// The list of fields to retrieve from GraphQL.
@@ -18,6 +17,11 @@ namespace NGql.Core.Abstractions
         public Dictionary<string, object> Arguments { get; } = new();
 
         /// <summary>
+        /// The collection of variables related to <see cref="FieldsList"/>.
+        /// </summary>
+        public Dictionary<string, object> Variables { get; } = new();
+
+        /// <summary>
         /// The Query name.
         /// </summary>
         public string Name { get; }
@@ -26,6 +30,14 @@ namespace NGql.Core.Abstractions
         /// The Query alias.
         /// </summary>
         public string? Alias { get; protected set; }
+
+        /// <summary>
+        /// Adds the variable with give name into <see cref="Variables"/> part of the query.
+        /// </summary>
+        /// <param name="name">The variable name</param>
+        /// <param name="type">The value of the variable</param>
+        protected void AddVariable(string name, string type)
+            => Variables.Add(name, type);
 
         /// <summary>
         /// Adds the given generic list to the <see cref="FieldsList"/> part of the query.
@@ -74,8 +86,9 @@ namespace NGql.Core.Abstractions
                 Arguments.Add(key, value);
         }
 
-        protected QueryBase(string name, string? alias = null)
+        protected QueryBase(string name, string prefix, string? alias = null)
         {
+            _prefix = prefix;
             Name = name;
             Alias = alias;
         }
@@ -85,7 +98,7 @@ namespace NGql.Core.Abstractions
         /// </summary>
         /// <returns>The GraphQL Query String</returns>
         /// <throws>ArgumentException</throws>
-        public override string ToString() => _queryTextBuilder.Build(this, prefix: Prefix);
+        public override string ToString() => new QueryTextBuilder().Build(this, prefix: _prefix);
 
         public static implicit operator string(QueryBase queryBase) => queryBase.ToString();
     }
