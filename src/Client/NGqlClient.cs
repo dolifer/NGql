@@ -11,15 +11,14 @@ namespace NGql.Client
         private readonly GraphQLHttpClient _client;
 
         public NGqlClient(string url)
-        {
-            _client = new GraphQLHttpClient(url, new NewtonsoftJsonSerializer());
-        }
+            => _client = new GraphQLHttpClient(url, new NewtonsoftJsonSerializer());
 
-        public async Task<TResponse> QueryAsync<TResponse>(QueryBase query)
+        public async Task<TResponse> QueryAsync<TResponse>(QueryBase query, object? variables = null)
         {
             var request = new GraphQLRequest
             {
-                Query = query
+                Query = query,
+                Variables = variables
             };
 
             var response = await _client.SendQueryAsync<TResponse>(request);

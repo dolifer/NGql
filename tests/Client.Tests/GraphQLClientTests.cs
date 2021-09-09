@@ -53,20 +53,25 @@ namespace NGql.Client.Tests
         }
 
         [Fact]
-        public async Task Can_Get_Films_IncludeSyntax()
+        public async Task Can_Get_Films_Include_WithVariables()
         {
             // arrange
             using var client = GetClient();
+            var variables = new
+            {
+                id = "cGVvcGxlOjE="
+            };
             var query = new Query("PersonAndFilms")
+                .Variable("$id", "ID")
                 .Include("person", p => p
-                    .Where("id", "cGVvcGxlOjE=")
+                    .Variable("id", "$id")
                     .Select("name")
                     .Include("filmConnection", m =>
                         m.Include("films", f => f.Select("title")))
                 );
 
             // act
-            var response = await client.QueryAsync<PersonAndFilmsResponse>(query);
+            var response = await client.QueryAsync<PersonAndFilmsResponse>(query, variables);
 
             // assert
             AssertResponse(response);

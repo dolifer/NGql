@@ -7,7 +7,7 @@ namespace NGql.Core
     public sealed class Query : QueryBase
     {
         public Query(string name, string? alias = null)
-            : base(name, alias)
+            : base(name, "query", alias)
         {
         }
 
@@ -19,6 +19,13 @@ namespace NGql.Core
         public Query AliasAs(string? alias)
         {
             Alias = alias;
+            return this;
+        }
+
+        /// <inheritdoc cref="QueryBase.AddVariable"/>
+        public Query Variable(string name, string type)
+        {
+            AddVariable(name, type);
             return this;
         }
 
@@ -70,7 +77,5 @@ namespace NGql.Core
             AddArgument(dict);
             return this;
         }
-
-        protected override string Prefix => "query";
     }
 }
