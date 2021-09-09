@@ -16,7 +16,7 @@ namespace NGql.Core.Tests
             query.Where("id", 42);
 
             // assert
-            query.Arguments.Should().ContainKey("id").WhichValue.Should().Be(42);
+            query.Arguments.Should().ContainKey("id").WhoseValue.Should().Be(42);
 
             // act
             var queryText = query.ToString();
@@ -36,7 +36,7 @@ namespace NGql.Core.Tests
             query.Where("name", "John");
 
             // assert
-            query.Arguments.Should().ContainKey("name").WhichValue.Should().Be("John");
+            query.Arguments.Should().ContainKey("name").WhoseValue.Should().Be("John");
         }
 
         [Fact]
@@ -54,8 +54,8 @@ namespace NGql.Core.Tests
             query.Where(ageFilter);
 
             // assert
-            query.Arguments.Should().ContainKey("from").WhichValue.Should().Be(1);
-            query.Arguments.Should().ContainKey("to").WhichValue.Should().Be(100);
+            query.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(1);
+            query.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(100);
         }
 
         [Fact]
@@ -73,10 +73,10 @@ namespace NGql.Core.Tests
             query.Where("age", ageFilter);
 
             // assert
-            var storedFilter = query.Arguments.Should().ContainKey("age").WhichValue as Dictionary<string, int>;
+            var storedFilter = query.Arguments.Should().ContainKey("age").WhoseValue as Dictionary<string, int>;
 
-            storedFilter.Should().ContainKey("from").WhichValue.Should().Be(1);
-            storedFilter.Should().ContainKey("to").WhichValue.Should().Be(100);
+            storedFilter.Should().ContainKey("from").WhoseValue.Should().Be(1);
+            storedFilter.Should().ContainKey("to").WhoseValue.Should().Be(100);
         }
     }
 }
