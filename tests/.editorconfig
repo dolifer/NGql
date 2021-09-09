@@ -1,0 +1,12 @@
+### Configuration for FxCop analyzers executed on this repo ###
+[*.cs]
+
+# CA1707: Identifiers should not contain underscores
+dotnet_diagnostic.CA1707.severity = none
+dotnet_diagnostic.CS1591.severity = none
+
+# use Uri instead of string
+dotnet_diagnostic.CA2234.severity = none
+
+# Non-nullable property must contain a non-null value when exiting constructor
+dotnet_diagnostic.CS8618.severity = none

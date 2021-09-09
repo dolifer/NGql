@@ -1,0 +1,19 @@
+name: Publish NuGet packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '5.0.x'
+      - name: Run NugetPublish
+        run: ./build.sh publish
+        env:
+          NugetApiKey: ${{ secrets.NUGET_API_KEY }}
