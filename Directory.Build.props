@@ -38,9 +38,6 @@
 
   <ItemGroup Condition="'$(IsPackable)' != 'False'">
     <None Include="$(SolutionDir)\icon.png" Pack="true" PackagePath="" Visible="false" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All"/>
   </ItemGroup>
 
