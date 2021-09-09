@@ -1,6 +1,6 @@
 <h1 align="center">
 
-<img src="https://raw.githubusercontent.com/dolifer/NGql/master/icon.png" alt="NGql" width="200"/>
+<img src="https://github.com/dolifer/NGql/blob/main/icon.png" alt="NGql" width="200"/>
 <br/>
 NGql
 </h1>
@@ -9,7 +9,7 @@ NGql
 
 Schemaless GraphQL client for .NET Core.
 
-[![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://raw.githubusercontent.com/dolifer/NGql/master/LICENSE)
+[![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 
 </div>
 
