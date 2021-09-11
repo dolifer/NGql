@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Threading.Tasks;
 using GraphQL;
-using NGql.Core.Abstractions;
+using NGql.Core;
 
 namespace NGql.Client
 {
@@ -14,6 +14,15 @@ namespace NGql.Client
         /// <param name="variables"></param>
         /// <typeparam name="TResponse">The typed response received from GQL</typeparam>
         /// <returns></returns>
-        Task<TResponse> QueryAsync<TResponse>(QueryBase query, object? variables = null);
+        Task<TResponse> QueryAsync<TResponse>(Query query, object? variables = null);
+
+        /// <summary>
+        /// Builds a <see cref="GraphQLRequest"/> by passing <paramref name="mutation"/> and <paramref name="variables"/> to it.
+        /// </summary>
+        /// <param name="mutation"></param>
+        /// <param name="variables"></param>
+        /// <typeparam name="TResponse">The typed response received from GQL</typeparam>
+        /// <returns></returns>
+        Task<TResponse> QueryAsync<TResponse>(Mutation mutation, object? variables = null);
     }
 }
