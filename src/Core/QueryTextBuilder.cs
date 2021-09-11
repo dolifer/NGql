@@ -170,6 +170,7 @@ namespace NGql.Core
                 double doubleValue => doubleValue.ToString(CultureInfo.CurrentCulture),
                 decimal decimalValue => decimalValue.ToString(CultureInfo.CurrentCulture),
                 Enum enumValue => enumValue.ToString(),
+                Variable variable => variable.Name,
                 _ => default
             };
 
