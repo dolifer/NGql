@@ -7,6 +7,16 @@ namespace NGql.Core.Tests
     public class MutationTests
     {
         [Fact]
+        public void Ctor_Sets_Name()
+        {
+            // arrange
+            var mutation = new Mutation("name");
+
+            // assert
+            mutation.Name.Should().Be("name");
+        }
+
+        [Fact]
         public void Select_String_AddsToSelectList()
         {
             // arrange
@@ -33,6 +43,46 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void Variable_AddsToVariableList()
+        {
+            // arrange
+            var mutation = new Mutation("name");
+
+            // act
+            mutation
+                .Variable("$name", "String")
+                .Select("id");
+
+            // assert
+            mutation.Variables.Should().ContainSingle(x => x.Name == "$name" && x.Type == "String");
+        }
+
+        [Fact]
+        public void ToString_UsesVariables()
+        {
+            // arrange
+            var nestedMutation = new Query("createUser")
+                .Where("name", new Variable("$name", "String"))
+                .Where("password", new Variable("$password", "String"))
+                .Select("id", "name");
+
+            // act
+            var queryText = new Mutation("CreateUser")
+                .Variable("$name", "String")
+                .Variable("$password", "String")
+                .Select(nestedMutation)
+                .ToString();
+
+            // assert
+            queryText.Should().Be(@"mutation CreateUser($name:String, $password:String){
+    createUser(name:$name, password:$password){
+        id
+        name
+    }
+}");
+        }
+
+        [Fact]
         public void ToString_Returns_SubQuery()
         {
             // arrange
@@ -42,9 +92,8 @@ namespace NGql.Core.Tests
                 .Select("id", "name");
 
             // act
-            var queryText = new Mutation("CreateUser")
-                .Select(nestedMutation)
-                .ToString();
+            string queryText = new Mutation("CreateUser")
+                .Select(nestedMutation);
 
             // assert
             queryText.Should().Be(@"mutation CreateUser{
