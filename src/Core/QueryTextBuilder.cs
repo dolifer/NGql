@@ -19,7 +19,9 @@ namespace NGql.Core
 
             if (!string.IsNullOrWhiteSpace(queryBlock.Alias))
             {
-                _stringBuilder.Append(pad + $"{queryBlock.Alias}:");
+                _stringBuilder.Append(pad);
+                _stringBuilder.Append(queryBlock.Alias);
+                _stringBuilder.Append(':');
                 pad = "";
             }
 
@@ -48,7 +50,8 @@ namespace NGql.Core
                 var hasValues = false;
                 foreach (var obj in list)
                 {
-                    builder.Append(BuildQueryParam(obj) + ", ");
+                    builder.Append(BuildQueryParam(obj));
+                    builder.Append(", ");
                     hasValues = true;
                 }
 
@@ -66,7 +69,9 @@ namespace NGql.Core
             {
                 case KeyValuePair<string, object>(var key, var o):
                     StringBuilder valueStr = new();
-                    valueStr.Append($"{key}:{BuildQueryParam(o)}");
+                    valueStr.Append(key);
+                    valueStr.Append(':');
+                    valueStr.Append(BuildQueryParam(o));
                     return valueStr.ToString();
 
                 case IList listValue:
@@ -90,11 +95,12 @@ namespace NGql.Core
                 switch (field)
                 {
                     case string strValue:
-                        _stringBuilder.AppendLine(padding + strValue);
+                        _stringBuilder.Append(padding);
+                        _stringBuilder.AppendLine(strValue);
                         break;
                     case QueryBlock subQuery:
                         QueryTextBuilder builder = new();
-                        _stringBuilder.AppendLine($"{builder.Build(subQuery, indent)}");
+                        _stringBuilder.AppendLine(builder.Build(subQuery, indent));
                         break;
                     default:
                         throw new InvalidOperationException("Unsupported Field type found, must be `string` or `IQueryPart`");
@@ -140,8 +146,10 @@ namespace NGql.Core
             var hasValues = false;
             foreach (var (key, value) in queryBlock.Arguments)
             {
-                _stringBuilder.Append($"{key}:");
-                _stringBuilder.Append(BuildQueryParam(value) + ", ");
+                _stringBuilder.Append(key);
+                _stringBuilder.Append(':');
+                _stringBuilder.Append(BuildQueryParam(value));
+                _stringBuilder.Append(", ");
                 hasValues = true;
             }
 
