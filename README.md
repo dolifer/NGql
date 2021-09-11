@@ -21,7 +21,7 @@ dotnet add package NGql.Core
 
 ## Core
 
-Core library allows creation of `Query` and `Muration`'s.
+Core library allows creation of `Query` and `Mutation`'s.
 Both returns a `QueryBase` that have an implicit convertion to `string`.
 
 ### Query
