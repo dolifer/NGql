@@ -48,7 +48,7 @@ var mutation = new Mutation("CreateUser")
 
 ## Client
 
-Client allows to make a call agains GQL endpoint with a given `Query` or `Mutation`.
+Client allows making a call against GQL endpoint with a given `Query` or `Mutation`.
 Added for demo purpose to show basic usage.
 
 ```csharp
