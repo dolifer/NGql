@@ -4,78 +4,86 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core
 {
-    public sealed class Query : QueryBase
+    public sealed class Query
     {
+        internal readonly QueryBlock _block;
+
         public Query(string name, string? alias = null)
-            : base(name, "query", alias)
-        {
-        }
+            => _block = new QueryBlock(name, "query", alias);
 
-        /// <summary>
-        /// Sets the Query alias.
-        /// </summary>
-        /// <param name="alias"></param>
-        /// <returns></returns>
-        public Query AliasAs(string? alias)
-        {
-            Alias = alias;
-            return this;
-        }
+        /// <inheritdoc cref="QueryBlock.Name"/>
+        public string Name => _block.Name;
 
-        /// <inheritdoc cref="QueryBase.AddVariable"/>
+        /// <inheritdoc cref="QueryBlock.Alias"/>
+        public string? Alias => _block.Alias;
+
+        /// <inheritdoc cref="QueryBlock.FieldsList"/>
+        public IEnumerable<object> FieldsList => _block.FieldsList;
+
+        /// <inheritdoc cref="QueryBlock.Arguments"/>
+        public IReadOnlyDictionary<string, object> Arguments => _block.Arguments;
+
+        /// <inheritdoc cref="QueryBlock.Variables"/>
+        public IEnumerable<Variable> Variables => _block.Variables;
+
+        /// <inheritdoc cref="QueryBlock.AddVariable"/>
         public Query Variable(string name, string type)
         {
-            AddVariable(name, type);
+            _block.AddVariable(name, type);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(System.Collections.Generic.IEnumerable{object})"/>
+        /// <inheritdoc cref="QueryBlock.AddField(System.Collections.Generic.IEnumerable{object})"/>
         public Query Select(IEnumerable<object> selectList)
         {
-            AddField(selectList);
+            _block.AddField(selectList);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(string[])"/>
+        /// <inheritdoc cref="QueryBlock.AddField(string[])"/>
         public Query Select(params string[] selects)
         {
-            AddField(selects);
+            _block.AddField(selects);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(QueryBase)"/>
+        /// <inheritdoc cref="QueryBlock.AddField(QueryBlock)"/>
         public Query Select(Query subQuery)
         {
-            AddField(subQuery);
+            _block.AddField(subQuery._block);
             return this;
         }
 
         /// <summary>
-        /// Adds the given sub query to the <see cref="QueryBase.FieldsList"/> part of the query.
+        /// Adds the given sub query to the <see cref="QueryBlock.FieldsList"/> part of the query.
         /// </summary>
         /// <param name="name">A sub-query name.</param>
+        /// <param name="alias">A sub-query alias.</param>
         /// <param name="action">Action to build sub-query.</param>
         /// <returns>Query</returns>
-        public Query Include(string name, Action<Query> action)
+        public Query Include(string name, Action<Query> action, string? alias = null)
         {
-            var query = new Query(name);
+            var query = new Query(name, alias);
             action.Invoke(query);
-            AddField(query);
+            _block.AddField(query._block);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddArgument(string,object)"/>
+        /// <inheritdoc cref="QueryBlock.AddArgument(string,object)"/>
         public Query Where(string key, object where)
         {
-           AddArgument(key, where);
+            _block.AddArgument(key, where);
            return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddArgument(Dictionary&lt;string, object&gt;)"/>
+        /// <inheritdoc cref="QueryBlock.AddArgument(Dictionary&lt;string, object&gt;)"/>
         public Query Where(Dictionary<string, object> dict)
         {
-            AddArgument(dict);
+            _block.AddArgument(dict);
             return this;
         }
+
+        public override string ToString() => _block.ToString();
+        public static implicit operator string(Query query) => query._block.ToString();
     }
 }

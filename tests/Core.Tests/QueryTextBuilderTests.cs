@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Net;
 using FluentAssertions;
 using Xunit;
@@ -103,6 +104,31 @@ namespace NGql.Core.Tests
 
             // assert
             valueString.Should().Be("{numbers:[123, 456, 789]}");
+        }
+
+        public class Foo
+        {
+        }
+
+        [Fact]
+        public void BuildQueryParam_ThrowsUnsupportedException()
+        {
+            // act & assert
+            var exception = Assert.Throws<InvalidOperationException>(() => BuildQueryParam(new Foo()));
+
+            exception.Message.Should().Be("Unsupported Query argument type found: NGql.Core.Tests.QueryTextBuilderTests+Foo");
+        }
+
+        [Fact]
+        public void AddFields_ThrowsUnsupportedException()
+        {
+            // act & assert
+            var exception = Assert.Throws<InvalidOperationException>(() => new Query("foo")
+                .Select(new object[] { 1, "text", Guid.NewGuid() })
+                .ToString()
+            );
+
+            exception.Message.Should().Be("Unsupported Field type found, must be a `string` or `QueryBlock`");
         }
     }
 }

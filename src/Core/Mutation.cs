@@ -3,32 +3,51 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core
 {
-    public sealed class Mutation : QueryBase
+    public sealed class Mutation
     {
+        private readonly QueryBlock _block;
+
         public Mutation(string name)
-            : base(name, "mutation")
+            => _block = new QueryBlock(name, "mutation");
+
+        /// <inheritdoc cref="QueryBlock.Name"/>
+        public string Name => _block.Name;
+
+        /// <inheritdoc cref="QueryBlock.FieldsList"/>
+        public IEnumerable<object> FieldsList => _block.FieldsList;
+
+        /// <inheritdoc cref="QueryBlock.Variables"/>
+        public IEnumerable<Variable> Variables => _block.Variables;
+
+        /// <inheritdoc cref="QueryBlock.AddVariable"/>
+        public Mutation Variable(string name, string type)
         {
+            _block.AddVariable(name, type);
+            return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(System.Collections.Generic.IEnumerable{object})"/>
+        /// <inheritdoc cref="QueryBlock.AddField(System.Collections.Generic.IEnumerable{object})"/>
         public Mutation Select(IEnumerable<object> selectList)
         {
-            AddField(selectList);
+            _block.AddField(selectList);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(string[])"/>
+        /// <inheritdoc cref="QueryBlock.AddField(string[])"/>
         public Mutation Select(params string[] selects)
         {
-            AddField(selects);
+            _block.AddField(selects);
             return this;
         }
 
-        /// <inheritdoc cref="QueryBase.AddField(QueryBase)"/>
+        /// <inheritdoc cref="QueryBlock.AddField(QueryBlock)"/>
         public Mutation Select(Query subQuery)
         {
-            AddField(subQuery);
+            _block.AddField(subQuery._block);
             return this;
         }
+
+        public override string ToString() => _block.ToString();
+        public static implicit operator string(Mutation mutation) => mutation._block.ToString();
     }
 }

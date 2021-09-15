@@ -2,7 +2,6 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Text;
 using NGql.Core.Abstractions;
 
@@ -13,26 +12,28 @@ namespace NGql.Core
         private readonly StringBuilder _stringBuilder = new();
         private const int IndentSize = 4;
 
-        public string Build(QueryBase queryBase, int indent = 0, string? prefix = null)
+        public string Build(QueryBlock queryBlock, int indent = 0, string? prefix = null)
         {
             string pad = new(' ', indent);
             string prevPad = pad;
 
-            if (!string.IsNullOrWhiteSpace(queryBase.Alias))
+            if (!string.IsNullOrWhiteSpace(queryBlock.Alias))
             {
-                _stringBuilder.Append(pad + $"{queryBase.Alias}:");
+                _stringBuilder.Append(pad);
+                _stringBuilder.Append(queryBlock.Alias);
+                _stringBuilder.Append(':');
                 pad = "";
             }
 
             prefix = !string.IsNullOrWhiteSpace(prefix) ? $"{prefix} " : string.Empty;
-            _stringBuilder.Append(pad + prefix + queryBase.Name);
+            _stringBuilder.Append(pad + prefix + queryBlock.Name);
 
-            AddVariables(queryBase);
+            AddVariables(queryBlock);
 
-            AddArguments(queryBase);
+            AddArguments(queryBlock);
             indent += IndentSize;
 
-            AddFields(queryBase, prevPad, indent);
+            AddFields(queryBlock, prevPad, indent);
             return _stringBuilder.ToString();
         }
 
@@ -49,7 +50,8 @@ namespace NGql.Core
                 var hasValues = false;
                 foreach (var obj in list)
                 {
-                    builder.Append(BuildQueryParam(obj) + ", ");
+                    builder.Append(BuildQueryParam(obj));
+                    builder.Append(", ");
                     hasValues = true;
                 }
 
@@ -67,7 +69,9 @@ namespace NGql.Core
             {
                 case KeyValuePair<string, object>(var key, var o):
                     StringBuilder valueStr = new();
-                    valueStr.Append($"{key}:{BuildQueryParam(o)}");
+                    valueStr.Append(key);
+                    valueStr.Append(':');
+                    valueStr.Append(BuildQueryParam(o));
                     return valueStr.ToString();
 
                 case IList listValue:
@@ -77,28 +81,29 @@ namespace NGql.Core
                     return WrapEnumerable('{', '}', dictValue);
 
                 default:
-                    throw new InvalidDataException("Unsupported Query argument type found : " + value.GetType());
+                    throw new InvalidOperationException("Unsupported Query argument type found: " + value.GetType());
             }
         }
 
-        private void AddFields(QueryBase queryBase, string prevPad, int indent = 0)
+        private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
         {
             _stringBuilder.AppendLine("{");
             string padding = new(' ', indent);
 
-            foreach (var field in queryBase.FieldsList)
+            foreach (var field in queryBlock.FieldsList)
             {
                 switch (field)
                 {
                     case string strValue:
-                        _stringBuilder.AppendLine(padding + strValue);
+                        _stringBuilder.Append(padding);
+                        _stringBuilder.AppendLine(strValue);
                         break;
-                    case QueryBase subQuery:
+                    case QueryBlock subQuery:
                         QueryTextBuilder builder = new();
-                        _stringBuilder.AppendLine($"{builder.Build(subQuery, indent)}");
+                        _stringBuilder.AppendLine(builder.Build(subQuery, indent));
                         break;
                     default:
-                        throw new ArgumentException("Unsupported Field type found, must be `string` or `IQueryPart`");
+                        throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
                 }
             }
 
@@ -106,18 +111,20 @@ namespace NGql.Core
             _stringBuilder.Append('}');
         }
 
-        private void AddVariables(QueryBase queryBase)
+        private void AddVariables(QueryBlock queryBlock)
         {
-            if (queryBase.Variables.Count == 0)
+            if (queryBlock.Variables.Count == 0)
                 return;
 
             _stringBuilder.Append('(');
 
             var hasValues = false;
-            foreach (var (key, value) in queryBase.Variables)
+            foreach (var variable in queryBlock.Variables)
             {
-                _stringBuilder.Append($"{key}:");
-                _stringBuilder.Append(value + ", ");
+                _stringBuilder.Append(variable.Name);
+                _stringBuilder.Append(':');
+                _stringBuilder.Append(variable.Type);
+                _stringBuilder.Append(", ");
                 hasValues = true;
             }
 
@@ -129,18 +136,20 @@ namespace NGql.Core
             _stringBuilder.Append(')');
         }
 
-        private void AddArguments(QueryBase queryBase)
+        private void AddArguments(QueryBlock queryBlock)
         {
-            if (queryBase.Arguments.Count == 0)
+            if (queryBlock.Arguments.Count == 0)
                 return;
 
             _stringBuilder.Append('(');
 
             var hasValues = false;
-            foreach (var (key, value) in queryBase.Arguments)
+            foreach (var (key, value) in queryBlock.Arguments)
             {
-                _stringBuilder.Append($"{key}:");
-                _stringBuilder.Append(BuildQueryParam(value) + ", ");
+                _stringBuilder.Append(key);
+                _stringBuilder.Append(':');
+                _stringBuilder.Append(BuildQueryParam(value));
+                _stringBuilder.Append(", ");
                 hasValues = true;
             }
 
@@ -170,6 +179,7 @@ namespace NGql.Core
                 double doubleValue => doubleValue.ToString(CultureInfo.CurrentCulture),
                 decimal decimalValue => decimalValue.ToString(CultureInfo.CurrentCulture),
                 Enum enumValue => enumValue.ToString(),
+                Variable variable => variable.Name,
                 _ => default
             };
 

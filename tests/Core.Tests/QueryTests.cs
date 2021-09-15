@@ -38,10 +38,10 @@ namespace NGql.Core.Tests
         public void AliasAs_Sets_Alias()
         {
             // arrange
-            var query = new Query("name");
+            var query = new Query("name", "alias");
 
             // act
-            query.AliasAs("alias").Select("id");
+            query.Select("id");
 
             // assert
             query.Alias.Should().Be("alias");
@@ -89,6 +89,21 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void Variable_AddsToVariableList()
+        {
+            // arrange
+            var query = new Query("name");
+
+            // act
+            query
+                .Variable("$name", "String")
+                .Select("id");
+
+            // assert
+            query.Variables.Should().ContainSingle(x => x.Name == "$name" && x.Type == "String");
+        }
+
+        [Fact]
         public void ToString_Returns_Query()
         {
             // arrange
@@ -100,6 +115,24 @@ namespace NGql.Core.Tests
 
             // assert
             queryText.Should().Be(@"query users{
+    id
+    name
+}");
+        }
+
+        [Fact]
+        public void ToString_UsesVariables()
+        {
+            // arrange
+            var usersQuery = new Query("users")
+                .Variable("$id", "String")
+                .Select("id", "name");
+
+            // act
+            string queryText = usersQuery;
+
+            // assert
+            queryText.Should().Be(@"query users($id:String){
     id
     name
 }");
@@ -153,9 +186,8 @@ namespace NGql.Core.Tests
             // act
             string queryText = new Query("myQuery")
                 .Include("users", x => x
-                    .AliasAs("alias")
-                    .Select("id", "name")
-                );
+                        .Select("id", "name")
+                    , "alias");
 
             // assert
             queryText.Should().Be(@"query myQuery{
