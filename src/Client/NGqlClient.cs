@@ -2,7 +2,6 @@
 using GraphQL;
 using GraphQL.Client.Http;
 using GraphQL.Client.Serializer.Newtonsoft;
-using NGql.Core.Abstractions;
 
 namespace NGql.Client
 {
@@ -13,19 +12,19 @@ namespace NGql.Client
         public NGqlClient(string url)
             => _client = new GraphQLHttpClient(url, new NewtonsoftJsonSerializer());
 
-        public async Task<TResponse> QueryAsync<TResponse>(QueryBase query, object? variables = null)
+        public void Dispose() => _client.Dispose();
+
+        public async Task<TResponse> QueryAsync<TResponse>(string query, object? variables = null, string? operationName = null)
         {
             var request = new GraphQLRequest
             {
+                OperationName = operationName,
                 Query = query,
                 Variables = variables
             };
 
             var response = await _client.SendQueryAsync<TResponse>(request);
-
             return response.Data;
         }
-
-        public void Dispose() => _client.Dispose();
     }
 }
