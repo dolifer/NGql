@@ -3,7 +3,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core
 {
-    public readonly struct Mutation
+    public sealed class Mutation
     {
         private readonly QueryBlock _block;
 

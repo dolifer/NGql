@@ -118,5 +118,17 @@ namespace NGql.Core.Tests
 
             exception.Message.Should().Be("Unsupported Query argument type found: NGql.Core.Tests.QueryTextBuilderTests+Foo");
         }
+
+        [Fact]
+        public void AddFields_ThrowsUnsupportedException()
+        {
+            // act & assert
+            var exception = Assert.Throws<InvalidOperationException>(() => new Query("foo")
+                .Select(new object[] { 1, "text", Guid.NewGuid() })
+                .ToString()
+            );
+
+            exception.Message.Should().Be("Unsupported Field type found, must be a `string` or `QueryBlock`");
+        }
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
 using GraphQL;
-using NGql.Core;
 
 namespace NGql.Client
 {
@@ -10,19 +9,11 @@ namespace NGql.Client
         /// <summary>
         /// Builds a <see cref="GraphQLRequest"/> by passing <paramref name="query"/> and <paramref name="variables"/> to it.
         /// </summary>
-        /// <param name="query"></param>
-        /// <param name="variables"></param>
+        /// <param name="query">The Query text</param>
+        /// <param name="variables">The request Variables</param>
+        /// <param name="operationName">The name of the Operation</param>
         /// <typeparam name="TResponse">The typed response received from GQL</typeparam>
         /// <returns></returns>
-        Task<TResponse> QueryAsync<TResponse>(Query query, object? variables = null);
-
-        /// <summary>
-        /// Builds a <see cref="GraphQLRequest"/> by passing <paramref name="mutation"/> and <paramref name="variables"/> to it.
-        /// </summary>
-        /// <param name="mutation"></param>
-        /// <param name="variables"></param>
-        /// <typeparam name="TResponse">The typed response received from GQL</typeparam>
-        /// <returns></returns>
-        Task<TResponse> QueryAsync<TResponse>(Mutation mutation, object? variables = null);
+        Task<TResponse> QueryAsync<TResponse>(string query, object? variables = null, string? operationName = null);
     }
 }

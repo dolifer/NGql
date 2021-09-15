@@ -103,7 +103,7 @@ namespace NGql.Core
                         _stringBuilder.AppendLine(builder.Build(subQuery, indent));
                         break;
                     default:
-                        throw new InvalidOperationException("Unsupported Field type found, must be `string` or `IQueryPart`");
+                        throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
                 }
             }
 
