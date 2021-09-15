@@ -4,7 +4,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core
 {
-    public readonly struct Query
+    public sealed class Query
     {
         internal readonly QueryBlock _block;
 

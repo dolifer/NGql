@@ -2,7 +2,7 @@
 
 namespace NGql.Core.Abstractions
 {
-    public readonly struct QueryBlock
+    public sealed class QueryBlock
     {
         private readonly string _prefix;
 
