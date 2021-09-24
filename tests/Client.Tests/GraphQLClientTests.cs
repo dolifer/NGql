@@ -1,98 +1,115 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+﻿using System.Threading.Tasks;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
+using NGql.Client.Tests.Fixtures;
 using NGql.Core;
+using Server.Data.Entities;
 using Xunit;
 
 namespace NGql.Client.Tests
 {
-    public class GraphQLClientTests
+    public class GraphQLClientTests : IClassFixture<ApiFixture>
     {
-        public class PersonAndFilmsResponse
+        private readonly ApiFixture _fixture;
+
+        public GraphQLClientTests(ApiFixture fixture)
         {
-            public PersonContent Person { get; set; }
-
-            public class PersonContent
-            {
-                public string Name { get; set; }
-
-                public FilmConnectionContent FilmConnection { get; set; }
-
-                public class FilmConnectionContent
-                {
-                    public List<FilmContent> Films { get; set; }
-
-                    public class FilmContent
-                    {
-                        public string Title { get; set; }
-                    }
-                }
-            }
+            _fixture = fixture;
         }
 
         [Fact]
-        public async Task Can_Get_Films()
+        public async Task Can_Get_Users()
         {
             // arrange
             using var graphQLClient = GetClient();
-            var query = new Query("PersonAndFilms")
-                .Select(new Query("person")
-                    .Where("id", "cGVvcGxlOjE=")
+            var query = new Query("getAllUsers")
+                .Select(new Query("users")
                     .Select("name")
-                    .Select(new Query("filmConnection")
-                        .Select(new Query("films")
-                            .Select("title")))
                 );
 
             // act
-            var response = await graphQLClient.QueryAsync<PersonAndFilmsResponse>(query);
+            var response = await graphQLClient.QueryAsync<JObject>(query);
+            var users = response.SelectToken("users")?.ToObject<User[]>();
 
             // assert
-            AssertResponse(response);
+            users.Should().NotBeNull();
+            users.Should().Contain(u => u.Name == "Ila Santana");
+         }
+
+        [Fact]
+        public async Task Can_Get_User()
+        {
+            // arrange
+            using var graphQLClient = GetClient();
+            var query = new Query("getUser")
+                .Select(new Query("user", "alias")
+                    .Where("name", "Yoshi Lambert")
+                    .Select("name")
+                );
+
+            // act
+            var response = await graphQLClient.QueryAsync<JObject>(query);
+            var user = response.SelectToken("alias")?.ToObject<User>();
+
+            // assert
+            user.Should().NotBeNull();
+            user.Name.Should().Be("Yoshi Lambert");
         }
 
         [Fact]
-        public async Task Can_Get_Films_Include_WithVariables()
+        public async Task Can_Get_User_Using_Variable()
         {
             // arrange
-            using var client = GetClient();
-            var variables = new
-            {
-                id = "cGVvcGxlOjE="
-            };
-            var query = new Query("PersonAndFilms")
-                .Variable("$id", "ID")
-                .Include("person", p => p
-                    .Variable("id", "$id")
+            using var graphQLClient = GetClient();
+            var nameVariable = new Variable("$name", "String!");
+            var query = new Query("getUser")
+                .Variable(nameVariable)
+                .Select(new Query("user")
+                    .Where("name", nameVariable)
                     .Select("name")
-                    .Include("filmConnection", m =>
-                        m.Include("films", f => f.Select("title")))
                 );
 
+            var variables = new
+            {
+                name = "Yoshi Lambert"
+            };
+
             // act
-            var response = await client.QueryAsync<PersonAndFilmsResponse>(query, variables);
+            var response = await graphQLClient.QueryAsync<JObject>(query, variables);
+            var user = response.SelectToken("user")?.ToObject<User>();
 
             // assert
-            AssertResponse(response);
+            user.Should().NotBeNull();
+            user.Name.Should().Be("Yoshi Lambert");
         }
 
-        private static INGqlClient GetClient() =>
-            new NGqlClient("https://swapi-graphql.netlify.app/.netlify/functions/index");
-
-        private static void AssertResponse(PersonAndFilmsResponse response)
+        [Fact]
+        public async Task Can_Create_User_Using_Mutation()
         {
-            response.Person.Name.Should().Be("Luke Skywalker");
-            response.Person.FilmConnection.Films.Should().NotBeNull();
-            response.Person.FilmConnection.Films.Select(m => m.Title)
-                .Should()
-                .BeEquivalentTo(new object[]
-                {
-                    "A New Hope",
-                    "The Empire Strikes Back",
-                    "Return of the Jedi",
-                    "Revenge of the Sith"
-                });
+            // arrange
+            using var graphQLClient = GetClient();
+            var nameVariable = new Variable("$name", "String!");
+            var query = new Mutation("Create")
+                .Variable(nameVariable)
+                .Select(new Query("createUser", "user")
+                    .Where("name", nameVariable)
+                    .Select("name")
+                );
+
+            var variables = new
+            {
+                name = "Ryan Aguilar"
+            };
+
+            // act
+            var response = await graphQLClient.QueryAsync<JObject>(query, variables);
+            var user = response.SelectToken("user")?.ToObject<User>();
+
+            // assert
+            user.Should().NotBeNull();
+            user.Name.Should().Be("Ryan Aguilar");
         }
+
+        private INGqlClient GetClient() => new NGqlClient("https://localhost:5001/graphql", _fixture.CreateClient());
     }
 }
