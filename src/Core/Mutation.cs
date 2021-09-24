@@ -19,7 +19,14 @@ namespace NGql.Core
         /// <inheritdoc cref="QueryBlock.Variables"/>
         public IEnumerable<Variable> Variables => _block.Variables;
 
-        /// <inheritdoc cref="QueryBlock.AddVariable"/>
+        /// <inheritdoc cref="QueryBlock.AddVariable(NGql.Core.Variable)"/>
+        public Mutation Variable(Variable variable)
+        {
+            _block.AddVariable(variable);
+            return this;
+        }
+
+        /// <inheritdoc cref="QueryBlock.AddVariable(string,string)"/>
         public Mutation Variable(string name, string type)
         {
             _block.AddVariable(name, type);
