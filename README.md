@@ -13,18 +13,18 @@ Schemaless GraphQL client for .NET Core.
 
 </div>
 
-## Installation
+# Quick Start
 
 ```
 dotnet add package NGql.Core
 ```
 
-## Core
+# Usage
 
 Core library allows creation of `Query` and `Mutation`'s.
-Both returns a `QueryBase` that have an implicit convertion to `string`.
+Both have an implicit conversion to `string`.
 
-### Query
+## Query
 ```csharp
 var query = new Query("PersonAndFilms")
     .Select(new Query("person")
@@ -35,8 +35,21 @@ var query = new Query("PersonAndFilms")
                 .Select("title")))
     );
 ```
+the output will be the following
+```
+query PersonAndFilms{
+    person(id:"cGVvcGxlOjE="){
+        name
+        filmConnection{
+            films{
+                title
+            }
+        }
+    }
+}
+```
 
-### Mutation
+## Mutation
 ```csharp
 var mutation = new Mutation("CreateUser")
                 .Select(new Query("createUser")
@@ -45,14 +58,43 @@ var mutation = new Mutation("CreateUser")
                     .Select("id", "name"))
                 .ToString();
 ```
+the output will be the following
+```
+mutation CreateUser{
+    createUser(name:"Name", password:"Password"){
+        id
+        name
+    }
+}
+```
 
-## Client
+## Variables
+Variables allows to reuse existing queries and mutations instead of building them from start every time.
 
-Client allows making a call against GQL endpoint with a given `Query` or `Mutation`.
-Added for demo purpose to show basic usage.
+### Passing variables
 
 ```csharp
-using var client = new NGqlClient("https://swapi-graphql.netlify.app/.netlify/functions/index");
+var variable = new Variable("$name", "String");
+
+// pass as constructor parameter
+var ctor = new Query("name", variables: variable);
+
+// or as method variable
+var fluent = new Query("name", variables: variable).Variable(variable););
+```
+the output will be the following
+```
+query name($name:String){
+    id
+}
+```
+# Getting data from server
+
+You can check [QueryTests](https://github.com/dolifer/NGql/blob/main/tests/Core.IntegrationTests/QueryTests.cs) that uses [GraphQL.Client](https://github.com/graphql-dotnet/graphql-client) 
+
+```csharp
+var graphQLClient = new GraphQLHttpClient("http://swapi.apis.guru/", new NewtonsoftJsonSerializer());
+
 var query = new Query("PersonAndFilms")
     .Select(new Query("person")
         .Where("id", "cGVvcGxlOjE=")
@@ -62,30 +104,11 @@ var query = new Query("PersonAndFilms")
                 .Select("title")))
     );
 
-var response = await client.QueryAsync<PersonAndFilmsResponse>(query);
-```
-
-The `response` variable will be a following JSON object
-```json
+var request = new GraphQLRequest
 {
-    "Person": {
-        "Name": "Luke Skywalker",
-        "FilmConnection": {
-            "Films": [
-                {
-                    "Title": "A New Hope"
-                },
-                {
-                    "Title": "The Empire Strikes Back"
-                },
-                {
-                    "Title": "Return of the Jedi"
-                },
-                {
-                    "Title": "Revenge of the Sith"
-                }
-            ]
-        }
-    }
-}
+    Query = query
+};
+var graphQLResponse = await graphQLClient.SendQueryAsync<ResponseType>(request);
+
+var personName = graphQLResponse.Data.Person.Name;
 ```
