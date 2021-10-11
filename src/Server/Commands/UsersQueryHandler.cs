@@ -7,7 +7,7 @@ using Server.Data.Entities;
 
 namespace Server.Commands
 {
-    public class UserQueryHandler : IRequestHandler<UserQuery, User>
+    public class UserQueryHandler : IRequestHandler<UserQuery, User?>
     {
         private readonly IUsersRepository _repository;
 
@@ -15,9 +15,7 @@ namespace Server.Commands
             => _repository = repository;
 
         public async Task<User?> Handle(UserQuery request, CancellationToken cancellationToken)
-        {
-            return await _repository.GetUser(request.Name);
-        }
+            => await _repository.GetUser(request.Name);
     }
 
     public class UsersQueryHandler : IRequestHandler<UsersQuery, IEnumerable<User>>
@@ -28,8 +26,6 @@ namespace Server.Commands
             => _repository = repository;
 
         public async Task<IEnumerable<User>> Handle(UsersQuery request, CancellationToken cancellationToken)
-        {
-            return await _repository.GetUsers(100);
-        }
+            => await _repository.GetUsers(100);
     }
 }
