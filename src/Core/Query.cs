@@ -8,8 +8,11 @@ namespace NGql.Core
     {
         internal readonly QueryBlock _block;
 
-        public Query(string name, string? alias = null)
-            => _block = new QueryBlock(name, "query", alias);
+        public Query(string name, string? alias = null, params Variable[] variables)
+        {
+            _block = new QueryBlock(name, "query", alias);
+            _block.Variables.AddRange(variables);
+        }
 
         /// <inheritdoc cref="QueryBlock.Name"/>
         public string Name => _block.Name;
@@ -26,7 +29,14 @@ namespace NGql.Core
         /// <inheritdoc cref="QueryBlock.Variables"/>
         public IEnumerable<Variable> Variables => _block.Variables;
 
-        /// <inheritdoc cref="QueryBlock.AddVariable"/>
+        /// <inheritdoc cref="QueryBlock.AddVariable(NGql.Core.Variable)"/>
+        public Query Variable(Variable variable)
+        {
+            _block.AddVariable(variable);
+            return this;
+        }
+
+        /// <inheritdoc cref="QueryBlock.AddVariable(String,String)"/>
         public Query Variable(string name, string type)
         {
             _block.AddVariable(name, type);
