@@ -10,10 +10,7 @@ namespace Server.Commands
     {
         private readonly IUsersRepository _repository;
 
-        public CreateUserCommandHandler(IUsersRepository repository)
-        {
-            _repository = repository;
-        }
+        public CreateUserCommandHandler(IUsersRepository repository) => _repository = repository;
 
         public Task<User> Handle(CreateUserCommand request, CancellationToken cancellationToken)
         {

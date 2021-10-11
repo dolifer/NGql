@@ -53,7 +53,7 @@ namespace Server
                 // map HTTP middleware for schema at default path /graphql
                 endpoints.MapGraphQL<DemoSchema>();
 
-                // map Altair middleware at default path /ui/playground with default options
+                // map playground middleware at default path /ui/playground with default options
                 endpoints.MapGraphQLPlayground("/");
             });
         }

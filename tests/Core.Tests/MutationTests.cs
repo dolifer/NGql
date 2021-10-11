@@ -85,9 +85,7 @@ namespace NGql.Core.Tests
                 .Select("id", "name");
 
             // act
-            var queryText = new Mutation("CreateUser")
-                .Variable(nameVar)
-                .Variable(passVar)
+            var queryText = new Mutation("CreateUser", nameVar, passVar)
                 .Select(nestedMutation)
                 .ToString();
 

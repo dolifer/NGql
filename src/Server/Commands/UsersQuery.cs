@@ -12,9 +12,6 @@ namespace Server.Commands
     {
         public string Name { get; }
 
-        public UserQuery(string name)
-        {
-            Name = name;
-        }
+        public UserQuery(string name) => Name = name;
     }
 }

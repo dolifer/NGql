@@ -5,10 +5,7 @@ namespace Server.Commands
 {
     public class CreateUserCommand : IRequest<User>
     {
-        public CreateUserCommand(string name)
-        {
-            Name = name;
-        }
+        public CreateUserCommand(string name) => Name = name;
 
         public string Name { get; }
     }
