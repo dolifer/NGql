@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>NGql.Client.Tests</RootNamespace>
+    </PropertyGroup>
+  
+    <ItemGroup>
+      <ProjectReference Include="..\..\src\Core\Core.csproj" />
+      <ProjectReference Include="..\..\src\Server\Server.csproj" />
+    </ItemGroup>
+  
+    <ItemGroup>
+      <PackageReference Include="GraphQL.Client" Version="3.2.4" />
+      <PackageReference Include="GraphQL.Client.Serializer.Newtonsoft" Version="3.2.4" />
+      <PackageReference Include="NFixtures.WebApi" Version="0.1.7" />
+    </ItemGroup>
+</Project>

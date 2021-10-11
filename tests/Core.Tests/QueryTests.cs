@@ -104,6 +104,22 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void Variable_Instance_AddsToVariableList()
+        {
+            // arrange
+            var query = new Query("name");
+            var variable = new Variable("$name", "String");
+
+            // act
+            query
+                .Variable(variable)
+                .Select("id");
+
+            // assert
+            query.Variables.Should().ContainSingle(x => x.Name == "$name" && x.Type == "String");
+        }
+
+        [Fact]
         public void ToString_Returns_Query()
         {
             // arrange

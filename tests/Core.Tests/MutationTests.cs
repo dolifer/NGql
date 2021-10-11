@@ -58,18 +58,34 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void Variable_Instance_AddsToVariableList()
+        {
+            // arrange
+            var mutation = new Mutation("name");
+            var variable = new Variable("$name", "String");
+
+            // act
+            mutation
+                .Variable(variable)
+                .Select("id");
+
+            // assert
+            mutation.Variables.Should().ContainSingle(x => x.Name == "$name" && x.Type == "String");
+        }
+
+        [Fact]
         public void ToString_UsesVariables()
         {
             // arrange
+            var nameVar = new Variable("$name", "String");
+            var passVar = new Variable("$password", "String");
             var nestedMutation = new Query("createUser")
-                .Where("name", new Variable("$name", "String"))
-                .Where("password", new Variable("$password", "String"))
+                .Where("name", nameVar)
+                .Where("password", passVar)
                 .Select("id", "name");
 
             // act
-            var queryText = new Mutation("CreateUser")
-                .Variable("$name", "String")
-                .Variable("$password", "String")
+            var queryText = new Mutation("CreateUser", nameVar, passVar)
                 .Select(nestedMutation)
                 .ToString();
 

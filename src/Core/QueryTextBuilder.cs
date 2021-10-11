@@ -25,8 +25,13 @@ namespace NGql.Core
                 pad = "";
             }
 
-            prefix = !string.IsNullOrWhiteSpace(prefix) ? $"{prefix} " : string.Empty;
-            _stringBuilder.Append(pad + prefix + queryBlock.Name);
+            _stringBuilder.Append(pad);
+            if (!string.IsNullOrWhiteSpace(prefix))
+            {
+                _stringBuilder.Append(prefix).Append(' ');
+            }
+
+            _stringBuilder.Append(queryBlock.Name);
 
             AddVariables(queryBlock);
 

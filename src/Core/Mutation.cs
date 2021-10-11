@@ -7,8 +7,11 @@ namespace NGql.Core
     {
         private readonly QueryBlock _block;
 
-        public Mutation(string name)
-            => _block = new QueryBlock(name, "mutation");
+        public Mutation(string name, params Variable[] variables)
+        {
+            _block = new QueryBlock(name, "mutation");
+            _block.Variables.AddRange(variables);
+        }
 
         /// <inheritdoc cref="QueryBlock.Name"/>
         public string Name => _block.Name;
@@ -19,7 +22,14 @@ namespace NGql.Core
         /// <inheritdoc cref="QueryBlock.Variables"/>
         public IEnumerable<Variable> Variables => _block.Variables;
 
-        /// <inheritdoc cref="QueryBlock.AddVariable"/>
+        /// <inheritdoc cref="QueryBlock.AddVariable(NGql.Core.Variable)"/>
+        public Mutation Variable(Variable variable)
+        {
+            _block.AddVariable(variable);
+            return this;
+        }
+
+        /// <inheritdoc cref="QueryBlock.AddVariable(string,string)"/>
         public Mutation Variable(string name, string type)
         {
             _block.AddVariable(name, type);

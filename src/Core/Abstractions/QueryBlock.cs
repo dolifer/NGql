@@ -34,6 +34,13 @@ namespace NGql.Core.Abstractions
         /// <summary>
         /// Adds the variable with give name into <see cref="Variables"/> part of the query.
         /// </summary>
+        /// <param name="variable">The variable</param>
+        public void AddVariable(Variable variable)
+            => Variables.Add(variable);
+
+        /// <summary>
+        /// Adds the variable with give name into <see cref="Variables"/> part of the query.
+        /// </summary>
         /// <param name="name">The variable name</param>
         /// <param name="type">The value of the variable</param>
         public void AddVariable(string name, string type)
