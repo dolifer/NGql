@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using NGql.Core.Abstractions;
 
@@ -84,6 +85,11 @@ namespace NGql.Core
 
                 case IDictionary dictValue:
                     return WrapEnumerable('{', '}', dictValue);
+
+                case { } obj:
+                    var values = obj.GetType().GetProperties()
+                        .ToDictionary(x => x.Name, x => x.GetValue(obj));
+                    return WrapEnumerable('{', '}', values);
 
                 default:
                     throw new InvalidOperationException("Unsupported Query argument type found: " + value.GetType());

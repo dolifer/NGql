@@ -106,19 +106,6 @@ namespace NGql.Core.Tests
             valueString.Should().Be("{numbers:[123, 456, 789]}");
         }
 
-        public class Foo
-        {
-        }
-
-        [Fact]
-        public void BuildQueryParam_ThrowsUnsupportedException()
-        {
-            // act & assert
-            var exception = Assert.Throws<InvalidOperationException>(() => BuildQueryParam(new Foo()));
-
-            exception.Message.Should().Be("Unsupported Query argument type found: NGql.Core.Tests.QueryTextBuilderTests+Foo");
-        }
-
         [Fact]
         public void AddFields_ThrowsUnsupportedException()
         {
