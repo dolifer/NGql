@@ -5,21 +5,24 @@ namespace NGql.Core.Abstractions
     public sealed class QueryBlock
     {
         private readonly string _prefix;
+        private readonly Dictionary<string, object> _arguments;
+        private readonly List<Variable> _variables;
+        private readonly List<object> _fieldsList;
 
         /// <summary>
         /// The list of fields to retrieve from GraphQL.
         /// </summary>
-        public List<object> FieldsList { get; }
+        public IReadOnlyList<object> FieldsList => _fieldsList;
 
         /// <summary>
         /// The collection of arguments related to <see cref="FieldsList"/>.
         /// </summary>
-        public Dictionary<string, object> Arguments { get; }
+        public IReadOnlyDictionary<string, object> Arguments => _arguments;
 
         /// <summary>
         /// The collection of variables related to <see cref="FieldsList"/>.
         /// </summary>
-        public List<Variable> Variables { get; }
+        public IReadOnlyList<Variable> Variables => _variables;
 
         /// <summary>
         /// The Query name.
@@ -36,7 +39,7 @@ namespace NGql.Core.Abstractions
         /// </summary>
         /// <param name="variable">The variable</param>
         public void AddVariable(Variable variable)
-            => Variables.Add(variable);
+            => _variables.Add(variable);
 
         /// <summary>
         /// Adds the variable with give name into <see cref="Variables"/> part of the query.
@@ -44,7 +47,7 @@ namespace NGql.Core.Abstractions
         /// <param name="name">The variable name</param>
         /// <param name="type">The value of the variable</param>
         public void AddVariable(string name, string type)
-            => Variables.Add(new Variable(name, type));
+            => _variables.Add(new Variable(name, type));
 
         /// <summary>
         /// Adds the given generic list to the <see cref="FieldsList"/> part of the query.
@@ -54,7 +57,7 @@ namespace NGql.Core.Abstractions
         /// </remarks>
         /// <param name="selectList">Generic list of select fields.</param>
         public void AddField(IEnumerable<object> selectList)
-            => FieldsList.AddRange(selectList);
+            => _fieldsList.AddRange(selectList);
 
         /// <summary>
         /// Adds the given list of strings to the <see cref="FieldsList"/> part of the query.
@@ -62,7 +65,7 @@ namespace NGql.Core.Abstractions
         /// <param name="selects">List of strings.</param>
         /// <returns>Query</returns>
         public void AddField(params string[] selects)
-            => FieldsList.AddRange(selects);
+            => _fieldsList.AddRange(selects);
 
         /// <summary>
         /// Adds the given sub query to the <see cref="FieldsList"/> part of the query.
@@ -70,7 +73,7 @@ namespace NGql.Core.Abstractions
         /// <param name="subQuery">A sub-query.</param>
         /// <returns>Query</returns>
         public void AddField(QueryBlock subQuery)
-            => FieldsList.Add(subQuery);
+            => _fieldsList.Add(subQuery);
 
         /// <summary>
         /// Adds the given key into <see cref="Arguments"/> part of the query.
@@ -79,7 +82,7 @@ namespace NGql.Core.Abstractions
         /// <param name="where">The value of the parameter, primitive or object</param>
         /// <returns></returns>
         public void AddArgument(string key, object where)
-            => Arguments.Add(key, where);
+            => _arguments.Add(key, where);
 
         /// <summary>
         /// Add a dict of key value pairs &lt;string, object&gt; into <see cref="Arguments"/> part of the query.
@@ -90,18 +93,18 @@ namespace NGql.Core.Abstractions
         public void AddArgument(Dictionary<string, object> dict)
         {
             foreach (var (key, value) in dict)
-                Arguments.Add(key, value);
+                _arguments.Add(key, value);
         }
 
-        public QueryBlock(string name, string prefix, string? alias = null)
+        public QueryBlock(string name, string prefix, string? alias = null, params Variable[]? variables)
         {
             _prefix = prefix;
             Name = name;
             Alias = alias;
 
-            FieldsList = new List<object>();
-            Variables = new List<Variable>();
-            Arguments = new Dictionary<string, object>();
+            _fieldsList = new List<object>();
+            _variables = variables is null ? new List<Variable>() : new List<Variable>(variables);
+            _arguments = new Dictionary<string, object>();
         }
 
         /// <summary>

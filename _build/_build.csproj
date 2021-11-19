@@ -6,16 +6,13 @@
     <NukeRootDirectory>..</NukeRootDirectory>
     <NukeScriptDirectory>..</NukeScriptDirectory>
     <Nullable>disable</Nullable>
+    <NukeTelemetryVersion>1</NukeTelemetryVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Nuke.Common" Version="5.0.2" />
+    <PackageReference Include="Nuke.Common" Version="5.3.0" />
     <PackageDownload Include="GitVersion.Tool" Version="[5.6.6]" />
     <PackageDownload Include="ReportGenerator" Version="[4.8.7]" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <CodeAnalysisRuleSet>Custom.ruleset</CodeAnalysisRuleSet>
-  </PropertyGroup>
 
 </Project>

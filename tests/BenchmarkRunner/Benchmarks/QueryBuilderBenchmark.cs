@@ -1,6 +1,5 @@
 ﻿using System;
 using BenchmarkDotNet.Attributes;
-using GraphQL;
 using NGql.Core;
 
 namespace Benchmarks.Benchmarks
@@ -13,7 +12,7 @@ namespace Benchmarks.Benchmarks
         public QueryBuilderBenchmark() => _queryText = GetQuery();
 
         [Benchmark]
-        public GraphQLRequest GetStatic() => new()
+        public object GetStatic() => new
         {
             Query = _queryText,
             Variables = new
@@ -23,7 +22,7 @@ namespace Benchmarks.Benchmarks
         };
 
         [Benchmark]
-        public GraphQLRequest GetNew() => new()
+        public object GetNew() => new
         {
             Query = GetQuery(),
             Variables = new

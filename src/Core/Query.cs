@@ -6,61 +6,60 @@ namespace NGql.Core
 {
     public sealed class Query
     {
-        internal readonly QueryBlock _block;
+        public QueryBlock Block { get; }
 
         public Query(string name, string? alias = null, params Variable[] variables)
         {
-            _block = new QueryBlock(name, "query", alias);
-            _block.Variables.AddRange(variables);
+            Block = new QueryBlock(name, "query", alias, variables);
         }
 
         /// <inheritdoc cref="QueryBlock.Name"/>
-        public string Name => _block.Name;
+        public string Name => Block.Name;
 
         /// <inheritdoc cref="QueryBlock.Alias"/>
-        public string? Alias => _block.Alias;
+        public string? Alias => Block.Alias;
 
         /// <inheritdoc cref="QueryBlock.FieldsList"/>
-        public IEnumerable<object> FieldsList => _block.FieldsList;
+        public IEnumerable<object> FieldsList => Block.FieldsList;
 
         /// <inheritdoc cref="QueryBlock.Arguments"/>
-        public IReadOnlyDictionary<string, object> Arguments => _block.Arguments;
+        public IReadOnlyDictionary<string, object> Arguments => Block.Arguments;
 
         /// <inheritdoc cref="QueryBlock.Variables"/>
-        public IEnumerable<Variable> Variables => _block.Variables;
+        public IEnumerable<Variable> Variables => Block.Variables;
 
         /// <inheritdoc cref="QueryBlock.AddVariable(NGql.Core.Variable)"/>
         public Query Variable(Variable variable)
         {
-            _block.AddVariable(variable);
+            Block.AddVariable(variable);
             return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddVariable(String,String)"/>
         public Query Variable(string name, string type)
         {
-            _block.AddVariable(name, type);
+            Block.AddVariable(name, type);
             return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddField(System.Collections.Generic.IEnumerable{object})"/>
         public Query Select(IEnumerable<object> selectList)
         {
-            _block.AddField(selectList);
+            Block.AddField(selectList);
             return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddField(string[])"/>
         public Query Select(params string[] selects)
         {
-            _block.AddField(selects);
+            Block.AddField(selects);
             return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddField(QueryBlock)"/>
         public Query Select(Query subQuery)
         {
-            _block.AddField(subQuery._block);
+            Block.AddField(subQuery.Block);
             return this;
         }
 
@@ -75,25 +74,25 @@ namespace NGql.Core
         {
             var query = new Query(name, alias);
             action.Invoke(query);
-            _block.AddField(query._block);
+            Block.AddField(query.Block);
             return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddArgument(string,object)"/>
         public Query Where(string key, object where)
         {
-            _block.AddArgument(key, where);
-           return this;
+            Block.AddArgument(key, where);
+            return this;
         }
 
         /// <inheritdoc cref="QueryBlock.AddArgument(Dictionary&lt;string, object&gt;)"/>
         public Query Where(Dictionary<string, object> dict)
         {
-            _block.AddArgument(dict);
+            Block.AddArgument(dict);
             return this;
         }
 
-        public override string ToString() => _block.ToString();
-        public static implicit operator string(Query query) => query._block.ToString();
+        public override string ToString() => Block.ToString();
+        public static implicit operator string(Query query) => query.Block.ToString();
     }
 }

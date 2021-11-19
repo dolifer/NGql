@@ -1,10 +1,11 @@
 ﻿using System;
+using System.Text.Json;
 using System.Threading.Tasks;
 using FluentAssertions;
 using GraphQL;
 using GraphQL.Client.Http;
-using GraphQL.Client.Serializer.Newtonsoft;
-using Newtonsoft.Json.Linq;
+using GraphQL.Client.Serializer.SystemTextJson;
+using NGql.Client.Tests.Extensions;
 using NGql.Client.Tests.Fixtures;
 using NGql.Core;
 using Server.Data.Entities;
@@ -33,8 +34,8 @@ namespace NGql.Client.Tests
             {
                 Query = query
             };
-            var response = await graphQLClient.SendQueryAsync<JObject>(request);
-            var users = response.Data.SelectToken("users")?.ToObject<User[]>();
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var users = response.Data.ToObject<User[]>("users");
 
             // assert
             users.Should().NotBeNull();
@@ -59,8 +60,8 @@ namespace NGql.Client.Tests
             {
                 Query = query
             };
-            var response = await graphQLClient.SendQueryAsync<JObject>(request);
-            var user = response.Data.SelectToken("alias")?.ToObject<User>();
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var user = response.Data.ToObject<User>("alias");
 
             // assert
             user.Should().NotBeNull();
@@ -83,8 +84,8 @@ namespace NGql.Client.Tests
             {
                 Query = query
             };
-            var response = await graphQLClient.SendQueryAsync<JObject>(request);
-            var user = response.Data.SelectToken("alias")?.ToObject<User>();
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var user = response.Data.ToObject<User>("alias");
 
             // assert
             user.Should().BeNull();
@@ -115,8 +116,8 @@ namespace NGql.Client.Tests
                     name
                 }
             };
-            var response = await graphQLClient.SendQueryAsync<JObject>(request);
-            var user = response.Data.SelectToken("user")?.ToObject<User>();
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var user = response.Data.ToObject<User>("user");
 
             // assert
             user.Should().NotBeNull();
@@ -145,8 +146,8 @@ namespace NGql.Client.Tests
                     name = "Ryan Aguilar"
                 }
             };
-            var response = await graphQLClient.SendQueryAsync<JObject>(request);
-            var user = response.Data.SelectToken("user")?.ToObject<User>();
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var user = response.Data.ToObject<User>("user");
 
             // assert
             user.Should().NotBeNull();
@@ -158,7 +159,7 @@ namespace NGql.Client.Tests
             {
                 EndPoint = new Uri("https://localhost:5001/graphql")
             },
-            new NewtonsoftJsonSerializer(),
+            new SystemTextJsonSerializer(),
             _fixture.CreateClient()
         );
     }
