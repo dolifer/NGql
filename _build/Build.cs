@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using _build;
 using Nuke.Common;
-using Nuke.Common.CI;
 using Nuke.Common.Execution;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
@@ -82,7 +81,7 @@ class Build : NukeBuild
                 .SetExcludeByFile("*.Generated.cs")
                 .CombineWith(TestProjects, (_, v) => _
                     .SetProjectFile(v)
-                    .SetLogger(
+                    .SetLoggers(
                         $"junit;LogFilePath={JunitResultDirectory}/{v.Name}.xml;MethodFormat=Class;FailureBodyFormat=Verbose")
                     .SetCoverletOutput($"{CoverletResultDirectory}/{v.Name}.xml")));
         });

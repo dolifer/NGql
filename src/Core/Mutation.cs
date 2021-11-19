@@ -9,8 +9,7 @@ namespace NGql.Core
 
         public Mutation(string name, params Variable[] variables)
         {
-            _block = new QueryBlock(name, "mutation");
-            _block.Variables.AddRange(variables);
+            _block = new QueryBlock(name, "mutation", variables: variables);
         }
 
         /// <inheritdoc cref="QueryBlock.Name"/>
@@ -53,7 +52,7 @@ namespace NGql.Core
         /// <inheritdoc cref="QueryBlock.AddField(QueryBlock)"/>
         public Mutation Select(Query subQuery)
         {
-            _block.AddField(subQuery._block);
+            _block.AddField(subQuery.Block);
             return this;
         }
 
