@@ -1,21 +1,13 @@
-<h1 align="center">
-
-<img src="https://github.com/dolifer/NGql/blob/main/icon.png" alt="NGql" width="200"/>
-<br/>
-NGql
-</h1>
-
-<div align="center">
+![Project Logo](https://raw.githubusercontent.com/dolifer/NGql/main/icon.png) 
+# NGql
 
 Schemaless GraphQL client for .NET Core.
 
 [![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 
-</div>
-
 # Quick Start
 
-```
+```shell
 dotnet add package NGql.Core
 ```
 
@@ -25,7 +17,7 @@ Core library allows creation of `Query` and `Mutation`'s.
 Both have an implicit conversion to `string`.
 
 ## Query
-```csharp
+```c#
 var query = new Query("PersonAndFilms")
     .Select(new Query("person")
         .Where("id", "cGVvcGxlOjE=")
@@ -50,7 +42,7 @@ query PersonAndFilms{
 ```
 
 ## Mutation
-```csharp
+```c#
 var mutation = new Mutation("CreateUser")
                 .Select(new Query("createUser")
                     .Where("name", "Name")
@@ -73,7 +65,7 @@ Variables allows to reuse existing queries and mutations instead of building the
 
 ### Passing variables
 
-```csharp
+```c#
 var variable = new Variable("$name", "String");
 
 // pass as constructor parameter
@@ -92,7 +84,7 @@ query name($name:String){
 
 You can check [QueryTests](https://github.com/dolifer/NGql/blob/main/tests/Core.IntegrationTests/QueryTests.cs) that uses [GraphQL.Client](https://github.com/graphql-dotnet/graphql-client) 
 
-```csharp
+```c#
 var graphQLClient = new GraphQLHttpClient("http://swapi.apis.guru/", new NewtonsoftJsonSerializer());
 
 var query = new Query("PersonAndFilms")

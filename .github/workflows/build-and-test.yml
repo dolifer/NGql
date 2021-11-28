@@ -13,14 +13,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1
-      - uses: actions/setup-dotnet@v1
+      - name: Install net6.0
+        uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: '5.0.x'
+          dotnet-version: '6.0.x'
       - name: Run ./build.sh Coverage
         run: ./build.sh Coverage
         env:
-            NugetApiKey: ${{ secrets.NUGET_API_KEY }}
-      - uses: actions/upload-artifact@v1
+          NugetApiKey: ${{ secrets.NUGET_API_KEY }}
+      - name: Upload Coverage report
+        uses: actions/upload-artifact@v1
         with:
           name: coverage-report
           path: artifacts/coverage-report
