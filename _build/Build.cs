@@ -24,7 +24,7 @@ class Build : NukeBuild
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
     [Required] [Solution] readonly Solution Solution;
-    [Required] [GitVersion(Framework = "net5.0", NoFetch = true)] readonly GitVersion GitVersion;
+    [Required] [GitVersion(Framework = "net6.0", NoFetch = true)] readonly GitVersion GitVersion;
     [Required] [GitRepository] readonly GitRepository GitRepository;
 
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
@@ -129,6 +129,6 @@ class Build : NukeBuild
                 .SetReports(CoverletResultDirectory / "*.xml")
                 .SetReportTypes(ReportTypes.HtmlInline_AzurePipelines, ReportTypes.Badges)
                 .SetTargetDirectory(CoverageReportDirectory)
-                .SetFramework("netcoreapp2.1"));
+                .SetFramework("net6.0"));
         });
 }
