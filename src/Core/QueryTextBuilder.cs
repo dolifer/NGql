@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Text;
 using NGql.Core.Abstractions;
@@ -43,20 +42,32 @@ namespace NGql.Core
             return _stringBuilder.ToString();
         }
 
-        public static string? BuildQueryParam(object value)
+        public static string BuildQueryParam(object value)
         {
-            if (TryParsePrimitiveType(value, out var stringValue))
-                return stringValue;
+            var builder = new StringBuilder();
+            WriteObject(builder, value);
+            return builder.ToString();
+        }
 
-            string WrapEnumerable(char prefix, char suffix, IEnumerable list)
+        public static void BuildQueryParam(StringBuilder builder, object value)
+            => WriteObject(builder, value);
+
+        private static void WriteObject(StringBuilder builder, object value)
+        {
+            if (ValueFormatter.TryFormatPrimitiveType(value, out var stringValue))
             {
-                StringBuilder builder = new();
+                builder.Append(stringValue);
+                return;
+            }
+
+            void WriteCollection(char prefix, char suffix, IEnumerable list)
+            {
                 builder.Append(prefix);
 
                 var hasValues = false;
                 foreach (var obj in list)
                 {
-                    builder.Append(BuildQueryParam(obj));
+                    WriteObject(builder, obj);
                     builder.Append(", ");
                     hasValues = true;
                 }
@@ -68,28 +79,30 @@ namespace NGql.Core
                 }
 
                 builder.Append(suffix);
-                return builder.ToString();
             }
 
             switch (value)
             {
                 case KeyValuePair<string, object>(var key, var o):
-                    StringBuilder valueStr = new();
-                    valueStr.Append(key);
-                    valueStr.Append(':');
-                    valueStr.Append(BuildQueryParam(o));
-                    return valueStr.ToString();
+                    builder.Append(key);
+                    builder.Append(':');
+
+                    WriteObject(builder, o);
+                    break;
 
                 case IList listValue:
-                    return WrapEnumerable('[', ']', listValue);
+                    WriteCollection('[', ']', listValue);
+                    break;
 
                 case IDictionary dictValue:
-                    return WrapEnumerable('{', '}', dictValue);
+                    WriteCollection('{', '}', dictValue);
+                    break;
 
                 case { } obj:
                     var values = obj.GetType().GetProperties()
                         .ToDictionary(x => x.Name, x => x.GetValue(obj));
-                    return WrapEnumerable('{', '}', values);
+                    WriteCollection('{', '}', values);
+                    break;
 
                 default:
                     throw new InvalidOperationException("Unsupported Query argument type found: " + value.GetType());
@@ -159,7 +172,9 @@ namespace NGql.Core
             {
                 _stringBuilder.Append(key);
                 _stringBuilder.Append(':');
-                _stringBuilder.Append(BuildQueryParam(value));
+
+                WriteObject(_stringBuilder, value);
+
                 _stringBuilder.Append(", ");
                 hasValues = true;
             }
@@ -170,31 +185,6 @@ namespace NGql.Core
             }
 
             _stringBuilder.Append(')');
-        }
-
-        private static bool TryParsePrimitiveType(object value, out string? stringValue)
-        {
-            stringValue = value switch
-            {
-                string s => "\"" + s + "\"",
-                bool boolValue => boolValue.ToString(CultureInfo.InvariantCulture).ToLowerInvariant(),
-                byte byteValue => byteValue.ToString(CultureInfo.CurrentCulture),
-                sbyte sbyteValue => sbyteValue.ToString(CultureInfo.CurrentCulture),
-                short shortValue => shortValue.ToString(CultureInfo.CurrentCulture),
-                ushort ushortValue => ushortValue.ToString(CultureInfo.CurrentCulture),
-                int intValue => intValue.ToString(CultureInfo.CurrentCulture),
-                uint uintValue => uintValue.ToString(CultureInfo.CurrentCulture),
-                long longValue => longValue.ToString(CultureInfo.CurrentCulture),
-                ulong ulongValue => ulongValue.ToString(CultureInfo.CurrentCulture),
-                float floatValue => floatValue.ToString(CultureInfo.CurrentCulture),
-                double doubleValue => doubleValue.ToString(CultureInfo.CurrentCulture),
-                decimal decimalValue => decimalValue.ToString(CultureInfo.CurrentCulture),
-                Enum enumValue => enumValue.ToString(),
-                Variable variable => variable.Name,
-                _ => default
-            };
-
-            return !string.IsNullOrWhiteSpace(stringValue);
         }
     }
 }
