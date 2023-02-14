@@ -43,6 +43,32 @@ namespace NGql.Client.Tests
             users.Should().Contain(u => u.Name == "Laurel Gardner");
             users.Should().Contain(u => u.Name == "Winter Bryant");
         }
+        
+        [Fact]
+        public async Task Can_Get_Nested_Users()
+        {
+            // arrange
+            using var graphQLClient = GetClient();
+            var query = new Query("getAllUsers")
+                .Select(new Query("foo")
+                    .Select(new Query("extendedUsers", "bar")
+                        .Where("name", "Yoshi Lambert")
+                        .Select("name")
+                    ));
+
+            // act
+            var request = new GraphQLRequest
+            {
+                Query = query
+            };
+            var response = await graphQLClient.SendQueryAsync<JsonElement>(request);
+            var users = response.Data.GetProperty("foo").ToObject<User[]>("bar");
+
+            // assert
+            users.Should().NotBeNull();
+            users.Should().Contain(u => u.Name == "Yoshi Lambert");
+            users.Should().NotContain(u => u.Name == "Laurel Gardner");
+        }
 
         [Fact]
         public async Task Can_Get_User()
