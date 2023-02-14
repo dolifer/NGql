@@ -11,6 +11,6 @@
     <ItemGroup>
       <PackageReference Include="GraphQL.Client" Version="4.0.1" />
       <PackageReference Include="GraphQL.Client.Serializer.SystemTextJson" Version="4.0.1" />
-      <PackageReference Include="NFixtures.WebApi" Version="1.0.0" />
+      <PackageReference Include="NFixtures.WebApi" Version="1.0.2" />
     </ItemGroup>
 </Project>

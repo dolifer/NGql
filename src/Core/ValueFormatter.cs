@@ -3,7 +3,7 @@ using System.Globalization;
 
 namespace NGql.Core;
 
-internal sealed class ValueFormatter
+internal static class ValueFormatter
 {
     internal static bool TryFormatPrimitiveType(object value, out string? stringValue)
     {

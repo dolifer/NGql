@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MediatR;
@@ -25,7 +26,7 @@ namespace Server.Commands
         public UsersQueryHandler(IUsersRepository repository)
             => _repository = repository;
 
-        public async Task<IEnumerable<User>> Handle(UsersQuery request, CancellationToken cancellationToken)
-            => await _repository.GetUsers(100);
+        public async Task<IEnumerable<User>> Handle(UsersQuery request, CancellationToken cancellationToken) 
+            => await _repository.GetUsers(request.Name);
     }
 }

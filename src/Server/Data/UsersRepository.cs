@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Server.Data.Entities;
@@ -42,9 +43,15 @@ namespace Server.Data
             return Task.FromResult<User?>(null);
         }
 
-        Task<IEnumerable<User>> IUsersRepository.GetUsers(int count)
+        Task<IEnumerable<User>> IUsersRepository.GetUsers(string? name)
         {
-            var users = _store.Values.Take(count);
+            var users = _store.Values.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                users = users.Where(x => x.Name.Contains(name, StringComparison.InvariantCultureIgnoreCase));
+            }
+
             return Task.FromResult(users);
         }
 

@@ -1,4 +1,5 @@
-﻿using GraphQL;
+﻿using System.Threading.Tasks;
+using GraphQL;
 using GraphQL.Types;
 using MediatR;
 
@@ -8,6 +9,9 @@ namespace Server.Schema
     {
         public UsersQuery(ISender sender)
         {
+            FieldAsync<ExtendedUsersType>("foo", resolve: context => Task.FromResult<object>(new {}));
+            FieldAsync<ExtendedUsersType>("bar", resolve: context => Task.FromResult<object>(new {}));
+            
             FieldAsync<ListGraphType<UserType>>("users", resolve: async context => await sender.Send(new Commands.UsersQuery()));
 
             FieldAsync<UserType>(

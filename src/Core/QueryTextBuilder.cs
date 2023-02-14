@@ -45,7 +45,7 @@ namespace NGql.Core
         public static string BuildQueryParam(object value)
         {
             var builder = new StringBuilder();
-            WriteObject(builder, value);
+            BuildQueryParam(builder, value);
             return builder.ToString();
         }
 
@@ -54,9 +54,9 @@ namespace NGql.Core
 
         private static void WriteObject(StringBuilder builder, object value)
         {
-            if (ValueFormatter.TryFormatPrimitiveType(value, out var stringValue))
+            if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
             {
-                builder.Append(stringValue);
+                builder.Append(formattedValue);
                 return;
             }
 

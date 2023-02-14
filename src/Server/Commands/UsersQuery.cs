@@ -6,6 +6,12 @@ namespace Server.Commands
 {
     public class UsersQuery : IRequest<IEnumerable<User>>
     {
+        public string? Name { get; }
+
+        public UsersQuery(string? name = null)
+        {
+            Name = name;
+        }
     }
 
     public class UserQuery : IRequest<User>
