@@ -137,6 +137,23 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
+        public void ToString_Returns_Unnamed_Query()
+        {
+            // arrange
+            var usersQuery = new Query()
+                .Select("id", "name");
+
+            // act
+            string queryText = usersQuery;
+
+            // assert
+            queryText.Should().Be(@"{
+    id
+    name
+}");
+        }
+
+        [Fact]
         public void ToString_UsesVariables()
         {
             // arrange
