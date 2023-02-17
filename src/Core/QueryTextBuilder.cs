@@ -7,7 +7,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core
 {
-    public sealed class QueryTextBuilder
+    internal sealed class QueryTextBuilder
     {
         private readonly StringBuilder _stringBuilder = new();
         private const int IndentSize = 4;

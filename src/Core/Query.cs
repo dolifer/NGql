@@ -8,6 +8,11 @@ namespace NGql.Core
     {
         public QueryBlock Block { get; }
 
+        public Query()
+        {
+            Block = new QueryBlock(string.Empty, string.Empty);
+        }
+
         public Query(string name, string? alias = null, params Variable[] variables)
         {
             Block = new QueryBlock(name, "query", alias, variables);
