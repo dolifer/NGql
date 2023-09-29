@@ -8,7 +8,7 @@ using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Coverlet;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.GitVersion;
+using Nuke.Common.Tools.MinVer;
 using Nuke.Common.Tools.ReportGenerator;
 using static Nuke.Common.IO.FileSystemTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
@@ -24,7 +24,7 @@ class Build : NukeBuild
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
     [Required] [Solution] readonly Solution Solution;
-    [Required] [GitVersion(Framework = "net7.0", NoFetch = true)] readonly GitVersion GitVersion;
+    [MinVer(Framework = "net7.0")] readonly MinVer MinVer;
     [Required] [GitRepository] readonly GitRepository GitRepository;
 
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
@@ -61,9 +61,9 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetProjectFile(Solution)
                 .SetConfiguration(Configuration)
-                .SetAssemblyVersion(GitVersion.AssemblySemVer)
-                .SetFileVersion(GitVersion.AssemblySemFileVer)
-                .SetInformationalVersion(GitVersion.InformationalVersion));
+                .SetAssemblyVersion(MinVer.AssemblyVersion)
+                .SetFileVersion(MinVer.FileVersion)
+                .SetInformationalVersion(MinVer.Version));
         });
 
     Target Test => _ => _
@@ -97,7 +97,7 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetConfiguration(Configuration)
                 .SetOutputDirectory(PackagesDirectory)
-                .SetVersion(GitVersion.NuGetVersionV2));
+                .SetVersion(MinVer.PackageVersion));
         });
 
     Target Publish => _ => _
@@ -129,6 +129,6 @@ class Build : NukeBuild
                 .SetReports(CoverletResultDirectory / "*.xml")
                 .SetReportTypes(ReportTypes.HtmlInline_AzurePipelines, ReportTypes.Badges)
                 .SetTargetDirectory(CoverageReportDirectory)
-                .SetFramework("net6.0"));
+                .SetFramework("net7.0"));
         });
 }
