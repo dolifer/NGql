@@ -24,7 +24,7 @@ class Build : NukeBuild
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
     [Required] [Solution] readonly Solution Solution;
-    [Required] [GitVersion(Framework = "net6.0", NoFetch = true)] readonly GitVersion GitVersion;
+    [Required] [GitVersion(Framework = "net7.0", NoFetch = true)] readonly GitVersion GitVersion;
     [Required] [GitRepository] readonly GitRepository GitRepository;
 
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";

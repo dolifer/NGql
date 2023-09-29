@@ -13,7 +13,6 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "solution items", "solution items", "{2BBD2B1A-AA9B-4CA3-ACC2-5E30F0F9585A}"
 ProjectSection(SolutionItems) = preProject
 	.editorconfig = .editorconfig
-	.nuke = .nuke
 	Directory.Build.props = Directory.Build.props
 EndProjectSection
 EndProject
