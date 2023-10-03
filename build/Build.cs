@@ -1,51 +1,44 @@
-using System.Collections.Generic;
-using _build;
 using Nuke.Common;
-using Nuke.Common.Execution;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Coverlet;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.GitVersion;
+using Nuke.Common.Tools.MinVer;
 using Nuke.Common.Tools.ReportGenerator;
-using static Nuke.Common.IO.FileSystemTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using static Nuke.Common.Tools.ReportGenerator.ReportGeneratorTasks;
 
-[CheckBuildProjectConfigurations]
-[UnsetVisualStudioEnvironmentVariables]
 class Build : NukeBuild
 {
-    public static int Main() => Execute<Build>(x => x.Compile);
+    public static int Main () => Execute<Build>(x => x.Test);
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
     [Required] [Solution] readonly Solution Solution;
-    [Required] [GitVersion(Framework = "net6.0", NoFetch = true)] readonly GitVersion GitVersion;
+    [MinVer(Framework = "net7.0")] readonly MinVer MinVer;
     [Required] [GitRepository] readonly GitRepository GitRepository;
-
+    
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
-    static AbsolutePath TestResultDirectory => ArtifactsDirectory / "test-results";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
+    static AbsolutePath CoverageReportDirectory => ArtifactsDirectory / "coverage-report";
+    static AbsolutePath TestResultDirectory => ArtifactsDirectory / "test-results";
     static AbsolutePath CoverletResultDirectory => TestResultDirectory / "coverlet";
     static AbsolutePath JunitResultDirectory => TestResultDirectory / "junit";
-    IEnumerable<Project> TestProjects => Solution.GetProjects("*Tests");
-    static AbsolutePath CoverageReportDirectory => ArtifactsDirectory / "coverage-report";
-
+    
     [Parameter] readonly string NugetApiUrl = "https://api.nuget.org/v3/index.json";
     [Parameter] readonly string NugetApiKey;
-
+    
     Target Clean => _ => _
+        .Before(Restore)
         .Executes(() =>
         {
-            EnsureCleanDirectory(ArtifactsDirectory);
+            ArtifactsDirectory.CreateOrCleanDirectory();
         });
 
     Target Restore => _ => _
-        .DependsOn(Clean)
         .Executes(() =>
         {
             DotNetRestore(_ => _
@@ -61,15 +54,18 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetProjectFile(Solution)
                 .SetConfiguration(Configuration)
-                .SetAssemblyVersion(GitVersion.AssemblySemVer)
-                .SetFileVersion(GitVersion.AssemblySemFileVer)
-                .SetInformationalVersion(GitVersion.InformationalVersion));
+                .SetAssemblyVersion(MinVer.AssemblyVersion)
+                .SetFileVersion(MinVer.FileVersion)
+                .SetInformationalVersion(MinVer.Version));
         });
 
     Target Test => _ => _
         .DependsOn(Compile)
         .Executes(() =>
         {
+            var testProjects = Solution.GetAllProjects("*Tests");
+            
+            
             DotNetTest(_ => _
                 .SetConfiguration(Configuration)
                 .SetNoBuild(InvokedTargets.Contains(Compile))
@@ -79,13 +75,13 @@ class Build : NukeBuild
                 .EnableCollectCoverage()
                 .SetCoverletOutputFormat(CoverletOutputFormat.cobertura)
                 .SetExcludeByFile("*.Generated.cs")
-                .CombineWith(TestProjects, (_, v) => _
+                .CombineWith(testProjects, (_, v) => _
                     .SetProjectFile(v)
                     .SetLoggers(
                         $"junit;LogFilePath={JunitResultDirectory}/{v.Name}.xml;MethodFormat=Class;FailureBodyFormat=Verbose")
                     .SetCoverletOutput($"{CoverletResultDirectory}/{v.Name}.xml")));
         });
-
+    
     Target Pack => _ => _
         .DependsOn(Compile)
         .Executes(() =>
@@ -97,7 +93,7 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetConfiguration(Configuration)
                 .SetOutputDirectory(PackagesDirectory)
-                .SetVersion(GitVersion.NuGetVersionV2));
+                .SetVersion(MinVer.PackageVersion));
         });
 
     Target Publish => _ => _
@@ -129,6 +125,6 @@ class Build : NukeBuild
                 .SetReports(CoverletResultDirectory / "*.xml")
                 .SetReportTypes(ReportTypes.HtmlInline_AzurePipelines, ReportTypes.Badges)
                 .SetTargetDirectory(CoverageReportDirectory)
-                .SetFramework("net6.0"));
+                .SetFramework("net7.0"));
         });
 }

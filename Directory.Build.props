@@ -16,14 +16,14 @@
   <PropertyGroup>
     <!-- Use the latest released C# language version -->
     <LangVersion>latest</LangVersion>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 
   <!-- Sonar Analyzers configuration -->
   <ItemGroup>
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="8.32.0.39516">
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="9.10.0.77988">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
