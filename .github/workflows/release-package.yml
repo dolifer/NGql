@@ -3,7 +3,7 @@ name: Publish NuGet packages
 on:
   push:
     tags:
-      - 'v*'
+      - '*'
 
 jobs:
   publish:
