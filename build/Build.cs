@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using _build;
 using Nuke.Common;
-using Nuke.Common.Execution;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
 using Nuke.Common.ProjectModel;
@@ -10,15 +7,12 @@ using Nuke.Common.Tools.Coverlet;
 using Nuke.Common.Tools.DotNet;
 using Nuke.Common.Tools.MinVer;
 using Nuke.Common.Tools.ReportGenerator;
-using static Nuke.Common.IO.FileSystemTasks;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using static Nuke.Common.Tools.ReportGenerator.ReportGeneratorTasks;
 
-[CheckBuildProjectConfigurations]
-[UnsetVisualStudioEnvironmentVariables]
 class Build : NukeBuild
 {
-    public static int Main() => Execute<Build>(x => x.Compile);
+    public static int Main () => Execute<Build>(x => x.Test);
 
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
@@ -26,26 +20,25 @@ class Build : NukeBuild
     [Required] [Solution] readonly Solution Solution;
     [MinVer(Framework = "net7.0")] readonly MinVer MinVer;
     [Required] [GitRepository] readonly GitRepository GitRepository;
-
+    
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
-    static AbsolutePath TestResultDirectory => ArtifactsDirectory / "test-results";
     static AbsolutePath PackagesDirectory => ArtifactsDirectory / "packages";
+    static AbsolutePath CoverageReportDirectory => ArtifactsDirectory / "coverage-report";
+    static AbsolutePath TestResultDirectory => ArtifactsDirectory / "test-results";
     static AbsolutePath CoverletResultDirectory => TestResultDirectory / "coverlet";
     static AbsolutePath JunitResultDirectory => TestResultDirectory / "junit";
-    IEnumerable<Project> TestProjects => Solution.GetProjects("*Tests");
-    static AbsolutePath CoverageReportDirectory => ArtifactsDirectory / "coverage-report";
-
+    
     [Parameter] readonly string NugetApiUrl = "https://api.nuget.org/v3/index.json";
     [Parameter] readonly string NugetApiKey;
-
+    
     Target Clean => _ => _
+        .Before(Restore)
         .Executes(() =>
         {
-            EnsureCleanDirectory(ArtifactsDirectory);
+            ArtifactsDirectory.CreateOrCleanDirectory();
         });
 
     Target Restore => _ => _
-        .DependsOn(Clean)
         .Executes(() =>
         {
             DotNetRestore(_ => _
@@ -70,6 +63,9 @@ class Build : NukeBuild
         .DependsOn(Compile)
         .Executes(() =>
         {
+            var testProjects = Solution.GetAllProjects("*Tests");
+            
+            
             DotNetTest(_ => _
                 .SetConfiguration(Configuration)
                 .SetNoBuild(InvokedTargets.Contains(Compile))
@@ -79,13 +75,13 @@ class Build : NukeBuild
                 .EnableCollectCoverage()
                 .SetCoverletOutputFormat(CoverletOutputFormat.cobertura)
                 .SetExcludeByFile("*.Generated.cs")
-                .CombineWith(TestProjects, (_, v) => _
+                .CombineWith(testProjects, (_, v) => _
                     .SetProjectFile(v)
                     .SetLoggers(
                         $"junit;LogFilePath={JunitResultDirectory}/{v.Name}.xml;MethodFormat=Class;FailureBodyFormat=Verbose")
                     .SetCoverletOutput($"{CoverletResultDirectory}/{v.Name}.xml")));
         });
-
+    
     Target Pack => _ => _
         .DependsOn(Compile)
         .Executes(() =>
