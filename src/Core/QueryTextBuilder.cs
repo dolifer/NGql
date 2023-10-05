@@ -45,15 +45,18 @@ namespace NGql.Core
         public static string BuildQueryParam(object value)
         {
             var builder = new StringBuilder();
-            BuildQueryParam(builder, value);
+            WriteObject(builder, value);
             return builder.ToString();
         }
 
-        public static void BuildQueryParam(StringBuilder builder, object value)
-            => WriteObject(builder, value);
-
-        private static void WriteObject(StringBuilder builder, object value)
+        private static void WriteObject(StringBuilder builder, object? value)
         {
+            if (value is null)
+            {
+                builder.Append("null");
+                return;
+            }
+            
             if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
             {
                 builder.Append(formattedValue);
@@ -81,31 +84,39 @@ namespace NGql.Core
                 builder.Append(suffix);
             }
 
+            var valueType = value.GetType();
+            if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+            {
+                var kvp = (dynamic)value;
+                builder.Append(kvp.Key);
+                builder.Append(':');
+
+                WriteObject(builder, kvp.Value);
+                return;
+            }
+
             switch (value)
             {
-                case KeyValuePair<string, object>(var key, var o):
-                    builder.Append(key);
-                    builder.Append(':');
-
-                    WriteObject(builder, o);
-                    break;
-
                 case IList listValue:
+                {
                     WriteCollection('[', ']', listValue);
                     break;
+                }
 
                 case IDictionary dictValue:
+                {
                     WriteCollection('{', '}', dictValue);
                     break;
-
-                case { } obj:
-                    var values = obj.GetType().GetProperties()
-                        .ToDictionary(x => x.Name, x => x.GetValue(obj));
-                    WriteCollection('{', '}', values);
-                    break;
+                }
 
                 default:
-                    throw new InvalidOperationException("Unsupported Query argument type found: " + value.GetType());
+                {
+                    var values = valueType
+                        .GetProperties()
+                        .ToDictionary(x => x.Name, x => x.GetValue(value));
+                    WriteCollection('{', '}', values);
+                    break;
+                }
             }
         }
 
