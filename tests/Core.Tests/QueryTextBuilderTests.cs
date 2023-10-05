@@ -94,16 +94,33 @@ namespace NGql.Core.Tests
         }
 
         [Fact]
-        public void BuildQueryParam_Parse_Dictionary()
+        public void BuildQueryParam_Parse_String_Dictionary()
         {
             // act
-            var valueString = BuildQueryParam(new Dictionary<string, object>
+            var valueString = BuildQueryParam(new Dictionary<string, string>
             {
-                {"numbers", new [] { 123, 456, 789}}
+                {"k1", "v1"},
+                {"k2", "v2"}
             });
 
             // assert
-            valueString.Should().Be("{numbers:[123, 456, 789]}");
+            valueString.Should().Be("{k1:\"v1\", k2:\"v2\"}");
+        }
+        
+        [Fact]
+        public void BuildQueryParam_Parse_Object_Dictionary()
+        {
+            // act
+            var valueString = BuildQueryParam(new Dictionary<string, object?>
+            {
+                {"numbers", new [] { 123, 456, 789}},
+                {"k1", "v1"},
+                {"k2", 4.2},
+                {"k3", null}
+            });
+
+            // assert
+            valueString.Should().Be("{numbers:[123, 456, 789], k1:\"v1\", k2:4.2, k3:null}");
         }
 
         [Fact]
