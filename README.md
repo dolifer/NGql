@@ -1,7 +1,7 @@
 ![Project Logo](https://raw.githubusercontent.com/dolifer/NGql/main/icon.png) 
 # NGql
 
-Schemaless GraphQL client for .NET Core.
+Schemaless GraphQL query builder for .NET Coren with fluent syntax. Zero dependencies.
 
 [![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 
@@ -13,7 +13,7 @@ dotnet add package NGql.Core
 
 # Usage
 
-Core library allows creation of `Query` and `Mutation`'s.
+Library allows creation of `Query` and `Mutation`'s.
 Both have an implicit conversion to `string`.
 
 ## Query
@@ -66,6 +66,7 @@ Variables allows to reuse existing queries and mutations instead of building the
 ### Passing variables
 
 ```c#
+// define a variable
 var variable = new Variable("$name", "String");
 
 // pass as constructor parameter
@@ -79,28 +80,4 @@ the output will be the following
 query name($name:String){
     id
 }
-```
-# Getting data from server
-
-You can check [QueryTests](https://github.com/dolifer/NGql/blob/main/tests/Core.IntegrationTests/QueryTests.cs) that uses [GraphQL.Client](https://github.com/graphql-dotnet/graphql-client) 
-
-```c#
-var graphQLClient = new GraphQLHttpClient("http://swapi.apis.guru/", new NewtonsoftJsonSerializer());
-
-var query = new Query("PersonAndFilms")
-    .Select(new Query("person")
-        .Where("id", "cGVvcGxlOjE=")
-        .Select("name")
-        .Select(new Query("filmConnection")
-            .Select(new Query("films")
-                .Select("title")))
-    );
-
-var request = new GraphQLRequest
-{
-    Query = query
-};
-var graphQLResponse = await graphQLClient.SendQueryAsync<ResponseType>(request);
-
-var personName = graphQLResponse.Data.Person.Name;
 ```
