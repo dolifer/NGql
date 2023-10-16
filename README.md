@@ -1,7 +1,7 @@
 ![Project Logo](https://raw.githubusercontent.com/dolifer/NGql/main/icon.png) 
 # NGql
 
-Schemaless GraphQL query builder for .NET Coren with fluent syntax. Zero dependencies.
+Schemaless GraphQL query builder for .NET Core with fluent syntax. Zero dependencies.
 
 [![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 
