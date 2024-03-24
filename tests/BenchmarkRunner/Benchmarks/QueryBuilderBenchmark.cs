@@ -1,9 +1,13 @@
 ﻿using System;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Jobs;
 using NGql.Core;
 
 namespace Benchmarks.Benchmarks
 {
+    [SimpleJob(RuntimeMoniker.Net60, baseline:true)]
+    [SimpleJob(RuntimeMoniker.Net70)]
+    [SimpleJob(RuntimeMoniker.Net80)]
     [MemoryDiagnoser]
     public class QueryBuilderBenchmark
     {

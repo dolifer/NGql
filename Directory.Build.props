@@ -16,7 +16,7 @@
   <PropertyGroup>
     <!-- Use the latest released C# language version -->
     <LangVersion>latest</LangVersion>
-    <TargetFrameworks>net6.0;net7.0</TargetFrameworks>
+    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
