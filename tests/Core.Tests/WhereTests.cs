@@ -7,6 +7,28 @@ namespace NGql.Core.Tests
     public class WhereTests
     {
         [Fact]
+        public void Where_VariableArgument_AddsToWhere()
+        {
+            // arrange
+            var variable = new Variable("$id", "Int");
+            var query = new Query("name");
+
+            // act
+            query.Where("id", variable);
+
+            // assert
+            query.Arguments.Should().ContainKey("id").WhoseValue.Should().Be(variable);
+
+            // act
+            var queryText = query.ToString();
+
+            // assert
+            query.Variables.Should().BeEquivalentTo([variable]);
+            queryText.Should().Be(@"query name($id:Int){
+}");
+        }
+        
+        [Fact]
         public void Where_NumberArgument_AddsToWhere()
         {
             // arrange
@@ -39,6 +61,90 @@ namespace NGql.Core.Tests
             query.Arguments.Should().ContainKey("name").WhoseValue.Should().Be("John");
         }
 
+        [Fact]
+        public void Where_Dictionary_Variable_AddsToWhere()
+        {
+            // arrange
+            var toVariable = new Variable("$to", "Int");
+            var fromVariable = new Variable("$from", "Int");
+            var query = new Query("name", variables: toVariable);
+            Dictionary<string, object> ageFilter = new()
+            {
+                {"to", toVariable},
+                {"from", fromVariable}
+            };
+
+            // act
+            var queryText = query.Where(ageFilter).ToString();
+
+            // assert
+            query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
+            
+            query.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
+            query.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
+            
+            queryText.Should().Be(@"query name($from:Int, $to:Int){
+}");
+        }
+        
+        [Fact]
+        public void Where_SubQuery_Variable_AddsToWhere()
+        {
+            // arrange
+            var toVariable = new Variable("$to", "Int");
+            var fromVariable = new Variable("$from", "Int");
+            var query = new Query("name");
+            var subQuery = new Query("nested", variables: toVariable);
+            Dictionary<string, object> ageFilter = new()
+            {
+                {"to", toVariable},
+                {"from", fromVariable}
+            };
+
+            // act
+            var queryText = query.Select(subQuery.Where(ageFilter)).ToString();
+
+            // assert
+            query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
+            subQuery.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
+            
+            subQuery.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
+            subQuery.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
+            
+            queryText.Should().Be(@"query name($from:Int, $to:Int){
+    nested(from:$from, to:$to){
+    }
+}");
+        }
+        
+        [Fact]
+        public void Where_Multiple_Variables_Sorted_RootQuery()
+        {
+            // arrange
+            var variableA = new Variable("$a", "Int");
+            var variableB = new Variable("$b", "Int");
+            var variableC = new Variable("$c", "Int");
+            var query = new Query("name", variables: [variableC, variableB, variableC]);
+
+            // act
+            query.Where("propB", variableB)
+                .Where("propB2", variableB)
+                .Where("propA", variableA);
+
+            // assert
+            query.Arguments.Should().ContainKey("propA").WhoseValue.Should().Be(variableA);
+            query.Arguments.Should().ContainKey("propB").WhoseValue.Should().Be(variableB);
+            query.Arguments.Should().ContainKey("propB2").WhoseValue.Should().Be(variableB);
+
+            // act
+            var queryText = query.ToString();
+
+            // assert
+            query.Variables.Should().BeEquivalentTo([variableA, variableB, variableC]);
+            queryText.Should().Be(@"query name($a:Int, $b:Int, $c:Int){
+}");
+        }
+        
         [Fact]
         public void Where_Dictionary_AddsToWhere()
         {

@@ -33,9 +33,7 @@ namespace NGql.Core
 
             _stringBuilder.Append(queryBlock.Name);
 
-            AddVariables(queryBlock);
-
-            AddArguments(queryBlock);
+            AddArguments(queryBlock, indent == 0);
             indent += IndentSize;
 
             AddFields(queryBlock, prevPad, indent);
@@ -146,41 +144,30 @@ namespace NGql.Core
             _stringBuilder.Append('}');
         }
 
-        private void AddVariables(QueryBlock queryBlock)
+        private void AddArguments(QueryBlock queryBlock, bool isRootElement)
         {
-            if (queryBlock.Variables.Count == 0)
+            var arguments = GetArguments(queryBlock, isRootElement);
+
+            if (arguments.Count == 0)
                 return;
 
             _stringBuilder.Append('(');
 
             var hasValues = false;
-            foreach (var variable in queryBlock.Variables)
+            var printedVariables = new HashSet<string>();
+            
+            foreach (var (key, value) in arguments)
             {
-                _stringBuilder.Append(variable.Name);
-                _stringBuilder.Append(':');
-                _stringBuilder.Append(variable.Type);
-                _stringBuilder.Append(", ");
-                hasValues = true;
-            }
-
-            if (hasValues)
-            {
-                _stringBuilder.Length -= 2;
-            }
-
-            _stringBuilder.Append(')');
-        }
-
-        private void AddArguments(QueryBlock queryBlock)
-        {
-            if (queryBlock.Arguments.Count == 0)
-                return;
-
-            _stringBuilder.Append('(');
-
-            var hasValues = false;
-            foreach (var (key, value) in queryBlock.Arguments)
-            {
+                if (value is Variable variable && printedVariables.Add(variable.Name))
+                {
+                    _stringBuilder.Append(isRootElement ? variable.Name : key);
+                    _stringBuilder.Append(':');
+                    _stringBuilder.Append(isRootElement? variable.Type : variable.Name);
+                    _stringBuilder.Append(", ");
+                    hasValues = true;
+                    continue;
+                }
+                
                 _stringBuilder.Append(key);
                 _stringBuilder.Append(':');
 
@@ -196,6 +183,43 @@ namespace NGql.Core
             }
 
             _stringBuilder.Append(')');
+        }
+
+        private static IReadOnlyDictionary<string, object> GetArguments(QueryBlock queryBlock, bool isRootElement)
+        {
+            var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
+
+            foreach (var kvp in queryBlock.Arguments)
+            {
+                var existingArgument = arguments.Values
+                    .FirstOrDefault(x => x is Variable v && v.Name == kvp.Key);
+
+                if (existingArgument is not null)
+                {
+                    continue;
+                }
+                
+                if (kvp.Value is Variable variable)
+                {
+                    arguments[isRootElement ? variable.Name: kvp.Key] = kvp.Value;
+                    continue;
+                }
+                        
+                arguments[kvp.Key] = kvp.Value;
+            }
+
+            foreach (var variable in queryBlock.Variables)
+            {
+                var existingArgument = arguments.Values
+                    .FirstOrDefault(x => x is Variable v && v.Name == variable.Name);
+
+                if (existingArgument is null)
+                {
+                    arguments[variable.Name] = variable;
+                }
+            }
+
+            return arguments;
         }
     }
 }
