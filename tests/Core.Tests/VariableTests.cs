@@ -1,3 +1,4 @@
+using System;
 using FluentAssertions;
 using Xunit;
 
@@ -5,40 +6,100 @@ namespace NGql.Core.Tests;
 
 public class VariableTests
 {
-    [Fact]
-    public void Test_Equals()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Test_Create_Bad_Type(string type)
     {
-        var variable1 = new Variable("$name", "String");
-        var variable2 = new Variable("$name", "String");
-        var variable3 = new Variable("$name", "Int");
-
-        variable1.Equals(variable2).Should().BeTrue();
-        variable2.Equals(variable1).Should().BeTrue();
-        variable1.Equals(variable3).Should().BeFalse();
+        var exception = Assert.Throws<ArgumentException>(() => new Variable("$name", type));
         
-        (variable1 == variable2).Should().BeTrue();
-        (variable2 == variable1).Should().BeTrue();
+        exception.Message.Should().Be("Variable type cannot be null or whitespace. (Parameter 'type')");
+    }
+    
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void Test_Create_Bad_Name(string name)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => new Variable(name, "String"));
         
-        (variable1 != variable3).Should().BeTrue();
-        (variable3 != variable1).Should().BeTrue();
-
-        (variable2 != variable3).Should().BeTrue();
-        (variable3 != variable2).Should().BeTrue();
+        exception.Message.Should().Be("Variable name cannot be null or whitespace. (Parameter 'name')");
     }
     
     [Fact]
-    public void Test_Compare()
+    public void Test_Create_StartsWithDollarSign()
     {
-        var variable1 = new Variable("$a", "String");
-        var variable2 = new Variable("$b", "String");
-        var variable3 = new Variable("$a", "String");
-
-        (variable1 < variable2).Should().BeTrue();
-        (variable1 > variable2).Should().BeFalse();
-        (variable1 <= variable3).Should().BeTrue();
+        var exception = Assert.Throws<ArgumentException>(() => new Variable("name", "String"));
         
-        (variable2 > variable3).Should().BeTrue();
-        (variable3 < variable2).Should().BeTrue();
-        (variable2 >= variable1).Should().BeTrue();
+        exception.Message.Should().Be("Variable name must start with '$'. (Parameter 'name')");
+    }
+    
+    [Fact]
+    public void Test_CompareTo()
+    {
+        var name = new Variable("$name", "String");
+        
+        var exception = Assert.Throws<ArgumentException>(() => name.CompareTo(new{}));
+        
+        exception.Message.Should().Be("Object must be of type Variable");
+    }
+
+    [Fact]
+    public void Test_ToString()
+    {
+        var name = new Variable("$name", "String");
+        var age = new Variable("$age", "Int");
+        
+        name.ToString().Should().Be("$name:String");
+        age.ToString().Should().Be("$age:Int");
+    }
+
+    [Fact]
+    public void Test_Equals()
+    {
+        var name1 = new Variable("$name", "String");
+        var name2 = new Variable("$name", "String");
+        var name3Int = new Variable("$name", "Int");
+
+        name1.Equals(name2).Should().BeTrue();
+        name2.Equals(name1).Should().BeTrue();
+
+        name1.Equals(name3Int).Should().BeFalse();
+        name2.Equals(name3Int).Should().BeFalse();
+        
+        (name1 == name2).Should().BeTrue();
+        (name2 == name1).Should().BeTrue();
+        
+        (name1 != name3Int).Should().BeTrue();
+        (name2 != name3Int).Should().BeTrue();
+        
+        (name3Int != name1).Should().BeTrue();
+        (name3Int != name2).Should().BeTrue();
+    }
+    
+    // ReSharper disable EqualExpressionComparison
+    [Fact]
+    public void Test_Equality()
+    {
+        var a = new Variable("$a", "String");
+        var b = new Variable("$b", "String");
+
+        (a != a).Should().BeFalse();
+        
+        (a > a).Should().BeFalse();
+        (a < a).Should().BeFalse();
+
+        (a > b).Should().BeFalse();
+        (a >= b).Should().BeFalse();
+        
+        (a == a).Should().BeTrue();
+        
+        (a >= a).Should().BeTrue();
+        (a <= a).Should().BeTrue();
+        
+        (a < b).Should().BeTrue();
+        (a <= b).Should().BeTrue();
     }
 }

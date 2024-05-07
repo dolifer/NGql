@@ -61,24 +61,20 @@ namespace NGql.Core
                 return;
             }
 
-            void WriteCollection(char prefix, char suffix, IEnumerable list)
+            void WriteCollection(char prefix, char suffix, IEnumerable list, int count)
             {
+                if (count == 0)
+                    return;
+                
                 builder.Append(prefix);
 
-                var hasValues = false;
                 foreach (var obj in list)
                 {
                     WriteObject(builder, obj);
                     builder.Append(", ");
-                    hasValues = true;
                 }
-
-                // strip comma-space if list was not empty
-                if (hasValues)
-                {
-                    builder.Length -= 2;
-                }
-
+                
+                builder.Length -= 2;
                 builder.Append(suffix);
             }
 
@@ -97,13 +93,13 @@ namespace NGql.Core
             {
                 case IList listValue:
                 {
-                    WriteCollection('[', ']', listValue);
+                    WriteCollection('[', ']', listValue, listValue.Count);
                     break;
                 }
 
                 case IDictionary dictValue:
                 {
-                    WriteCollection('{', '}', dictValue);
+                    WriteCollection('{', '}', dictValue, dictValue.Count);
                     break;
                 }
 
@@ -112,7 +108,7 @@ namespace NGql.Core
                     var values = valueType
                         .GetProperties()
                         .ToDictionary(x => x.Name, x => x.GetValue(value));
-                    WriteCollection('{', '}', values);
+                    WriteCollection('{', '}', values, values.Count);
                     break;
                 }
             }
@@ -153,7 +149,6 @@ namespace NGql.Core
 
             _stringBuilder.Append('(');
 
-            var hasValues = false;
             var printedVariables = new HashSet<string>();
             
             foreach (var (key, value) in arguments)
@@ -164,7 +159,6 @@ namespace NGql.Core
                     _stringBuilder.Append(':');
                     _stringBuilder.Append(isRootElement? variable.Type : variable.Name);
                     _stringBuilder.Append(", ");
-                    hasValues = true;
                     continue;
                 }
                 
@@ -174,14 +168,9 @@ namespace NGql.Core
                 WriteObject(_stringBuilder, value);
 
                 _stringBuilder.Append(", ");
-                hasValues = true;
             }
 
-            if (hasValues)
-            {
-                _stringBuilder.Length -= 2;
-            }
-
+            _stringBuilder.Length -= 2;
             _stringBuilder.Append(')');
         }
 
