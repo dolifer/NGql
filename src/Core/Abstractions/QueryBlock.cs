@@ -1,12 +1,15 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NGql.Core.Abstractions
 {
     public sealed class QueryBlock
     {
         private readonly string _prefix;
-        private readonly Dictionary<string, object> _arguments;
-        private readonly List<Variable> _variables;
+        private readonly SortedDictionary<string, object> _arguments;
+        private readonly SortedSet<Variable> _variables;
         private readonly List<object> _fieldsList;
 
         /// <summary>
@@ -20,9 +23,9 @@ namespace NGql.Core.Abstractions
         public IReadOnlyDictionary<string, object> Arguments => _arguments;
 
         /// <summary>
-        /// The collection of variables related to <see cref="FieldsList"/>.
+        /// The collection of variables related to <see cref="FieldsList"/> or <see cref="Arguments"/>.
         /// </summary>
-        public IReadOnlyList<Variable> Variables => _variables;
+        public IReadOnlyCollection<Variable> Variables => _variables;
 
         /// <summary>
         /// The Query name.
@@ -39,7 +42,7 @@ namespace NGql.Core.Abstractions
         /// </summary>
         /// <param name="variable">The variable</param>
         public void AddVariable(Variable variable)
-            => _variables.Add(variable);
+            => HandleAddVariable(variable);
 
         /// <summary>
         /// Adds the variable with give name into <see cref="Variables"/> part of the query.
@@ -47,7 +50,7 @@ namespace NGql.Core.Abstractions
         /// <param name="name">The variable name</param>
         /// <param name="type">The value of the variable</param>
         public void AddVariable(string name, string type)
-            => _variables.Add(new Variable(name, type));
+            => HandleAddVariable(new Variable(name, type));
 
         /// <summary>
         /// Adds the given generic list to the <see cref="FieldsList"/> part of the query.
@@ -57,7 +60,7 @@ namespace NGql.Core.Abstractions
         /// </remarks>
         /// <param name="selectList">Generic list of select fields.</param>
         public void AddField(IEnumerable<object> selectList)
-            => _fieldsList.AddRange(selectList);
+            => HandleAddField(selectList);
 
         /// <summary>
         /// Adds the given list of strings to the <see cref="FieldsList"/> part of the query.
@@ -65,7 +68,7 @@ namespace NGql.Core.Abstractions
         /// <param name="selects">List of strings.</param>
         /// <returns>Query</returns>
         public void AddField(params string[] selects)
-            => _fieldsList.AddRange(selects);
+            => HandleAddField(selects);
 
         /// <summary>
         /// Adds the given sub query to the <see cref="FieldsList"/> part of the query.
@@ -73,7 +76,7 @@ namespace NGql.Core.Abstractions
         /// <param name="subQuery">A sub-query.</param>
         /// <returns>Query</returns>
         public void AddField(QueryBlock subQuery)
-            => _fieldsList.Add(subQuery);
+            => HandleAddField(subQuery);
 
         /// <summary>
         /// Adds the given key into <see cref="Arguments"/> part of the query.
@@ -82,7 +85,7 @@ namespace NGql.Core.Abstractions
         /// <param name="where">The value of the parameter, primitive or object</param>
         /// <returns></returns>
         public void AddArgument(string key, object where)
-            => _arguments.Add(key, where);
+            => HandleAddArgument(key, where);
 
         /// <summary>
         /// Add a dict of key value pairs &lt;string, object&gt; into <see cref="Arguments"/> part of the query.
@@ -93,7 +96,7 @@ namespace NGql.Core.Abstractions
         public void AddArgument(Dictionary<string, object> dict)
         {
             foreach (var (key, value) in dict)
-                _arguments.Add(key, value);
+                HandleAddArgument(key, value);
         }
 
         public QueryBlock(string name, string prefix, string? alias = null, params Variable[]? variables)
@@ -103,8 +106,8 @@ namespace NGql.Core.Abstractions
             Alias = alias;
 
             _fieldsList = new List<object>();
-            _variables = variables is null ? new List<Variable>() : new List<Variable>(variables);
-            _arguments = new Dictionary<string, object>();
+            _variables = variables is null ? [] : [..variables.DistinctBy(x => x.Name)];
+            _arguments = new SortedDictionary<string, object>();
         }
 
         /// <summary>
@@ -113,5 +116,53 @@ namespace NGql.Core.Abstractions
         /// <returns>The GraphQL Query String</returns>
         /// <throws>ArgumentException</throws>
         public override string ToString() => new QueryTextBuilder().Build(this, prefix: _prefix);
+        
+        private void HandleAddField(object value)
+        {
+            if (value is QueryBlock subQuery)
+            {
+                foreach (var variable in subQuery.Variables)
+                {
+                    _variables.Add(variable);
+                }
+                
+                _fieldsList.Add(subQuery);
+                
+                return;
+            }
+            
+            if (value is string field)
+            {
+                _fieldsList.Add(field);
+                return;
+            }
+            
+            if (value is IList list)
+            {
+                foreach (var item in list)
+                {
+                    HandleAddField(item);
+                }
+                
+                return;
+            }
+            
+            throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
+        }
+        
+        private void HandleAddVariable(Variable variable)
+        {
+            _variables.Add(variable);
+        }
+        
+        private void HandleAddArgument(string key, object value)
+        {
+            if (value is Variable variable)
+            {
+                _variables.Add(variable);
+            }
+
+            _arguments[key] = value;
+        }
     }
 }
