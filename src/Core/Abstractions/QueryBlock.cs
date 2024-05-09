@@ -157,12 +157,25 @@ namespace NGql.Core.Abstractions
         
         private void HandleAddArgument(string key, object value)
         {
+            HandleArgumentsVariables(value);
+
+            _arguments[key] = value;
+        }
+        
+        private void HandleArgumentsVariables(object value)
+        {
             if (value is Variable variable)
             {
                 _variables.Add(variable);
             }
 
-            _arguments[key] = value;
+            if (value is IDictionary dict)
+            {
+                foreach (var k in dict.Values)
+                {
+                    HandleArgumentsVariables(k);
+                }
+            }
         }
     }
 }
