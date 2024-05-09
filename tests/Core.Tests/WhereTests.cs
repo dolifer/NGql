@@ -88,6 +88,34 @@ namespace NGql.Core.Tests
         }
         
         [Fact]
+        public void Where_NestedDictionary_Variable_AddsToWhere()
+        {
+            // arrange
+            var toVariable = new Variable("$to", "Int");
+            var fromVariable = new Variable("$from", "Int");
+            var query = new Query("name");
+            Dictionary<string, object> ageFilter = new()
+            {
+                {"to", toVariable},
+                {"from", fromVariable}
+            };
+
+            // act
+            var queryText = query.Where("filters", ageFilter).ToString();
+
+            // assert
+            query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
+            
+            var value = query.Arguments.Should().ContainKey("filters").WhoseValue as IDictionary<string, object>;
+            
+            value.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
+            value.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
+            
+            queryText.Should().Be(@"query name($from:Int, $to:Int, filters:{to:$to, from:$from}){
+}");
+        }
+        
+        [Fact]
         public void Where_SubQuery_Variable_AddsToWhere()
         {
             // arrange
