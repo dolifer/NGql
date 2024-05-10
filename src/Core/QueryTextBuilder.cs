@@ -150,31 +150,58 @@ namespace NGql.Core
             _stringBuilder.Append('(');
 
             var printedVariables = new HashSet<string>();
-            
+            var printed = false;
             foreach (var (key, value) in arguments)
             {
-                if (value is Variable variable && printedVariables.Add(variable.Name))
+                switch (value)
                 {
-                    _stringBuilder.Append(isRootElement ? variable.Name : key);
-                    _stringBuilder.Append(':');
-                    _stringBuilder.Append(isRootElement? variable.Type : variable.Name);
-                    _stringBuilder.Append(", ");
-                    continue;
+                    case Variable v when !isRootElement:
+                        if (!queryBlock.Arguments.ContainsKey(key))
+                        {
+                            continue;
+                        }
+
+                        if (!printedVariables.Add(v.Name))
+                        {
+                            continue;
+                        }
+                        
+                        _stringBuilder.Append(key);
+                        _stringBuilder.Append(':');
+                        _stringBuilder.Append(v.Name);
+                        _stringBuilder.Append(", ");
+
+                        printed = true;
+                        continue;
+                    case Variable variable when printedVariables.Add(variable.Name) && isRootElement:
+                        _stringBuilder.Append(variable.Name);
+                        _stringBuilder.Append(':');
+                        _stringBuilder.Append(variable.Type);
+                        _stringBuilder.Append(", ");
+
+                        printed = true;
+                        continue;
                 }
-                
+
                 _stringBuilder.Append(key);
                 _stringBuilder.Append(':');
 
                 WriteObject(_stringBuilder, value);
 
                 _stringBuilder.Append(", ");
+                
+                printed = true;
             }
 
-            _stringBuilder.Length -= 2;
+            if (printed)
+            {
+                _stringBuilder.Length -= 2;
+            }
+
             _stringBuilder.Append(')');
         }
 
-        private static IReadOnlyDictionary<string, object> GetArguments(QueryBlock queryBlock, bool isRootElement)
+        private static SortedDictionary<string, object> GetArguments(QueryBlock queryBlock, bool isRootElement)
         {
             var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
 
