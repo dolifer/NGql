@@ -196,9 +196,12 @@ namespace NGql.Core
             if (printed)
             {
                 _stringBuilder.Length -= 2;
+                _stringBuilder.Append(')');
             }
-
-            _stringBuilder.Append(')');
+            else
+            {
+                _stringBuilder.Length -= 1;
+            }
         }
 
         private static SortedDictionary<string, object> GetArguments(QueryBlock queryBlock, bool isRootElement)
