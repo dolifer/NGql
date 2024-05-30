@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 
 namespace NGql.Core
 {
@@ -49,7 +50,15 @@ namespace NGql.Core
             var nameComparison = string.Compare(Name, other.Name, StringComparison.Ordinal);
             return nameComparison != 0 ? nameComparison : string.Compare(Type, other.Type, StringComparison.Ordinal);
         }
-        
+
+        internal void Print(StringBuilder builder, string key, bool isRootElement)
+        {
+            builder.Append(isRootElement ? Name : key);
+            builder.Append(':');
+            builder.Append(isRootElement ? Type : Name);
+            builder.Append(", ");
+        }
+
         public static bool operator ==(Variable left, Variable right) => left.Equals(right);
         public static bool operator !=(Variable left, Variable right) => !left.Equals(right);
         

@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using FluentAssertions;
 using Xunit;
 
@@ -6,6 +7,29 @@ namespace NGql.Core.Tests
 {
     public class WhereTests
     {
+        [Fact]
+        public void Where_Empty_ReturnsEmptyObject()
+        {
+            // arrange
+            var query = new Query("name");
+
+            // act
+            query.Where(new Dictionary<string, object>()
+            {
+                {"filter1", new{}},
+                {"filter2", Array.Empty<int>()},
+                {"filter3", null},
+                {"filter4", 42}
+            });
+
+            // assert
+            query.FieldsList.Should().BeEmpty();
+            
+            string queryText = query.ToString();
+            queryText.Should().Be(@"query name(filter1:{}, filter2:[], filter3:null, filter4:42){
+}");
+        }
+        
         [Fact]
         public void Where_VariableArgument_AddsToWhere()
         {
@@ -119,10 +143,11 @@ namespace NGql.Core.Tests
         public void Where_SubQuery_Variable_AddsToWhere()
         {
             // arrange
+            var rootVariable = new Variable("$useCache", "Boolean");
             var toVariable = new Variable("$to", "Int");
             var fromVariable = new Variable("$from", "Int");
-            var query = new Query("name");
-            var subQuery = new Query("nested", variables: toVariable);
+            var query = new Query("name", variables: [rootVariable,rootVariable]);
+            var subQuery = new Query("nested", variables: [toVariable, toVariable]);
             Dictionary<string, object> ageFilter = new()
             {
                 {"to", toVariable},
@@ -133,13 +158,13 @@ namespace NGql.Core.Tests
             var queryText = query.Select(subQuery.Where(ageFilter)).ToString();
 
             // assert
-            query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
+            query.Variables.Should().BeEquivalentTo([fromVariable, toVariable, rootVariable]);
             subQuery.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
             
             subQuery.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
             subQuery.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
             
-            queryText.Should().Be(@"query name($from:Int, $to:Int){
+            queryText.Should().Be(@"query name($from:Int, $to:Int, $useCache:Boolean){
     nested(from:$from, to:$to){
     }
 }");

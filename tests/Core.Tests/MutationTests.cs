@@ -82,6 +82,7 @@ namespace NGql.Core.Tests
             var nestedMutation = new Query("createUser")
                 .Where("name", nameVar)
                 .Where("password", passVar)
+                .Where("password", passVar)
                 .Select("id", "name");
 
             // act

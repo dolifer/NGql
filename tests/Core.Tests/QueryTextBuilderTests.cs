@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Text;
 using FluentAssertions;
 using Xunit;
 using static NGql.Core.QueryTextBuilder;
@@ -133,6 +134,13 @@ namespace NGql.Core.Tests
             );
 
             exception.Message.Should().Be("Unsupported Field type found, must be a `string` or `QueryBlock`");
+        }
+
+        private static string BuildQueryParam(object value)
+        {
+            var builder = new StringBuilder();
+            WriteObject(builder, value);
+            return builder.ToString();
         }
     }
 }

@@ -1,9 +1,9 @@
-﻿using System;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 
 namespace NGql.Core
 {
@@ -17,7 +17,7 @@ namespace NGql.Core
             string pad = new(' ', indent);
             string prevPad = pad;
 
-            if (!string.IsNullOrWhiteSpace(queryBlock.Alias))
+            if (!string.IsNullOrWhiteSpace(queryBlock.Alias) && indent != 0)
             {
                 _stringBuilder.Append(pad);
                 _stringBuilder.Append(queryBlock.Alias);
@@ -40,14 +40,7 @@ namespace NGql.Core
             return _stringBuilder.ToString();
         }
 
-        public static string BuildQueryParam(object value)
-        {
-            var builder = new StringBuilder();
-            WriteObject(builder, value);
-            return builder.ToString();
-        }
-
-        private static void WriteObject(StringBuilder builder, object? value)
+        internal static void WriteObject(StringBuilder builder, object? value)
         {
             if (value is null)
             {
@@ -59,23 +52,6 @@ namespace NGql.Core
             {
                 builder.Append(formattedValue);
                 return;
-            }
-
-            void WriteCollection(char prefix, char suffix, IEnumerable list, int count)
-            {
-                if (count == 0)
-                    return;
-                
-                builder.Append(prefix);
-
-                foreach (var obj in list)
-                {
-                    WriteObject(builder, obj);
-                    builder.Append(", ");
-                }
-                
-                builder.Length -= 2;
-                builder.Append(suffix);
             }
 
             var valueType = value.GetType();
@@ -93,13 +69,13 @@ namespace NGql.Core
             {
                 case IList listValue:
                 {
-                    WriteCollection('[', ']', listValue, listValue.Count);
+                    WriteCollection('[', ']', listValue, listValue.Count, builder);
                     break;
                 }
 
                 case IDictionary dictValue:
                 {
-                    WriteCollection('{', '}', dictValue, dictValue.Count);
+                    WriteCollection('{', '}', dictValue, dictValue.Count, builder);
                     break;
                 }
 
@@ -108,14 +84,37 @@ namespace NGql.Core
                     var values = valueType
                         .GetProperties()
                         .ToDictionary(x => x.Name, x => x.GetValue(value));
-                    WriteCollection('{', '}', values, values.Count);
+                    WriteCollection('{', '}', values, values.Count, builder);
                     break;
                 }
             }
         }
 
+        private static void WriteCollection(char prefix, char suffix, IEnumerable list, int count, StringBuilder builder)
+        {
+            builder.Append(prefix);
+
+            foreach (var obj in list)
+            {
+                WriteObject(builder, obj);
+                builder.Append(", ");
+            }
+
+            if (count != 0)
+            {
+                builder.Length -= 2;
+            }
+
+            builder.Append(suffix);
+        }
+
         private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
         {
+            if (queryBlock.IsEmpty)
+            {
+                return;
+            }
+
             _stringBuilder.AppendLine("{");
             string padding = new(' ', indent);
 
@@ -131,8 +130,6 @@ namespace NGql.Core
                         QueryTextBuilder builder = new();
                         _stringBuilder.AppendLine(builder.Build(subQuery, indent));
                         break;
-                    default:
-                        throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
                 }
             }
 
@@ -142,45 +139,21 @@ namespace NGql.Core
 
         private void AddArguments(QueryBlock queryBlock, bool isRootElement)
         {
-            var arguments = GetArguments(queryBlock, isRootElement);
+            var arguments = queryBlock.GetArguments(isRootElement);
 
             if (arguments.Count == 0)
+            {
                 return;
-
+            }
+            
             _stringBuilder.Append('(');
 
-            var printedVariables = new HashSet<string>();
-            var printed = false;
             foreach (var (key, value) in arguments)
             {
-                switch (value)
+                if (value is Variable variable)
                 {
-                    case Variable v when !isRootElement:
-                        if (!queryBlock.Arguments.ContainsKey(key))
-                        {
-                            continue;
-                        }
-
-                        if (!printedVariables.Add(v.Name))
-                        {
-                            continue;
-                        }
-                        
-                        _stringBuilder.Append(key);
-                        _stringBuilder.Append(':');
-                        _stringBuilder.Append(v.Name);
-                        _stringBuilder.Append(", ");
-
-                        printed = true;
-                        continue;
-                    case Variable variable when printedVariables.Add(variable.Name) && isRootElement:
-                        _stringBuilder.Append(variable.Name);
-                        _stringBuilder.Append(':');
-                        _stringBuilder.Append(variable.Type);
-                        _stringBuilder.Append(", ");
-
-                        printed = true;
-                        continue;
+                    variable.Print(_stringBuilder, key, isRootElement);
+                    continue;
                 }
 
                 _stringBuilder.Append(key);
@@ -189,56 +162,10 @@ namespace NGql.Core
                 WriteObject(_stringBuilder, value);
 
                 _stringBuilder.Append(", ");
-                
-                printed = true;
             }
 
-            if (printed)
-            {
-                _stringBuilder.Length -= 2;
-                _stringBuilder.Append(')');
-            }
-            else
-            {
-                _stringBuilder.Length -= 1;
-            }
-        }
-
-        private static SortedDictionary<string, object> GetArguments(QueryBlock queryBlock, bool isRootElement)
-        {
-            var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
-
-            foreach (var kvp in queryBlock.Arguments)
-            {
-                var existingArgument = arguments.Values
-                    .FirstOrDefault(x => x is Variable v && v.Name == kvp.Key);
-
-                if (existingArgument is not null)
-                {
-                    continue;
-                }
-                
-                if (kvp.Value is Variable variable)
-                {
-                    arguments[isRootElement ? variable.Name: kvp.Key] = kvp.Value;
-                    continue;
-                }
-                        
-                arguments[kvp.Key] = kvp.Value;
-            }
-
-            foreach (var variable in queryBlock.Variables)
-            {
-                var existingArgument = arguments.Values
-                    .FirstOrDefault(x => x is Variable v && v.Name == variable.Name);
-
-                if (existingArgument is null)
-                {
-                    arguments[variable.Name] = variable;
-                }
-            }
-
-            return arguments;
+            _stringBuilder.Length -= 2;
+            _stringBuilder.Append(')');
         }
     }
 }
