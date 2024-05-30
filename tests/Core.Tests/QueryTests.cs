@@ -1,4 +1,6 @@
 ﻿using System.Collections.Generic;
+using System.Runtime.Serialization;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Xunit;
 
@@ -18,6 +20,11 @@ namespace NGql.Core.Tests
 
             query.FieldsList.Should().BeEmpty();
             query.Arguments.Should().BeEmpty();
+            
+            string queryText = query;
+
+            queryText.Should().Be(@"query name{
+}");
         }
 
         [Fact]
@@ -32,6 +39,11 @@ namespace NGql.Core.Tests
 
             query.FieldsList.Should().BeEmpty();
             query.Arguments.Should().BeEmpty();
+            
+            string queryText = query;
+
+            queryText.Should().Be(@"query name{
+}");
         }
 
         [Fact]
@@ -45,8 +57,13 @@ namespace NGql.Core.Tests
 
             // assert
             query.Alias.Should().Be("alias");
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+    id
+}");
         }
-
+        
         [Fact]
         public void Select_String_AddsToSelectList()
         {
@@ -58,6 +75,67 @@ namespace NGql.Core.Tests
 
             // assert
             query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+    id
+    name
+}");
+        }
+        
+        [Theory]
+        [InlineData("")]
+        [InlineData(" ")]
+        public void Select_String_ReturnsEmptyQuery(string item)
+        {
+            // arrange
+            var query = new Query("name");
+
+            // act
+            query.Select(item);
+
+            // assert
+            query.FieldsList.Should().BeEmpty();
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+}");
+        }
+        
+        [Theory]
+        [InlineData("")]
+        [InlineData(" ")]
+        public void Select_Object_ReturnsEmptyQuery(string item)
+        {
+            // arrange
+            var query = new Query("name");
+
+            // act
+            query.Select(new object[] { item });
+
+            // assert
+            query.FieldsList.Should().BeEmpty();
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+}");
+        }
+        
+        [Fact]
+        public void Select_Empty_ReturnsEmptyQuery()
+        {
+            // arrange
+            var query = new Query("name");
+
+            // act
+            query.Where(new Dictionary<string, object>());
+
+            // assert
+            query.FieldsList.Should().BeEmpty();
+            
+            string queryText = query.ToString();
+            queryText.Should().Be(@"query name{
+}");
         }
 
         [Fact]
@@ -71,6 +149,12 @@ namespace NGql.Core.Tests
 
             // assert
             query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+    id
+    name
+}");
         }
 
         [Fact]
@@ -86,6 +170,12 @@ namespace NGql.Core.Tests
 
             // assert
             query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+            
+            string queryText = query;
+            queryText.Should().Be(@"query name{
+    id
+    name
+}");
         }
 
         [Fact]
@@ -96,6 +186,7 @@ namespace NGql.Core.Tests
 
             // act
             query
+                .Variable("$name", "String")
                 .Variable("$name", "String")
                 .Select("id");
 
@@ -112,6 +203,7 @@ namespace NGql.Core.Tests
 
             // act
             query
+                .Variable(variable)
                 .Variable(variable)
                 .Select("id");
 
@@ -158,6 +250,7 @@ namespace NGql.Core.Tests
         {
             // arrange
             var usersQuery = new Query("users")
+                .Variable("$id", "String")
                 .Variable("$id", "String")
                 .Select("id", "name");
 
@@ -228,6 +321,244 @@ namespace NGql.Core.Tests
         id
         name
     }
+}");
+        }
+
+        [Fact]
+        public void Include_AddsFieldsAndArgumentsFromObject()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+            var obj = new { child = new { prop1 = 42, prop2 = "name" }, prop3 = true };
+
+            // Act
+            query.Include(obj);
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    child{
+        prop1
+        prop2
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void Include_AddsFieldsAndArgumentsFromDictionary()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+            var obj = new
+            {
+                child = new Dictionary<string, object>
+                {
+                    { "prop1", 42 },
+                    { "prop2", "name" },
+                    { "prop5", new Dictionary<string, object> { { "prop6", "value" } }}
+                },
+                prop3 = true
+            };
+
+            // Act
+            query.Include(obj);
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    child{
+        prop1
+        prop2
+        prop5{
+            prop6
+        }
+    }
+    prop3
+}");
+        }
+        
+        class ChildClass
+        {
+            [DataMember(Name = "age")]
+            public int Prop1 { get; set; }
+            
+            [JsonPropertyName("name")]
+            public string Prop2 { get; set; }
+            
+            [JsonPropertyName("Prop3")]
+            public string Prop3 { get; set; }
+        }
+        
+        [Fact]
+        public void Include_AddsFieldsAndArgumentsFromObjectUsesAttributes()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+            var obj = new { child = new ChildClass { Prop1 = 42, Prop2 = "name" }, prop3 = true };
+
+            // Act
+            query.Include(obj);
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    child{
+        Prop1:age
+        Prop2:name
+        Prop3
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void Include_AddsFieldsAndArgumentsFromTypeUsesAttributes()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .Include<ChildClass>("child")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    child{
+        Prop1:age
+        Prop2:name
+        Prop3
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void Include_AddsFieldsAndArgumentsFromTypeUsesAttributesWithAlias()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .Include<ChildClass>("child", "alias")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    alias:child{
+        Prop1:age
+        Prop2:name
+        Prop3
+    }
+    prop3
+}");
+        }
+        
+        [Theory]
+        [InlineData("")]
+        [InlineData(" ")]
+        [InlineData(".")]
+        public void IncludeAtPath_AddsFieldsAndArgumentsFromTypeUsesAttributesWithAlias(string path)
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .IncludeAtPath<ChildClass>(path, "child", "alias")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    alias:child{
+        Prop1:age
+        Prop2:name
+        Prop3
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void IncludeAtPath_AddsToQueryAtGivenPath()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .IncludeAtPath<ChildClass>("nested.here.iam", "child")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    nested{
+        here{
+            iam{
+                child{
+                    Prop1:age
+                    Prop2:name
+                    Prop3
+                }
+            }
+        }
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void IncludeAtPath_AddsToQueryAtGivenPathAndAlias()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .IncludeAtPath<ChildClass>("nested.here.iam", "child", "alias")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    nested{
+        here{
+            iam{
+                alias:child{
+                    Prop1:age
+                    Prop2:name
+                    Prop3
+                }
+            }
+        }
+    }
+    prop3
+}");
+        }
+        
+        [Fact]
+        public void IncludeAtPath_AddsToQueryAtGivenPathAndAliases()
+        {
+            // Arrange
+            var query = new Query("TestQuery");
+
+            // Act
+            query
+                .IncludeAtPath<ChildClass>("l1:nested.l2:here.l3:iam", "child", "alias")
+                .Select("prop3");
+
+            // Assert the final GraphQL query
+            query.ToString().Should().Be(@"query TestQuery{
+    l1:nested{
+        l2:here{
+            l3:iam{
+                alias:child{
+                    Prop1:age
+                    Prop2:name
+                    Prop3
+                }
+            }
+        }
+    }
+    prop3
 }");
         }
     }

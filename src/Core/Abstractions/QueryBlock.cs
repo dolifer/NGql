@@ -36,6 +36,11 @@ namespace NGql.Core.Abstractions
         /// The Query alias.
         /// </summary>
         public string? Alias { get; }
+        
+        /// <summary>
+        /// Indicates if the query is empty.
+        /// </summary>
+        internal bool IsEmpty = false;
 
         /// <summary>
         /// Adds the variable with give name into <see cref="Variables"/> part of the query.
@@ -99,7 +104,7 @@ namespace NGql.Core.Abstractions
                 HandleAddArgument(key, value);
         }
 
-        public QueryBlock(string name, string prefix, string? alias = null, params Variable[]? variables)
+        public QueryBlock(string name, string prefix = "", string? alias = null, params Variable[]? variables)
         {
             _prefix = prefix;
             Name = name;
@@ -133,6 +138,11 @@ namespace NGql.Core.Abstractions
             
             if (value is string field)
             {
+                if (string.IsNullOrWhiteSpace(field))
+                {
+                    return;
+                }
+                
                 _fieldsList.Add(field);
                 return;
             }
