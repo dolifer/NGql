@@ -1,7 +1,6 @@
-﻿namespace Server.Data.Entities
+﻿namespace Server.Data.Entities;
+
+public class User
 {
-    public class User
-    {
-        public string Name { get; set; } = null!;
-    }
+    public string Name { get; set; } = null!;
 }
