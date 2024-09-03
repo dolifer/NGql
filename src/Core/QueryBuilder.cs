@@ -63,10 +63,26 @@ public sealed class QueryBuilder
     private static FieldDefinition GetField(Dictionary<string, FieldDefinition> fields, string[] path)
     {
         var first = path[0];
-
-        if (fields.TryGetValue(first, out var value))
+        var fieldNameParts = first.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        
+        if (fieldNameParts.Length > 1)
         {
-            return value;
+            var alias = fieldNameParts[0];
+            var name = fieldNameParts[1];
+            if (fields.TryGetValue(name, out var value))
+            {
+                return value;
+            }
+
+            return fields[name] = new FieldDefinition(name, alias);
+        }
+        else
+        {
+
+            if (fields.TryGetValue(first, out var value))
+            {
+                return value;
+            }
         }
 
         return fields[first] = new FieldDefinition(first);

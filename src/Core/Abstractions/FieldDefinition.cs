@@ -7,7 +7,7 @@ namespace NGql.Core.Abstractions;
 ///     Represents a field definition.
 /// </summary>
 /// <param name="Name">The name of the field.</param>
-public sealed record FieldDefinition([property:JsonPropertyName("name")] string Name)
+public sealed record FieldDefinition([property:JsonPropertyName("name")] string Name, [property:JsonPropertyName("alias")] string? Alias = null)
 {
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
