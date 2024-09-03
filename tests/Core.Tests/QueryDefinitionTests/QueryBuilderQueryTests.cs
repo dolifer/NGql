@@ -23,6 +23,26 @@ public class QueryBuilderQueryTests
 }");
     }
     
+    [Theory]
+    [InlineData("alias:parent")]
+    [InlineData("alias::parent")]
+    [InlineData("::alias:parent.")]
+    [InlineData("alias:parent::.")]
+    [InlineData("alias:parent:.. ")]
+    public void Simple_Fields_Syntax_With_Alias(string fieldName)
+    {
+        // Arrange
+        var query = QueryBuilder
+            .New("SimpleQuery")
+            .AddField(fieldName)
+            .ToQuery();
+    
+        // Assert the final GraphQL query
+        query.ToString().Should().Be(@"query SimpleQuery{
+    alias:parent
+}");
+    }
+    
     [Fact]
     public void Simple_Nested_Fields_Syntax()
     {
@@ -36,6 +56,23 @@ public class QueryBuilderQueryTests
         query.ToString().Should().Be(@"query SimpleQuery{
     parent{
         child
+    }
+}");
+    }
+    
+    [Fact]
+    public void Simple_Nested_Fields_Alias_Syntax()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .New("SimpleQuery")
+            .AddField("alias:parent.alias:child")
+            .ToQuery();
+    
+        // Assert the final GraphQL query
+        query.ToString().Should().Be(@"query SimpleQuery{
+    alias:parent{
+        alias:child
     }
 }");
     }

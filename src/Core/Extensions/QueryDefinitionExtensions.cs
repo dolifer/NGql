@@ -11,14 +11,14 @@ public static class QueryDefinitionExtensions
     /// <param name="queryDefinition">The query definition.</param>
     /// <returns></returns>
     public static Query ToQuery(this QueryDefinition queryDefinition)
-        => ApplyFieldDefinitions(queryDefinition.Name, queryDefinition.Fields.Values);
+        => ApplyFieldDefinitions(queryDefinition.Name, queryDefinition.Alias, queryDefinition.Fields.Values);
 
     private static Query ToQuery(FieldDefinition fieldDefinition)
-        => ApplyFieldDefinitions(fieldDefinition.Name, fieldDefinition.Fields.Values);
+        => ApplyFieldDefinitions(fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Fields.Values);
 
-    private static Query ApplyFieldDefinitions(string queryName, IEnumerable<FieldDefinition> fields)
+    private static Query ApplyFieldDefinitions(string queryName, string? alias, IEnumerable<FieldDefinition> fields)
     {
-        var query = new Query(queryName);
+        var query = new Query(queryName, alias);
         foreach (var field in fields)
         {
             switch (field.Fields.Count)
@@ -27,7 +27,8 @@ public static class QueryDefinitionExtensions
                     query.Select(ToQuery(field));
                     break;
                 default:
-                    query.Select(field.Name);
+                    var valueToSelect = field.Alias is not null ? $"{field.Alias}:{field.Name}" : field.Name;
+                    query.Select(valueToSelect);
                     break;
             }
         }
