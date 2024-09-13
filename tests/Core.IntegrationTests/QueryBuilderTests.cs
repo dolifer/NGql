@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -24,7 +25,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
     {
         // arrange
         using var graphQLClient = GetClient();
-        var query = QueryBuilder.New("getAllUsers")
+        var query = QueryBuilder
+            .New("getAllUsers")
             .AddField("users.name")
             .ToQuery();
         
@@ -48,16 +50,14 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
     {
         // arrange
         using var graphQLClient = GetClient();
-        var query = QueryBuilder.New("getAllUsers")
-            .AddField("foo.bar:extendedUsers.name")
+        var query = QueryBuilder
+            .New("getAllUsers")
+            .AddField("foo")
+            .AddField("foo.bar:extendedUsers", new Dictionary<string, object>
+            {
+                { "name", "Yoshi Lambert" }
+            }, ["name"])
             .ToQuery();
-        
-        var query1 = new Query("getAllUsers")
-            .Select(new Query("foo")
-                .Select(new Query("extendedUsers", "bar")
-                    .Where("name", "Yoshi Lambert")
-                    .Select("name")
-                ));
 
         // act
         var request = new GraphQLRequest
@@ -78,12 +78,14 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
     {
         // arrange
         using var graphQLClient = GetClient();
-        var query = new Query("getUser")
-            .Select(new Query("user", "alias")
-                .Where("name", "Yoshi Lambert")
-                .Select("name")
-            );
-
+        var query = QueryBuilder
+            .New("getUser")
+            .AddField("alias:user", new Dictionary<string, object>
+            {
+                { "name", "Yoshi Lambert" }
+            }, ["name"])
+            .ToQuery();
+        
         // act
         var request = new GraphQLRequest
         {
@@ -102,12 +104,14 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
     {
         // arrange
         using var graphQLClient = GetClient();
-        var query = new Query("getUser")
-            .Select(new Query("user", "alias")
-                .Where("name", "Ezra Smith")
-                .Select("name")
-            );
-
+        var query = QueryBuilder
+            .New("getUser")
+            .AddField("alias:user", new Dictionary<string, object>
+            {
+                { "name", "Ezra Smith" }
+            }, ["name"])
+            .ToQuery();
+        
         // act
         var request = new GraphQLRequest
         {
@@ -129,12 +133,13 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         // arrange
         using var graphQLClient = GetClient();
         var nameVariable = new Variable("$name", "String!");
-        var query = new Query("getUser")
-            .Variable(nameVariable)
-            .Select(new Query("user")
-                .Where("name", nameVariable)
-                .Select("name")
-            );
+        var query = QueryBuilder
+            .New("getUser")
+            .AddField("user", new Dictionary<string, object>
+            {
+                { "name", nameVariable }
+            }, ["name"])
+            .ToQuery();
 
         // act
         var request = new GraphQLRequest
