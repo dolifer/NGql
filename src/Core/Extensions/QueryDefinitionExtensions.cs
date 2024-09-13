@@ -14,11 +14,17 @@ public static class QueryDefinitionExtensions
         => ApplyFieldDefinitions(queryDefinition.Name, queryDefinition.Alias, queryDefinition.Fields.Values);
 
     private static Query ToQuery(FieldDefinition fieldDefinition)
-        => ApplyFieldDefinitions(fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Fields.Values);
+        => ApplyFieldDefinitions(fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Fields.Values, fieldDefinition.Arguments);
 
-    private static Query ApplyFieldDefinitions(string queryName, string? alias, IEnumerable<FieldDefinition> fields)
+    private static Query ApplyFieldDefinitions(string queryName, string? alias, IEnumerable<FieldDefinition> fields, Dictionary<string, object>? arguments = null)
     {
         var query = new Query(queryName, alias);
+        
+        if (arguments is not null)
+        {
+            query.Where(arguments);
+        }
+
         foreach (var field in fields)
         {
             switch (field.Fields.Count)
