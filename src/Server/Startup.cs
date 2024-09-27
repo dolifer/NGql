@@ -1,5 +1,4 @@
 using GraphQL.Server;
-using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,7 +17,7 @@ public class Startup
         services.AddControllers();
         services
             .AddSingleton<IUsersRepository, UsersRepository>()
-            .AddMediatR(typeof(Startup));
+            .AddMediatR(c => c.RegisterServicesFromAssemblyContaining<Startup>());
 
         services
             .AddSingleton<DemoSchema>()
