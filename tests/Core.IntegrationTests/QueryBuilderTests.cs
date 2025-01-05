@@ -26,7 +26,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         // arrange
         using var graphQLClient = GetClient();
         var query = QueryBuilder
-            .New("getAllUsers")
+            .CreateDefaultBuilder("getAllUsers")
             .AddField("users.name")
             .ToQuery();
         
@@ -51,7 +51,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         // arrange
         using var graphQLClient = GetClient();
         var query = QueryBuilder
-            .New("getAllUsers")
+            .CreateDefaultBuilder("getAllUsers")
             .AddField("foo")
             .AddField("foo.bar:extendedUsers", new Dictionary<string, object>
             {
@@ -79,7 +79,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         // arrange
         using var graphQLClient = GetClient();
         var query = QueryBuilder
-            .New("getUser")
+            .CreateDefaultBuilder("getUser")
             .AddField("alias:user", new Dictionary<string, object>
             {
                 { "name", "Yoshi Lambert" }
@@ -105,7 +105,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         // arrange
         using var graphQLClient = GetClient();
         var query = QueryBuilder
-            .New("getUser")
+            .CreateDefaultBuilder("getUser")
             .AddField("alias:user", new Dictionary<string, object>
             {
                 { "name", "Ezra Smith" }
@@ -134,7 +134,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         using var graphQLClient = GetClient();
         var nameVariable = new Variable("$name", "String!");
         var query = QueryBuilder
-            .New("getUser")
+            .CreateDefaultBuilder("getUser")
             .AddField("user", new Dictionary<string, object>
             {
                 { "name", nameVariable }

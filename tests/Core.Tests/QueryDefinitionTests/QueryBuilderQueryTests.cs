@@ -13,7 +13,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("SimpleQuery")
+            .CreateDefaultBuilder("SimpleQuery")
             .AddField(fieldName)
             .ToQuery();
     
@@ -33,7 +33,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("SimpleQuery")
+            .CreateDefaultBuilder("SimpleQuery")
             .AddField(fieldName)
             .ToQuery();
     
@@ -48,7 +48,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("SimpleQuery")
+            .CreateDefaultBuilder("SimpleQuery")
             .AddField("parent.child")
             .ToQuery();
     
@@ -65,7 +65,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("SimpleQuery")
+            .CreateDefaultBuilder("SimpleQuery")
             .AddField("alias:parent.alias:child")
             .ToQuery();
     
@@ -82,7 +82,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("ComplexQuery")
+            .CreateDefaultBuilder("ComplexQuery")
             .AddField("parent.child1.grandchild1")
             .AddField("parent.child2.grandchild2")
             .ToQuery();
@@ -105,7 +105,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("MultipleTopLevelQuery")
+            .CreateDefaultBuilder("MultipleTopLevelQuery")
             .AddField("field1")
             .AddField("field2")
             .ToQuery();
@@ -122,7 +122,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("MixedQuery")
+            .CreateDefaultBuilder("MixedQuery")
             .AddField("field1")
             .AddField("parent.child")
             .ToQuery();
@@ -141,7 +141,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("DeepQuery")
+            .CreateDefaultBuilder("DeepQuery")
             .AddField("level1.level2.level3.level4")
             .ToQuery();
     
@@ -162,7 +162,7 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("SiblingsQuery")
+            .CreateDefaultBuilder("SiblingsQuery")
             .AddField("parent.child1")
             .AddField("parent.child2")
             .AddField("parent.child3")
@@ -183,12 +183,11 @@ public class QueryBuilderQueryTests
     {
         // Arrange
         var query = QueryBuilder
-            .New("ComplexCombinationQuery")
+            .CreateDefaultBuilder("ComplexCombinationQuery")
             .AddField("field1")
-            .AddField("parent1.child1")
+            .AddField("parent1", subFields:["child1", "child2"])
             .AddField("parent1.child2")
-            .AddField("parent2.child")
-            .AddField("parent2.child.grandchild")
+            .AddField("parent2.child", subFields:["gc:grandchild", "grandchild2"])
             .ToQuery();
     
         // Assert the final GraphQL query
@@ -200,7 +199,8 @@ public class QueryBuilderQueryTests
     }
     parent2{
         child{
-            grandchild
+            gc:grandchild
+            grandchild2
         }
     }
 }");

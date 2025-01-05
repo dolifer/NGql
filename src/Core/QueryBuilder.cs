@@ -19,14 +19,14 @@ public sealed class QueryBuilder
     /// </summary>
     /// <param name="name">The name of the query.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder New(string name) => new(new QueryDefinition(name));
+    public static QueryBuilder CreateDefaultBuilder(string name) => new(new QueryDefinition(name));
     
     /// <summary>
     ///     Creates a new instance of <see cref="QueryBuilder"/>.
     /// </summary>
     /// <param name="queryDefinition">The query definition.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder FromDefinition(QueryDefinition queryDefinition) => new(queryDefinition);
+    public static QueryBuilder CreateFromDefinition(QueryDefinition queryDefinition) => new(queryDefinition);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -43,53 +43,57 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
         
-        var value = GetOrAddField(_queryDefinition.Fields, field, arguments);
+        var parts = field.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var rootField = GetOrCreateField(_queryDefinition.Fields, parts[0]);
+        var value = GetOrAddField(rootField, parts[1..], arguments);
 
         foreach (var subField in subFields ?? [])
         {
-            GetOrAddField(value.Fields, subField);
+            GetOrAddField(value, [subField]);
         }
         
         return this;
     }
 
-    private static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fields, string path, Dictionary<string, object>? arguments = null)
+    private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName)
     {
-        var parts = path.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var value = default(FieldDefinition)!;
-
-        for(var i = 0; i < parts.Length; i++)
+        if (!fields.TryGetValue(fieldName, out var rootField))
         {
-            var newField = GetNewField(parts[i], i == parts.Length - 1, arguments);
+            return fields[fieldName] = GetNewField(fieldName);
+        }
 
-            if (i == 0)
-            {
-                if (!fields.TryGetValue(newField.Name, out value))
-                {
-                    value = fields[newField.Name] = newField;
-                }
+        return rootField;
+    }
+    
+    private static FieldDefinition GetOrAddField(FieldDefinition parentField, string[] parts, Dictionary<string, object>? arguments = null)
+    {
+        var value = parentField;
+        
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var fieldArguments = i == parts.Length - 1 ? arguments : null;
+            var newFieldName = parts[i];
 
-                continue;
-            }
-            
-            if (!value.Fields.TryGetValue(newField.Name, out var childValue))
+            if (!value.Fields.TryGetValue(newFieldName, out var childValue))
             {
-                value = value.Fields[newField.Name] = newField;
+                value = value.Fields[newFieldName] = GetNewField(newFieldName, fieldArguments);
             }
             else
             {
                 value = childValue;
             }
         }
-        
+
         return value;
     }
     
-    private static FieldDefinition GetNewField(string field, bool isLast, Dictionary<string, object>? arguments = null)
+    private static FieldDefinition GetNewField(string field, Dictionary<string, object>? arguments = null)
     {
         var fieldNameParts = field.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        return  new FieldDefinition(fieldNameParts.Length == 2 ? fieldNameParts[1] : field,
-            fieldNameParts.Length == 2 ? fieldNameParts[0] : null, isLast ? arguments : null);
+        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : field;
+        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
+
+        return new FieldDefinition(namePart, alias, arguments);
     }
     
     public Query ToQuery() => _queryDefinition.ToQuery();
