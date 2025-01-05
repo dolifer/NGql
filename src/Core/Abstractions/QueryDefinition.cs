@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -13,5 +14,5 @@ public sealed record QueryDefinition([property:JsonPropertyName("name")] string 
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public Dictionary<string, FieldDefinition> Fields { get; } = new();
+    public Dictionary<string, FieldDefinition> Fields { get; } = new(StringComparer.InvariantCultureIgnoreCase);
 }
