@@ -1,5 +1,8 @@
 ﻿using System.Collections.Generic;
-using FluentAssertions;
+using System.Threading.Tasks;
+using Shared;
+using VerifyTests;
+using VerifyXunit;
 using Xunit;
 
 namespace NGql.Core.Tests;
@@ -7,7 +10,7 @@ namespace NGql.Core.Tests;
 public class FilterQueryTests
 {
     [Fact]
-    public void Filter_Dictionary_Syntax()
+    public Task Filter_Dictionary_Syntax()
     {
         // arrange
         var query = new Query("users")
@@ -46,18 +49,12 @@ public class FilterQueryTests
                 }
             });
 
-        // act
-        string queryText = query;
-
-        // assert
-        queryText.Should().Be(@"query users(filter:{playerId:{in:[""1"", ""2""]}, or:[{name:{isNull:true}}, {name:{equals:""John""}}]}){
-    id
-    name
-}");
+        // act & assert
+        return query.Verify("filterQuery");
     }
 
     [Fact]
-    public void Filter_Simplified_Syntax()
+    public Task Filter_Simplified_Syntax()
     {
         // arrange
         var query = new Query("users")
@@ -87,13 +84,7 @@ public class FilterQueryTests
                 }
             });
 
-        // act
-        string queryText = query;
-
-        // assert
-        queryText.Should().Be(@"query users(filter:{playerId:{in:[""1"", ""2""]}, or:[{name:{isNull:true}}, {name:{equals:""John""}}]}){
-    id
-    name
-}");
+        // act & assert
+        return query.Verify("filterQuery");
     }
 }

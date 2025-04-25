@@ -7,7 +7,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
 
-public static class QueryBlockObjectExtensions
+internal static class QueryBlockObjectExtensions
 {
     internal static SortedDictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
     {
@@ -17,10 +17,10 @@ public static class QueryBlockObjectExtensions
         {
             if (kvp.Value is Variable variable)
             {
-                arguments[isRootElement ? variable.Name: kvp.Key] = kvp.Value;
+                arguments[isRootElement ? variable.Name : kvp.Key] = kvp.Value;
                 continue;
             }
-                        
+
             arguments[kvp.Key] = kvp.Value;
         }
 
@@ -37,7 +37,7 @@ public static class QueryBlockObjectExtensions
 
         return arguments;
     }
-    
+
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
@@ -57,7 +57,7 @@ public static class QueryBlockObjectExtensions
             {
                 continue;
             }
-            
+
             var subQuery = new QueryBlock(t);
             currentBlock.AddField(subQuery);
             currentBlock = subQuery;
@@ -65,7 +65,7 @@ public static class QueryBlockObjectExtensions
 
         currentBlock.Include<T>(name, alias);
     }
-    
+
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
@@ -76,11 +76,11 @@ public static class QueryBlockObjectExtensions
     public static void Include<T>(this QueryBlock block, string name, string? alias = null)
     {
         var properties = typeof(T).GetProperties();
-        
+
         var subQuery = new QueryBlock(name, alias: alias);
-        
+
         HandleProperties(subQuery, null, properties);
-        
+
         block.AddField(subQuery);
     }
 
@@ -150,17 +150,14 @@ public static class QueryBlockObjectExtensions
     }
 
     private static bool IsSimpleType(Type type)
-        {
-            return
-                type.IsPrimitive ||
-                new Type[] {
+        => type.IsPrimitive ||
+            new Type[] {
                     typeof(string),
                     typeof(decimal),
                     typeof(DateTime),
                     typeof(DateTimeOffset),
                     typeof(TimeSpan),
                     typeof(Guid)
-                }.Contains(type) ||
-                Convert.GetTypeCode(type) != TypeCode.Object;
-        }
+            }.Contains(type) ||
+            Convert.GetTypeCode(type) != TypeCode.Object;
 }

@@ -1,0 +1,5 @@
+﻿query getUser($name:String!){
+    user(name:$name){
+        name
+    }
+}

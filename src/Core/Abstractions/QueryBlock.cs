@@ -1,10 +1,13 @@
-﻿using System;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace NGql.Core.Abstractions;
 
+/// <summary>
+/// Represents a GraphQL Query Block.
+/// </summary>
 public sealed class QueryBlock
 {
     private readonly string _prefix;
@@ -36,7 +39,7 @@ public sealed class QueryBlock
     /// The Query alias.
     /// </summary>
     public string? Alias { get; }
-        
+
     /// <summary>
     /// Indicates if the query is empty.
     /// </summary>
@@ -104,6 +107,9 @@ public sealed class QueryBlock
             HandleAddArgument(key, value);
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="QueryBlock"/> class.
+    /// </summary>
     public QueryBlock(string name, string prefix = "", string? alias = null, params Variable[]? variables)
     {
         _prefix = prefix;
@@ -111,7 +117,7 @@ public sealed class QueryBlock
         Alias = alias;
 
         _fieldsList = new List<object>();
-        _variables = variables is null ? [] : [..variables.DistinctBy(x => x.Name)];
+        _variables = variables is null ? [] : [.. variables.DistinctBy(x => x.Name)];
         _arguments = new SortedDictionary<string, object>();
     }
 
@@ -121,7 +127,7 @@ public sealed class QueryBlock
     /// <returns>The GraphQL Query String</returns>
     /// <throws>ArgumentException</throws>
     public override string ToString() => new QueryTextBuilder().Build(this, prefix: _prefix);
-        
+
     private void HandleAddField(object value)
     {
         if (value is QueryBlock subQuery)
@@ -130,48 +136,48 @@ public sealed class QueryBlock
             {
                 _variables.Add(variable);
             }
-                
+
             _fieldsList.Add(subQuery);
-                
+
             return;
         }
-            
+
         if (value is string field)
         {
             if (string.IsNullOrWhiteSpace(field))
             {
                 return;
             }
-                
+
             _fieldsList.Add(field);
             return;
         }
-            
+
         if (value is IList list)
         {
             foreach (var item in list)
             {
                 HandleAddField(item);
             }
-                
+
             return;
         }
-            
+
         throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
     }
-        
+
     private void HandleAddVariable(Variable variable)
     {
         _variables.Add(variable);
     }
-        
+
     private void HandleAddArgument(string key, object value)
     {
         HandleArgumentsVariables(value);
 
         _arguments[key] = value;
     }
-        
+
     private void HandleArgumentsVariables(object value)
     {
         if (value is Variable variable)

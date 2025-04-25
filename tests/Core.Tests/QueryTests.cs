@@ -1,7 +1,9 @@
 ﻿using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using FluentAssertions;
+using Shared;
 using Xunit;
 
 namespace NGql.Core.Tests;
@@ -9,7 +11,7 @@ namespace NGql.Core.Tests;
 public class QueryTests
 {
     [Fact]
-    public void Ctor_Sets_Name()
+    public Task Ctor_Sets_Name()
     {
         // arrange
         var query = new Query("name");
@@ -20,15 +22,12 @@ public class QueryTests
 
         query.FieldsList.Should().BeEmpty();
         query.Arguments.Should().BeEmpty();
-            
-        string queryText = query;
 
-        queryText.Should().Be(@"query name{
-}");
+        return query.Verify("emptyQuery");
     }
 
     [Fact]
-    public void Ctor_Sets_Alias()
+    public Task Ctor_Sets_Alias()
     {
         // arrange
         var query = new Query("name", "alias");
@@ -40,28 +39,19 @@ public class QueryTests
         query.FieldsList.Should().BeEmpty();
         query.Arguments.Should().BeEmpty();
             
-        string queryText = query;
-
-        queryText.Should().Be(@"query name{
-}");
+        return query.Verify("emptyQuery");
     }
 
     [Fact]
-    public void AliasAs_Sets_Alias()
+    public Task AliasAs_Sets_Alias()
     {
         // arrange
         var query = new Query("name", "alias");
 
-        // act
-        query.Select("id");
-
         // assert
         query.Alias.Should().Be("alias");
             
-        string queryText = query;
-        queryText.Should().Be(@"query name{
-    id
-}");
+        return query.Verify("emptyQuery");
     }
         
     [Fact]
@@ -86,7 +76,7 @@ public class QueryTests
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
-    public void Select_String_ReturnsEmptyQuery(string item)
+    public Task Select_String_ReturnsEmptyQuery(string item)
     {
         // arrange
         var query = new Query("name");
@@ -97,15 +87,13 @@ public class QueryTests
         // assert
         query.FieldsList.Should().BeEmpty();
             
-        string queryText = query;
-        queryText.Should().Be(@"query name{
-}");
+        return query.Verify("emptyQuery");
     }
         
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
-    public void Select_Object_ReturnsEmptyQuery(string item)
+    public Task Select_ObjectArray_ReturnsEmptyQuery(string item)
     {
         // arrange
         var query = new Query("name");
@@ -116,13 +104,11 @@ public class QueryTests
         // assert
         query.FieldsList.Should().BeEmpty();
             
-        string queryText = query;
-        queryText.Should().Be(@"query name{
-}");
+        return query.Verify("emptyQuery");
     }
         
     [Fact]
-    public void Select_Empty_ReturnsEmptyQuery()
+    public Task Select_Empty_Dictionary_ReturnsEmptyQuery()
     {
         // arrange
         var query = new Query("name");
@@ -133,13 +119,11 @@ public class QueryTests
         // assert
         query.FieldsList.Should().BeEmpty();
             
-        string queryText = query.ToString();
-        queryText.Should().Be(@"query name{
-}");
+        return query.Verify("emptyQuery");
     }
 
     [Fact]
-    public void Select_List_AddsToSelectList()
+    public Task Select_List_AddsToSelectList()
     {
         // arrange
         var query = new Query("name");
@@ -150,15 +134,11 @@ public class QueryTests
         // assert
         query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
             
-        string queryText = query;
-        queryText.Should().Be(@"query name{
-    id
-    name
-}");
+        return query.Verify("idNameQuery");
     }
 
     [Fact]
-    public void Select_ChainOfCalls_AddsToSelectList()
+    public Task Select_ChainOfCalls_AddsToSelectList()
     {
         // arrange
         var query = new Query("name");
@@ -171,11 +151,7 @@ public class QueryTests
         // assert
         query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
             
-        string queryText = query;
-        queryText.Should().Be(@"query name{
-    id
-    name
-}");
+        return query.Verify("idNameQuery");
     }
 
     [Fact]
@@ -209,40 +185,6 @@ public class QueryTests
 
         // assert
         query.Variables.Should().ContainSingle(x => x.Name == "$name" && x.Type == "String");
-    }
-
-    [Fact]
-    public void ToString_Returns_Query()
-    {
-        // arrange
-        var usersQuery = new Query("users")
-            .Select("id", "name");
-
-        // act
-        string queryText = usersQuery;
-
-        // assert
-        queryText.Should().Be(@"query users{
-    id
-    name
-}");
-    }
-
-    [Fact]
-    public void ToString_Returns_Unnamed_Query()
-    {
-        // arrange
-        var usersQuery = new Query()
-            .Select("id", "name");
-
-        // act
-        string queryText = usersQuery;
-
-        // assert
-        queryText.Should().Be(@"{
-    id
-    name
-}");
     }
 
     [Fact]
@@ -286,42 +228,29 @@ public class QueryTests
     }
 
     [Fact]
-    public void ToString_Returns_SubQueryAlias()
+    public Task ToString_Returns_SubQueryAlias()
     {
         // arrange
         var query = new Query("myQuery");
         var usersQuery = new Query("users", "alias")
             .Select("id", "name");
 
-        // act
-        string queryText = query
-            .Select(usersQuery);
-
-        // assert
-        queryText.Should().Be(@"query myQuery{
-    alias:users{
-        id
-        name
-    }
-}");
+        // act && assert
+        return query
+            .Select(usersQuery).Verify("idNameAliasMyQuery");
     }
 
     [Fact]
-    public void ToString_Includes_SubQueryAlias()
+    public Task ToString_Includes_SubQueryAlias()
     {
         // act
-        string queryText = new Query("myQuery")
+        var query = new Query("myQuery")
             .Include("users", x => x
                     .Select("id", "name")
                 , "alias");
 
         // assert
-        queryText.Should().Be(@"query myQuery{
-    alias:users{
-        id
-        name
-    }
-}");
+        return query.Verify("idNameAliasMyQuery");
     }
 
     [Fact]

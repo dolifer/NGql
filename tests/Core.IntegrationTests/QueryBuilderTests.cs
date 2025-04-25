@@ -10,6 +10,7 @@ using NGql.Client.Tests.Extensions;
 using NGql.Client.Tests.Fixtures;
 using NGql.Core;
 using Server.Data.Entities;
+using Shared;
 using Xunit;
 
 namespace NGql.Client.Tests;
@@ -29,6 +30,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             .CreateDefaultBuilder("getAllUsers")
             .AddField("users.name")
             .ToQuery();
+        
+        await query.Verify("getUsers");
         
         // act
         var request = new GraphQLRequest
@@ -59,6 +62,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             }, ["name"])
             .ToQuery();
 
+        await query.Verify("getNestedUsers");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -86,6 +91,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             }, ["name"])
             .ToQuery();
         
+        await query.Verify("getUser");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -111,6 +118,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
                 { "name", "Ezra Smith" }
             }, ["name"])
             .ToQuery();
+        
+        await query.Verify("getNullUser");
         
         // act
         var request = new GraphQLRequest
@@ -141,6 +150,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             }, ["name"])
             .ToQuery();
 
+        await query.Verify("getVariableUser");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -170,6 +181,8 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
                 .Where("name", nameVariable)
                 .Select("name")
             );
+
+        await query.Verify("createUser");
 
         // act
         var request = new GraphQLRequest
