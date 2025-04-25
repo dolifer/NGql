@@ -44,7 +44,7 @@ public sealed class QueryBuilder
         }
         
         var parts = field.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var rootField = GetOrCreateField(_queryDefinition.Fields, parts[0]);
+        var rootField = GetOrCreateField(_queryDefinition.Fields, parts[0], arguments);
         var value = GetOrAddField(rootField, parts[1..], arguments);
 
         foreach (var subField in subFields ?? [])
@@ -55,11 +55,11 @@ public sealed class QueryBuilder
         return this;
     }
 
-    private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName)
+    private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, Dictionary<string, object>? arguments = null)
     {
         if (!fields.TryGetValue(fieldName, out var rootField))
         {
-            return fields[fieldName] = GetNewField(fieldName);
+            return fields[fieldName] = GetNewField(fieldName, arguments);
         }
 
         return rootField;

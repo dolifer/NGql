@@ -9,6 +9,7 @@ using NGql.Client.Tests.Extensions;
 using NGql.Client.Tests.Fixtures;
 using NGql.Core;
 using Server.Data.Entities;
+using Shared;
 using Xunit;
 
 namespace NGql.Client.Tests;
@@ -29,6 +30,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                 .Select("name")
             );
 
+        await query.Verify("getUsers");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -56,6 +59,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                     .Select("name")
                 ));
 
+        await query.Verify("getNestedUsers");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -81,6 +86,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                 .Select("name")
             );
 
+        await query.Verify("getUser");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -105,6 +112,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                 .Select("name")
             );
 
+        await query.Verify("getNullUser");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -133,6 +142,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                 .Select("name")
             );
 
+        await query.Verify("getVariableUser");
+        
         // act
         var request = new GraphQLRequest
         {
@@ -162,6 +173,8 @@ public class QueryTests : IClassFixture<ApiFixture>
                 .Where("name", nameVariable)
                 .Select("name")
             );
+        
+        await query.Verify("createUser");
 
         // act
         var request = new GraphQLRequest

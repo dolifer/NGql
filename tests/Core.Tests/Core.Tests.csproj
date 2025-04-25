@@ -5,5 +5,21 @@
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\Core\Core.csproj" />
+      <ProjectReference Include="..\Shared\Shared.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Update="snapshots\filterQuery.verified.txt">
+        <ParentFile>filterQuery</ParentFile>
+        <DependentUpon>filterQuery.cs</DependentUpon>
+      </None>
+      <None Update="snapshots\idNameQuery.verified.txt">
+        <ParentFile>filterQuery</ParentFile>
+        <DependentUpon>filterQuery.cs</DependentUpon>
+      </None>
+      <None Update="snapshots\idNameAliasMyQuery.verified.txt">
+        <ParentFile>idNameQuery</ParentFile>
+        <DependentUpon>filterQuery.cs</DependentUpon>
+      </None>
     </ItemGroup>
 </Project>

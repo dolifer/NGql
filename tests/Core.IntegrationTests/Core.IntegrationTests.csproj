@@ -6,6 +6,7 @@
     <ItemGroup>
       <ProjectReference Include="..\..\src\Core\Core.csproj" />
       <ProjectReference Include="..\..\src\Server\Server.csproj" />
+      <ProjectReference Include="..\Shared\Shared.csproj" />
     </ItemGroup>
   
     <ItemGroup>
