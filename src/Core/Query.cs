@@ -95,7 +95,7 @@ public sealed class Query
     /// </summary>
     /// <param name="name">A sub-query name.</param>
     /// <param name="alias">A sub-query alias.</param>
-    /// <param name="action">Action to build sub-query.</param>
+    /// <param name="action">Action to build subquery.</param>
     /// <returns>Query</returns>
     public Query Include(string name, Action<Query> action, string? alias = null)
     {
@@ -112,8 +112,8 @@ public sealed class Query
         return this;
     }
 
-    /// <inheritdoc cref="QueryBlock.AddArgument(Dictionary&lt;string, object&gt;)"/>
-    public Query Where(IDictionary<string, object> dict)
+    /// <inheritdoc cref="QueryBlock.AddArgument(IReadOnlyDictionary&lt;string, object&gt;)"/>
+    public Query Where(IReadOnlyDictionary<string, object> dict)
     {
         Block.AddArgument(dict);
         return this;

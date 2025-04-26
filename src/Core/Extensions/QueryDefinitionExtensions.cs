@@ -16,7 +16,7 @@ public static class QueryDefinitionExtensions
     private static Query ToQuery(FieldDefinition fieldDefinition)
         => ApplyFieldDefinitions(fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Fields.Values, fieldDefinition.Arguments);
 
-    private static Query ApplyFieldDefinitions(string queryName, string? alias, IEnumerable<FieldDefinition> fields, Dictionary<string, object>? arguments = null)
+    private static Query ApplyFieldDefinitions(string queryName, string? alias, IEnumerable<FieldDefinition> fields, IReadOnlyDictionary<string, object>? arguments = null)
     {
         var query = new Query(queryName, alias);
         

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
@@ -101,7 +101,7 @@ public sealed class QueryBlock
     /// <param name="dict">An existing Dictionary that takes &lt;string, object&gt;</param>
     /// <returns>Query</returns>
     /// <throws>DuplicateKeyException and others</throws>
-    public void AddArgument(IDictionary<string, object> dict)
+    public void AddArgument(IReadOnlyDictionary<string, object> dict)
     {
         foreach (var (key, value) in dict)
             HandleAddArgument(key, value);
