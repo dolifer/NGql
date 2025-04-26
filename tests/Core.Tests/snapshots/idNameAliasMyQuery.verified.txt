@@ -1,6 +1,0 @@
-﻿query myQuery{
-    alias:users{
-        id
-        name
-    }
-}

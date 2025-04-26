@@ -24,6 +24,11 @@ internal static class QueryBlockObjectExtensions
             arguments[kvp.Key] = kvp.Value;
         }
 
+        if (!isRootElement)
+        {
+            return arguments;
+        }
+
         foreach (var variable in queryBlock.Variables)
         {
             var existingArgument = arguments.Values
