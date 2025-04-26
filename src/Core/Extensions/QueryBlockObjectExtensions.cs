@@ -143,11 +143,11 @@ internal static class QueryBlockObjectExtensions
         {
             if (dict[key] is IDictionary nestedDict)
             {
-                HandleDictionary(subQuery, key.ToString(), null, nestedDict);
+                HandleDictionary(subQuery, key.ToString()!, null, nestedDict);
             }
             else
             {
-                subQuery.AddField(key.ToString());
+                subQuery.AddField(key.ToString()!);
             }
         }
 

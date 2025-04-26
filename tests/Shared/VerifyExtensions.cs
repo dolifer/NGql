@@ -25,7 +25,7 @@ public static class VerifyExtensions
         return Verifier.Verify(mutation, settings);
     }
     
-    public static Task Verify(this Query query, string filename)
+    public static SettingsTask Verify(this Query query, string filename)
     {
         var settings = GetSettings(filename);
         

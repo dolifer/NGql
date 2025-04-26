@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using FluentAssertions;
 using Xunit;
 
@@ -10,9 +11,9 @@ public class VariableTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public void Test_Create_Bad_Type(string type)
+    public void Test_Create_Bad_Type(string? type)
     {
-        var exception = Assert.Throws<ArgumentException>(() => new Variable("$name", type));
+        var exception = Assert.Throws<ArgumentException>(() => new Variable("$name", type!));
         
         exception.Message.Should().Be("Variable type cannot be null or whitespace. (Parameter 'type')");
     }
@@ -21,9 +22,9 @@ public class VariableTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public void Test_Create_Bad_Name(string name)
+    public void Test_Create_Bad_Name(string? name)
     {
-        var exception = Assert.Throws<ArgumentException>(() => new Variable(name, "String"));
+        var exception = Assert.Throws<ArgumentException>(() => new Variable(name!, "String"));
         
         exception.Message.Should().Be("Variable name cannot be null or whitespace. (Parameter 'name')");
     }
@@ -78,26 +79,26 @@ public class VariableTests
         (name3Int != name1).Should().BeTrue();
         (name3Int != name2).Should().BeTrue();
     }
-    
-    // ReSharper disable EqualExpressionComparison
+
     [Fact]
     public void Test_Equality()
     {
         var a = new Variable("$a", "String");
+        var sameA = a; // Make it explicit that we're comparing the same instance
         var b = new Variable("$b", "String");
 
-        (a != a).Should().BeFalse();
+        (a != sameA).Should().BeFalse();
         
-        (a > a).Should().BeFalse();
-        (a < a).Should().BeFalse();
+        (a > sameA).Should().BeFalse();
+        (a < sameA).Should().BeFalse();
 
         (a > b).Should().BeFalse();
         (a >= b).Should().BeFalse();
         
-        (a == a).Should().BeTrue();
+        (a == sameA).Should().BeTrue();
         
-        (a >= a).Should().BeTrue();
-        (a <= a).Should().BeTrue();
+        (a >= sameA).Should().BeTrue();
+        (a <= sameA).Should().BeTrue();
         
         (a < b).Should().BeTrue();
         (a <= b).Should().BeTrue();

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using GraphQL.Server;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -9,6 +10,7 @@ using Server.Schema;
 
 namespace Server;
 
+[SuppressMessage("Style", "S2325:Methods and properties that don't access instance data should be static")]
 public class Startup
 {
     // This method gets called by the runtime. Use this method to add services to the container.
@@ -32,7 +34,7 @@ public class Startup
             // Add required services for GraphQL request/response de/serialization
             .AddSystemTextJson() // For .NET Core 3+
             .AddErrorInfoProvider(opt => opt.ExposeExceptionStackTrace = true)
-            .AddGraphTypes(typeof(DemoSchema)); // Add all IGraphType implementors in assembly which ChatSchema exists
+            .AddGraphTypes(typeof(DemoSchema)); // Add all IGraphType implementors in the assembly which ChatSchema exists
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -49,10 +51,10 @@ public class Startup
 
         app.UseEndpoints(endpoints =>
         {
-            // map HTTP middleware for schema at default path /graphql
+            // map HTTP middleware for schema at the default path /graphql
             endpoints.MapGraphQL<DemoSchema>();
 
-            // map playground middleware at default path /ui/playground with default options
+            // map playground middleware at the default path /ui/playground with default options
             endpoints.MapGraphQLPlayground("/");
         });
     }
