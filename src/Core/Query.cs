@@ -14,7 +14,12 @@ public sealed class Query
         Block = new QueryBlock(string.Empty, string.Empty);
     }
 
-    public Query(string name, string? alias = null, params Variable[] variables)
+    public Query(string name, params Variable[] variables)
+    {
+        Block = new QueryBlock(name, "query", null, variables);
+    }
+    
+    public Query(string name, string? alias, params Variable[] variables)
     {
         Block = new QueryBlock(name, "query", alias, variables);
     }

@@ -14,11 +14,11 @@ public class WhereTests
         var query = new Query("name");
 
         // act
-        query.Where(new Dictionary<string, object>()
+        query.Where(new Dictionary<string, object>
         {
             {"filter1", new{}},
             {"filter2", Array.Empty<int>()},
-            {"filter3", null},
+            {"filter3", null!},
             {"filter4", 42}
         });
 
@@ -146,8 +146,8 @@ public class WhereTests
         var rootVariable = new Variable("$useCache", "Boolean");
         var toVariable = new Variable("$to", "Int");
         var fromVariable = new Variable("$from", "Int");
-        var query = new Query("name", variables: [rootVariable,rootVariable]);
-        var subQuery = new Query("nested", variables: [toVariable, toVariable]);
+        var query = new Query("name", rootVariable,rootVariable);
+        var subQuery = new Query("nested", toVariable, toVariable);
         Dictionary<string, object> ageFilter = new()
         {
             {"to", toVariable},
@@ -177,7 +177,7 @@ public class WhereTests
         var variableA = new Variable("$a", "Int");
         var variableB = new Variable("$b", "Int");
         var variableC = new Variable("$c", "Int");
-        var query = new Query("name", variables: [variableC, variableB, variableC]);
+        var query = new Query("name", variableC, variableB, variableC);
 
         // act
         query.Where("propB", variableB)
