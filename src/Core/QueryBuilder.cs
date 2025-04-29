@@ -186,7 +186,7 @@ public sealed class QueryBuilder
             currentFields = value.Fields;
         }
 
-        return value;
+        return value ?? throw new InvalidOperationException($"Failed to create a new field for path: {fieldPath}");
     }
     
     private static FieldDefinition GetNewField(string field, IReadOnlyDictionary<string, object> arguments)
