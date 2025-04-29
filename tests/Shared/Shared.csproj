@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <ItemGroup>
-        <PackageReference Include="Verify.Xunit" Version="28.8.1" />
+        <PackageReference Include="Verify.Xunit" Version="29.4.0" />
     </ItemGroup>
 
     <ItemGroup>

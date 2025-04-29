@@ -1,34 +1,50 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
 namespace NGql.Core;
+
+public sealed class QueryBuilderOptions
+{
+    public static readonly QueryBuilderOptions Default = new();
+
+    public bool UseFieldsCache { get; set; } = true;
+}
 
 /// <summary>
 ///     Represents a query builder.
 /// </summary>
 public sealed class QueryBuilder
 {
+    private readonly QueryBuilderOptions _options;
     private static readonly Dictionary<string, object> EmptyArguments = [];
 
     private readonly QueryDefinition _queryDefinition;
-
-    private QueryBuilder(QueryDefinition queryDefinition) => _queryDefinition = queryDefinition;
+    private readonly Dictionary<string, FieldDefinition> _fieldCache = new();
+    
+    private QueryBuilder(QueryDefinition queryDefinition, QueryBuilderOptions? options)
+    {
+        _queryDefinition = queryDefinition;
+        _options = options ?? QueryBuilderOptions.Default;
+    }
 
     /// <summary>
     ///     Creates a new instance of <see cref="QueryBuilder"/>.
     /// </summary>
     /// <param name="name">The name of the query.</param>
+    /// <param name="options">The query building options</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder CreateDefaultBuilder(string name) => new(new QueryDefinition(name));
-    
+    public static QueryBuilder CreateDefaultBuilder(string name, QueryBuilderOptions? options = null) => new(new QueryDefinition(name),options);
+
     /// <summary>
     ///     Creates a new instance of <see cref="QueryBuilder"/>.
     /// </summary>
     /// <param name="queryDefinition">The query definition.</param>
+    /// <param name="options">The query building options</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder CreateFromDefinition(QueryDefinition queryDefinition) => new(queryDefinition);
+    public static QueryBuilder CreateFromDefinition(QueryDefinition queryDefinition, QueryBuilderOptions? options = null) => new(queryDefinition,options);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -73,14 +89,16 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
         
-        var parts = field.Split('.', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var value = GetOrAddField(_queryDefinition.Fields, field, arguments);
 
-        var rootField = GetOrCreateField(_queryDefinition.Fields, parts[0], arguments);
-        var value = GetOrAddField(rootField, parts[1..], arguments);
-
-        foreach (var subField in subFields ?? [])
+        if (subFields is null || subFields.Length == 0)
         {
-            GetOrAddField(value, [subField], EmptyArguments);
+            return this;
+        }
+        
+        foreach (var subField in subFields)
+        {
+            GetOrAddField(value.Fields, subField, EmptyArguments);
         }
         
         return this;
@@ -108,16 +126,6 @@ public sealed class QueryBuilder
         }
     }
 
-    private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, IReadOnlyDictionary<string, object> arguments)
-    {
-        if (!fields.TryGetValue(fieldName, out var rootField))
-        {
-            return fields[fieldName] = GetNewField(fieldName, arguments);
-        }
-
-        return rootField;
-    }
-
     private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, string? fieldAlias, IReadOnlyDictionary<string, object> arguments)
     {
         if (!fields.TryGetValue(fieldName, out var rootField))
@@ -128,23 +136,54 @@ public sealed class QueryBuilder
         return rootField;
     }
     
-    private static FieldDefinition GetOrAddField(FieldDefinition parentField, string[] parts, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath, 
+        IReadOnlyDictionary<string, object> arguments)
     {
-        var value = parentField;
-        
-        for (var i = 0; i < parts.Length; i++)
-        {
-            var fieldArguments = i == parts.Length - 1 ? arguments : EmptyArguments;
-            var newFieldName = parts[i];
+        FieldDefinition? value = null;
+        Dictionary<string, FieldDefinition> currentFields = fields;
 
-            if (!value.Fields.TryGetValue(newFieldName, out var childValue))
+        while (fieldPath.Length > 0)
+        {
+            var nextDot = fieldPath.IndexOf('.');
+            var isLastFragment = nextDot == -1;
+
+            var currentPart = isLastFragment
+                ? fieldPath
+                : fieldPath[..nextDot];
+
+            var currentPath = currentPart.ToString(); 
+            if (string.IsNullOrWhiteSpace(currentPath))
             {
-                value = value.Fields[newFieldName] = GetNewField(newFieldName, fieldArguments);
+                fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
+                continue;
+            }
+            
+            if (_options.UseFieldsCache && _fieldCache.TryGetValue(currentPath, out var cachedField))
+            {
+                value = cachedField;
+                currentFields = value.Fields;
+                
+                fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
+                continue;
+            }
+
+            if (!currentFields.TryGetValue(currentPath, out var childValue))
+            {
+                var fieldArguments = isLastFragment ? arguments : EmptyArguments;
+                value = currentFields[currentPath] = GetNewField(currentPath, fieldArguments);
+
+                if (_options.UseFieldsCache)
+                {
+                    _fieldCache[currentPath] = value;
+                }
             }
             else
             {
                 value = childValue;
             }
+            
+            fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
+            currentFields = value.Fields;
         }
 
         return value;
