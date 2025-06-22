@@ -16,4 +16,14 @@ public sealed record QueryDefinition([property: JsonPropertyName("name")] string
     /// </summary>
     [JsonPropertyName("fields")]
     public Dictionary<string, FieldDefinition> Fields { get; } = new(StringComparer.InvariantCultureIgnoreCase);
+    
+    /// <summary>
+    ///     The collection of variables related to fields or arguments.
+    /// </summary>
+    [JsonIgnore]
+    public SortedSet<Variable> Variables { get; } = new();
+    
+    /// <inheritdoc cref="QueryBlock.ToString()"/>
+    public override string ToString() => new QueryTextBuilder().Build(this);
+    public static implicit operator string(QueryDefinition query) => query.ToString();
 }

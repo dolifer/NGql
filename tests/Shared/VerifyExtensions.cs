@@ -1,4 +1,3 @@
-using System.Threading.Tasks;
 using NGql.Core;
 using VerifyTests;
 using VerifyXunit;
@@ -30,5 +29,12 @@ public static class VerifyExtensions
         var settings = GetSettings(filename);
         
         return Verifier.Verify(query, settings);
+    }
+    
+    public static SettingsTask Verify(this QueryBuilder queryBuilder, string filename)
+    {
+        var settings = GetSettings(filename);
+        
+        return Verifier.Verify(queryBuilder, settings);
     }
 }

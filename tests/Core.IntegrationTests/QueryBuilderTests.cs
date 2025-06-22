@@ -28,8 +28,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         using var graphQLClient = GetClient();
         var query = QueryBuilder
             .CreateDefaultBuilder("getAllUsers")
-            .AddField("users.name")
-            .ToQuery();
+            .AddField("users.name");
         
         await query.Verify("getUsers");
         
@@ -59,8 +58,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             .AddField("foo.bar:extendedUsers", new Dictionary<string, object>
             {
                 { "name", "Yoshi Lambert" }
-            }, ["name"])
-            .ToQuery();
+            }, ["name"]);
 
         await query.Verify("getNestedUsers");
         
@@ -88,8 +86,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             .AddField("alias:user", new Dictionary<string, object>
             {
                 { "name", "Yoshi Lambert" }
-            }, ["name"])
-            .ToQuery();
+            }, ["name"]);
         
         await query.Verify("getUser");
         
@@ -116,8 +113,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             .AddField("alias:user", new Dictionary<string, object>
             {
                 { "name", "Ezra Smith" }
-            }, ["name"])
-            .ToQuery();
+            }, ["name"]);
         
         await query.Verify("getNullUser");
         
@@ -147,8 +143,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             .AddField("user", new Dictionary<string, object>
             {
                 { "name", nameVariable }
-            }, ["name"])
-            .ToQuery();
+            }, ["name"]);
 
         await query.Verify("getVariableUser");
         

@@ -40,6 +40,87 @@ internal sealed class QueryTextBuilder
         return _stringBuilder.ToString();
     }
 
+    public string Build(QueryDefinition queryDefinition)
+    {
+        _stringBuilder.Clear();
+        _stringBuilder.Append("query ");
+
+        if (!string.IsNullOrEmpty(queryDefinition.Name))
+            _stringBuilder.Append(queryDefinition.Name);
+
+        if (queryDefinition.Variables.Count > 0)
+        {
+            _stringBuilder.Append('(');
+            bool first = true;
+            foreach (var variable in queryDefinition.Variables)
+            {
+                if (!first) _stringBuilder.Append(", ");
+                first = false;
+                variable.Print(_stringBuilder, variable.Name, true);
+            }
+
+            _stringBuilder.Append(')');
+        }
+
+        _stringBuilder.AppendLine("{");
+
+        BuildFieldDefinitions(queryDefinition.Fields, IndentSize);
+
+        _stringBuilder.Append("}");
+        return _stringBuilder.ToString();
+    }
+    
+    private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
+    {
+        string padding = new(' ', indent);
+
+        foreach (var field in fields.Values)
+        {
+            _stringBuilder.Append(padding);
+
+            if (field.Alias != null)
+            {
+                _stringBuilder.Append(field.Alias);
+                _stringBuilder.Append(':');
+            }
+
+            _stringBuilder.Append(field.Name);
+
+            if (field.Arguments?.Count > 0)
+                BuildFieldArguments(field.Arguments);
+
+            if (field.Fields.Count > 0)
+            {
+                _stringBuilder.AppendLine("{");
+                BuildFieldDefinitions(field.Fields, indent + IndentSize);
+                _stringBuilder.Append(padding);
+                _stringBuilder.AppendLine("}");
+            }
+            else
+            {
+                _stringBuilder.AppendLine();
+            }
+        }
+    }
+
+    private void BuildFieldArguments(IReadOnlyDictionary<string, object> arguments)
+    {
+        _stringBuilder.Append('(');
+
+        bool first = true;
+        foreach (var (key, value) in arguments)
+        {
+            if (!first) _stringBuilder.Append(", ");
+            first = false;
+
+            _stringBuilder.Append(key);
+            _stringBuilder.Append(':');
+            WriteObject(_stringBuilder, value);
+        }
+
+        _stringBuilder.Append(')');
+    }
+
     internal static void WriteObject(StringBuilder builder, object? value)
     {
         if (value is null)
@@ -47,7 +128,7 @@ internal sealed class QueryTextBuilder
             builder.Append("null");
             return;
         }
-            
+
         if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
         {
             builder.Append(formattedValue);
@@ -94,15 +175,12 @@ internal sealed class QueryTextBuilder
     {
         builder.Append(prefix);
 
+        bool first = true;
         foreach (var obj in list)
         {
+            if (!first) builder.Append(", ");
+            first = false;
             WriteObject(builder, obj);
-            builder.Append(", ");
-        }
-
-        if (count != 0)
-        {
-            builder.Length -= 2;
         }
 
         builder.Append(suffix);
@@ -145,11 +223,14 @@ internal sealed class QueryTextBuilder
         {
             return;
         }
-            
+
         _stringBuilder.Append('(');
 
+        bool first = true;
         foreach (var (key, value) in arguments)
         {
+            if (!first) _stringBuilder.Append(", ");
+            first = false;
             if (value is Variable variable)
             {
                 variable.Print(_stringBuilder, key, isRootElement);
@@ -160,11 +241,8 @@ internal sealed class QueryTextBuilder
             _stringBuilder.Append(':');
 
             WriteObject(_stringBuilder, value);
-
-            _stringBuilder.Append(", ");
         }
 
-        _stringBuilder.Length -= 2;
         _stringBuilder.Append(')');
     }
 }

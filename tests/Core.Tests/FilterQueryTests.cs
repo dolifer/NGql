@@ -1,8 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Shared;
-using VerifyTests;
-using VerifyXunit;
 using Xunit;
 
 namespace NGql.Core.Tests;

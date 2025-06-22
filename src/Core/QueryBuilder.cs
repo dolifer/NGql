@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using NGql.Core.Abstractions;
-using NGql.Core.Extensions;
 
 namespace NGql.Core;
 
@@ -23,6 +21,9 @@ public sealed class QueryBuilder
 
     private readonly QueryDefinition _queryDefinition;
     private readonly Dictionary<string, FieldDefinition> _fieldCache = new();
+    
+    /// <inheritdoc cref="QueryBlock.Variables"/>
+    public IEnumerable<Variable> Variables => _queryDefinition.Variables;
     
     private QueryBuilder(QueryDefinition queryDefinition, QueryBuilderOptions? options)
     {
@@ -116,7 +117,7 @@ public sealed class QueryBuilder
         return this;
     }
 
-    private static void RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    private void RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         var parentField = GetOrCreateField(fields, fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Arguments);
 
@@ -126,7 +127,7 @@ public sealed class QueryBuilder
         }
     }
 
-    private static FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, string? fieldAlias, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, string? fieldAlias, IReadOnlyDictionary<string, object> arguments)
     {
         if (!fields.TryGetValue(fieldName, out var rootField))
         {
@@ -189,14 +190,19 @@ public sealed class QueryBuilder
         return value ?? throw new InvalidOperationException($"Failed to create a new field for path: {fieldPath}");
     }
     
-    private static FieldDefinition GetNewField(string field, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetNewField(string field, IReadOnlyDictionary<string, object> arguments)
     {
         var (name, alias) = GetFieldNameAndAlias(field);
 
         return GetNewField(name, alias, arguments);
     }
     
-    private static FieldDefinition GetNewField(string name, string? alias, IReadOnlyDictionary<string, object> arguments) => new(name, alias, arguments);
+    private FieldDefinition GetNewField(string name, string? alias, IReadOnlyDictionary<string, object> arguments)
+    {
+        Helpers.ExtractVariablesFromValue(arguments, _queryDefinition.Variables);
+        
+        return new FieldDefinition(name, alias, arguments);
+    }
 
     private static (string Name, string? Alias) GetFieldNameAndAlias(string field)
     {
@@ -207,5 +213,7 @@ public sealed class QueryBuilder
         return (namePart, alias);
     }
     
-    public Query ToQuery() => _queryDefinition.ToQuery();
+    /// <inheritdoc cref="QueryBlock.ToString()"/>
+    public override string ToString() => _queryDefinition.ToString();
+    public static implicit operator string(QueryBuilder query) => query.ToString();
 }
