@@ -124,6 +124,7 @@ public sealed class Query
         return this;
     }
 
+    /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => Block.ToString();
     public static implicit operator string(Query query) => query.Block.ToString();
 }

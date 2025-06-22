@@ -95,7 +95,7 @@ public class UsersQueryTests
     [Fact]
     public async Task UsersBatchQuery_Builder()
     {
-        var builderQuery = UsersBatchQueryBuilder.ToQuery();
+        var builderQuery = UsersBatchQueryBuilder;
         
         await VerifyBetsQuery(builderQuery);
     }
@@ -103,7 +103,7 @@ public class UsersQueryTests
     [Fact]
     public async Task UsersBatchQueryMerged_Builder()
     {
-        var builderQuery = UsersBatchQueryMerged.ToQuery();
+        var builderQuery = UsersBatchQueryMerged;
         
         await VerifyBetsQuery(builderQuery);
     }
@@ -111,11 +111,18 @@ public class UsersQueryTests
     [Fact]
     public async Task UsersBatchQueryMergedTwice_Builder()
     {
-        var builderQuery = UsersBatchQueryMergedTwice.ToQuery();
+        var builderQuery = UsersBatchQueryMergedTwice;
         
         await VerifyBetsQuery(builderQuery);
     }
 
+    private static async Task VerifyBetsQuery(QueryBuilder query)
+    {
+        await query.Verify("usersBatchQuery");
+        
+        query.Variables.Should().BeEquivalentTo([TestVariablesCatalog.SiteVariable, TestVariablesCatalog.TenantIdVariable, TestVariablesCatalog.UserIdsVariable]);
+    }
+    
     private static async Task VerifyBetsQuery(Query query)
     {
         await query.Verify("usersBatchQuery");

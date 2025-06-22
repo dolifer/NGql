@@ -14,8 +14,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
-            .AddField(fieldName)
-            .ToQuery();
+            .AddField(fieldName);
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
@@ -34,8 +33,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
-            .AddField(fieldName)
-            .ToQuery();
+            .AddField(fieldName);
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
@@ -49,8 +47,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
-            .AddField("parent.child")
-            .ToQuery();
+            .AddField("parent.child");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
@@ -66,8 +63,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
-            .AddField("alias:parent.alias:child")
-            .ToQuery();
+            .AddField("alias:parent.alias:child");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
@@ -84,8 +80,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("ComplexQuery")
             .AddField("parent.child1.grandchild1")
-            .AddField("parent.child2.grandchild2")
-            .ToQuery();
+            .AddField("parent.child2.grandchild2");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexQuery{
@@ -107,8 +102,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("MultipleTopLevelQuery")
             .AddField("field1")
-            .AddField("field2")
-            .ToQuery();
+            .AddField("field2");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MultipleTopLevelQuery{
@@ -124,8 +118,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("MixedQuery")
             .AddField("field1")
-            .AddField("parent.child")
-            .ToQuery();
+            .AddField("parent.child");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MixedQuery{
@@ -142,8 +135,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var query = QueryBuilder
             .CreateDefaultBuilder("DeepQuery")
-            .AddField("level1.level2.level3.level4")
-            .ToQuery();
+            .AddField("level1.level2.level3.level4");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query DeepQuery{
@@ -165,8 +157,7 @@ public class QueryBuilderQueryTests
             .CreateDefaultBuilder("SiblingsQuery")
             .AddField("parent.child1")
             .AddField("parent.child2")
-            .AddField("parent.child3")
-            .ToQuery();
+            .AddField("parent.child3");
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SiblingsQuery{
@@ -187,8 +178,7 @@ public class QueryBuilderQueryTests
             .AddField("field1")
             .AddField("parent1", subFields:["child1", "child2"])
             .AddField("parent1.child2")
-            .AddField("parent2.child", subFields:["gc:grandchild", "grandchild2"])
-            .ToQuery();
+            .AddField("parent2.child", subFields:["gc:grandchild", "grandchild2"]);
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexCombinationQuery{

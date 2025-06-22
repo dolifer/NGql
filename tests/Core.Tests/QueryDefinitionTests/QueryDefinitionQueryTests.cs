@@ -1,6 +1,5 @@
 ﻿using FluentAssertions;
 using NGql.Core.Abstractions;
-using NGql.Core.Extensions;
 using Xunit;
 
 namespace NGql.Core.Tests.QueryDefinitionTests;
@@ -25,8 +24,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
     
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
@@ -71,8 +69,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
         
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexQuery{
@@ -98,8 +95,7 @@ public class QueryDefinitionQueryTests
                     { "field1", new FieldDefinition("field1") },
                     { "field2", new FieldDefinition("field2") }
                 }
-            }
-            .ToQuery();
+            };
         
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MultipleTopLevelQuery{
@@ -127,8 +123,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
         
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MixedQuery{
@@ -173,8 +168,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
                                                             
         
         // Assert the final GraphQL query
@@ -209,8 +203,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
         
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SiblingsQuery{
@@ -259,8 +252,7 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            }
-            .ToQuery();
+            };
         
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexCombinationQuery{

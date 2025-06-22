@@ -56,7 +56,6 @@ public readonly struct Variable : IComparable, IComparable<Variable>
         builder.Append(isRootElement ? Name : key);
         builder.Append(':');
         builder.Append(isRootElement ? Type : Name);
-        builder.Append(", ");
     }
 
     public static bool operator ==(Variable left, Variable right) => left.Equals(right);
