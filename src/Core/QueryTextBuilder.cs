@@ -1,5 +1,7 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using NGql.Core.Abstractions;
@@ -70,11 +72,16 @@ internal sealed class QueryTextBuilder
         return _stringBuilder.ToString();
     }
     
-    private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
+    private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
     {
         string padding = new(' ', indent);
 
-        foreach (var field in fields.Values)
+        // Sort fields by both alias and name to maintain consistent ordering
+        var orderedFields = fields.Values
+            .OrderBy(f => f.Alias ?? f.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        
+        foreach (var field in orderedFields)
         {
             _stringBuilder.Append(padding);
 
@@ -195,8 +202,17 @@ internal sealed class QueryTextBuilder
 
         _stringBuilder.AppendLine("{");
         string padding = new(' ', indent);
+        
+        // Sort fields by their string representation or QueryBlock properties
+        var orderedFields = queryBlock.FieldsList
+            .OrderBy(field => field switch
+            {
+                QueryBlock block => block.Alias ?? block.Name,
+                string str => str,
+                _ => field.ToString()
+            }, StringComparer.OrdinalIgnoreCase);
 
-        foreach (var field in queryBlock.FieldsList)
+        foreach (var field in orderedFields)
         {
             switch (field)
             {

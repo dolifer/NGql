@@ -135,7 +135,7 @@ public class WhereTests
         value.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
         value.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
             
-        queryText.Should().Be(@"query name($from:Int, $to:Int, filters:{to:$to, from:$from}){
+        queryText.Should().Be(@"query name($from:Int, $to:Int, filters:{from:$from, to:$to}){
 }");
     }
         

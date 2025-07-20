@@ -149,13 +149,28 @@ public sealed class QueryBlock
                 return;
             }
 
-            _fieldsList.Add(field);
+            // Add string field in sorted order
+            var insertIndex = _fieldsList.OfType<string>()
+                .TakeWhile(existing => string.Compare(existing, field, StringComparison.OrdinalIgnoreCase) < 0)
+                .Count();
+           
+            _fieldsList.Insert(insertIndex, field);
             return;
         }
 
         if (value is IList list)
         {
-            foreach (var item in list)
+            // Sort the list items before adding them
+            var sortedItems = list.Cast<object>()
+                .OrderBy(x => x switch
+                {
+                    string s => s,
+                    QueryBlock q => q.Name,
+                    _ => x.ToString()
+                })
+                .ToList();
+            
+            foreach (var item in sortedItems)
             {
                 HandleAddField(item);
             }
@@ -174,7 +189,8 @@ public sealed class QueryBlock
     private void HandleAddArgument(string key, object value)
     {
         Helpers.ExtractVariablesFromValue(value, _variables);
-
-        _arguments[key] = value;
+        var sortedValue = Helpers.SortArgumentValue(value);
+        
+        _arguments[key] = sortedValue;
     }
 }

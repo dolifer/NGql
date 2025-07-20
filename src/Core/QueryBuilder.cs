@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core;
@@ -17,7 +19,7 @@ public sealed class QueryBuilderOptions
 public sealed class QueryBuilder
 {
     private readonly QueryBuilderOptions _options;
-    private static readonly Dictionary<string, object> EmptyArguments = [];
+    private static readonly SortedDictionary<string, object> EmptyArguments = [];
 
     private readonly QueryDefinition _queryDefinition;
     private readonly Dictionary<string, FieldDefinition> _fieldCache = new();
@@ -53,7 +55,7 @@ public sealed class QueryBuilder
     /// <param name="field">Field name or path.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field) => AddFieldImpl(field, new Dictionary<string, object>(), []);
+    public QueryBuilder AddField(string field) => AddFieldImpl(field, new SortedDictionary<string, object>(), []);
     
     /// <summary>
     ///     Adds a field to the query.
@@ -62,7 +64,7 @@ public sealed class QueryBuilder
     /// <param name="subFields">The subfields for the field.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, string[]? subFields) => AddFieldImpl(field, new Dictionary<string, object>(), subFields);
+    public QueryBuilder AddField(string field, string[]? subFields) => AddFieldImpl(field, new SortedDictionary<string, object>(), subFields);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -71,7 +73,7 @@ public sealed class QueryBuilder
     /// <param name="arguments">The arguments for the field.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object> arguments) => AddFieldImpl(field, arguments, []);
+    public QueryBuilder AddField(string field, Dictionary<string, object> arguments) => AddFieldImpl(field, new SortedDictionary<string, object>(arguments), []);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -81,9 +83,9 @@ public sealed class QueryBuilder
     /// <param name="subFields">The subfields for the field.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object> arguments, string[] subFields) => AddFieldImpl(field, arguments, subFields);
+    public QueryBuilder AddField(string field, Dictionary<string, object> arguments, string[] subFields) => AddFieldImpl(field, new SortedDictionary<string, object>(arguments), subFields);
     
-    private QueryBuilder AddFieldImpl(string field, IReadOnlyDictionary<string, object> arguments, string[]? subFields)
+    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object> arguments, string[]? subFields)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -117,7 +119,7 @@ public sealed class QueryBuilder
         return this;
     }
 
-    private void RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    private void RecursiveCreateField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         var parentField = GetOrCreateField(fields, fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Arguments);
 
@@ -127,7 +129,7 @@ public sealed class QueryBuilder
         }
     }
 
-    private FieldDefinition GetOrCreateField(Dictionary<string, FieldDefinition> fields, string fieldName, string? fieldAlias, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetOrCreateField(SortedDictionary<string, FieldDefinition> fields, string fieldName, string? fieldAlias, SortedDictionary<string, object> arguments)
     {
         if (!fields.TryGetValue(fieldName, out var rootField))
         {
@@ -137,11 +139,11 @@ public sealed class QueryBuilder
         return rootField;
     }
     
-    private FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath, 
-        IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath, 
+        SortedDictionary<string, object> arguments)
     {
         FieldDefinition? value = null;
-        Dictionary<string, FieldDefinition> currentFields = fields;
+        SortedDictionary<string, FieldDefinition> currentFields = fields;
 
         while (fieldPath.Length > 0)
         {
@@ -190,18 +192,21 @@ public sealed class QueryBuilder
         return value ?? throw new InvalidOperationException($"Failed to create a new field for path: {fieldPath}");
     }
     
-    private FieldDefinition GetNewField(string field, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetNewField(string field, SortedDictionary<string, object> arguments)
     {
         var (name, alias) = GetFieldNameAndAlias(field);
 
         return GetNewField(name, alias, arguments);
     }
     
-    private FieldDefinition GetNewField(string name, string? alias, IReadOnlyDictionary<string, object> arguments)
+    private FieldDefinition GetNewField(string name, string? alias, SortedDictionary<string, object> arguments)
     {
         Helpers.ExtractVariablesFromValue(arguments, _queryDefinition.Variables);
-        
-        return new FieldDefinition(name, alias, arguments);
+        var sortedArguments = new SortedDictionary<string, object>(arguments.ToDictionary(
+            kvp => kvp.Key,
+            kvp => Helpers.SortArgumentValue(kvp.Value)));
+
+        return new FieldDefinition(name, alias, sortedArguments);
     }
 
     private static (string Name, string? Alias) GetFieldNameAndAlias(string field)
