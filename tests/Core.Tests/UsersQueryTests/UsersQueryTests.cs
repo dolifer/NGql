@@ -11,16 +11,18 @@ public class UsersQueryTests
     private static readonly Query UsersBatchQuery = new Query("all_users", nameof(UsersBatchQuery))
         .Include("base",
             b => b
+                .Where("z", "last")
                 .Where("condition", new Dictionary<string, object>
                 {
                     { "site", TestVariablesCatalog.SiteVariable },
                     { "tenant_id", TestVariablesCatalog.TenantIdVariable },
-                    { "is_test", false }
+                    { "is_test", false },
                 })
                 .Where("filters", new Dictionary<string, object>
                 {
                     { "user_id", new Dictionary<string, object> { { "in", TestVariablesCatalog.UserIdsVariable } } }
                 })
+                .Where("a", "first")
                 .Include("edges", e => e
                     .Include("node", n => n
                         .Select(
@@ -34,13 +36,18 @@ public class UsersQueryTests
         .AddField("base", new Dictionary<string, object>
             {
                 {
+                    "z", "last"
+                },
+                {
+                    "a", "first"
+                },
+                {
                     "condition", new Dictionary<string, object>
                     {
                         { "site", TestVariablesCatalog.SiteVariable },
                         { "tenant_id", TestVariablesCatalog.TenantIdVariable },
                         { "is_test", false }
                     }
-
                 },
                 {
                     "filters", new Dictionary<string, object>

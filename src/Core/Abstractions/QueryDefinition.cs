@@ -15,7 +15,7 @@ public sealed record QueryDefinition([property: JsonPropertyName("name")] string
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public Dictionary<string, FieldDefinition> Fields { get; } = new(StringComparer.InvariantCultureIgnoreCase);
+    public SortedDictionary<string, FieldDefinition> Fields { get; } = new(StringComparer.OrdinalIgnoreCase);
     
     /// <summary>
     ///     The collection of variables related to fields or arguments.

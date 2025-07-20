@@ -80,7 +80,9 @@ internal static class QueryBlockObjectExtensions
     /// <returns>Query</returns>
     public static void Include<T>(this QueryBlock block, string name, string? alias = null)
     {
-        var properties = typeof(T).GetProperties();
+        var properties = typeof(T).GetProperties()
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         var subQuery = new QueryBlock(name, alias: alias);
 
@@ -98,7 +100,9 @@ internal static class QueryBlockObjectExtensions
     public static void Include(this QueryBlock block, object obj)
     {
         var type = obj.GetType();
-        var properties = type.GetProperties();
+        var properties = type.GetProperties()
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         HandleProperties(block, obj, properties);
     }
@@ -139,7 +143,10 @@ internal static class QueryBlockObjectExtensions
     private static void HandleDictionary(QueryBlock block, string name, string? alias, IDictionary dict)
     {
         var subQuery = new QueryBlock(name, alias: alias);
-        foreach (var key in dict.Keys)
+        var sortedKeys = dict.Keys.Cast<object>()
+            .OrderBy(k => k.ToString(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in sortedKeys)
         {
             if (dict[key] is IDictionary nestedDict)
             {
@@ -166,3 +173,4 @@ internal static class QueryBlockObjectExtensions
             }.Contains(type) ||
             Convert.GetTypeCode(type) != TypeCode.Object;
 }
+

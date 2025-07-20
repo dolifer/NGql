@@ -47,8 +47,8 @@ public readonly struct Variable : IComparable, IComparable<Variable>
 
     public int CompareTo(Variable other)
     {
-        var nameComparison = string.Compare(Name, other.Name, StringComparison.Ordinal);
-        return nameComparison != 0 ? nameComparison : string.Compare(Type, other.Type, StringComparison.Ordinal);
+        var nameComparison = string.Compare(Name, other.Name, StringComparison.OrdinalIgnoreCase);
+        return nameComparison != 0 ? nameComparison : string.Compare(Type, other.Type, StringComparison.OrdinalIgnoreCase);
     }
 
     internal void Print(StringBuilder builder, string key, bool isRootElement)

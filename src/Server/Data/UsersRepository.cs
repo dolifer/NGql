@@ -49,7 +49,7 @@ public class UsersRepository : IUsersRepository
 
         if (!string.IsNullOrWhiteSpace(name))
         {
-            users = users.Where(x => x.Name.Contains(name, StringComparison.InvariantCultureIgnoreCase));
+            users = users.Where(x => x.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
         }
 
         return Task.FromResult(users);
