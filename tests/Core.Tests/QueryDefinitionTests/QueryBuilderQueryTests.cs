@@ -1,4 +1,5 @@
-﻿using FluentAssertions;
+﻿using System.Collections.Generic;
+using FluentAssertions;
 using Xunit;
 
 namespace NGql.Core.Tests.QueryDefinitionTests;
@@ -191,6 +192,43 @@ public class QueryBuilderQueryTests
         child{
             gc:grandchild
             grandchild2
+        }
+    }
+}");
+    }
+    
+    [Fact]
+    public void Complex_Combination_Of_Fields_Syntax_Include()
+    {
+        // Arrange
+        var parent1 = QueryBuilder
+            .CreateDefaultBuilder("Parent1")
+            .AddField("f1alias:field1.child1", arguments: new Dictionary<string, object>() { { "first", "true" } })
+            .AddField("field1.child1.edges.node", subFields: ["child11", "child12"])
+            .AddField("field1.child1.edges.node.metrics.values.foo", subFields: ["bar", "baz"]);
+            
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ComplexCombinationQuery")
+            .Include(parent1);
+    
+        // Assert the final GraphQL query
+        query.ToString().Should().Be(@"query ComplexCombinationQuery{
+    f1alias:field1{
+        child1(first:""true""){
+            edges{
+                node{
+                    child11
+                    child12
+                    metrics{
+                        values{
+                            foo{
+                                bar
+                                baz
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }");
