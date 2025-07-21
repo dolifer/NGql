@@ -92,7 +92,7 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
         
-        var value = GetOrAddField(_queryDefinition.Fields, field, arguments);
+        var value = GetOrAddField(_queryDefinition.Fields, field, arguments,"");
 
         if (subFields is null || subFields.Length == 0)
         {
@@ -101,7 +101,7 @@ public sealed class QueryBuilder
         
         foreach (var subField in subFields)
         {
-            GetOrAddField(value.Fields, subField, EmptyArguments);
+            GetOrAddField(value.Fields, subField, EmptyArguments, field);
         }
         
         return this;
@@ -140,10 +140,13 @@ public sealed class QueryBuilder
     }
     
     private FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath, 
-        SortedDictionary<string, object> arguments)
+        SortedDictionary<string, object> arguments, string? parentPath)
     {
         FieldDefinition? value = null;
         SortedDictionary<string, FieldDefinition> currentFields = fields;
+        var fullPath = string.IsNullOrWhiteSpace(parentPath)
+            ? []
+            : parentPath.Split('.', StringSplitOptions.RemoveEmptyEntries).ToList();
 
         while (fieldPath.Length > 0)
         {
@@ -162,8 +165,11 @@ public sealed class QueryBuilder
                 fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
                 continue;
             }
-            
-            if (_options.UseFieldsCache && _fieldCache.TryGetValue(name, out var cachedField))
+
+            fullPath.Add(name);
+            var cacheKey = string.Join(".", fullPath);
+
+            if (_options.UseFieldsCache && _fieldCache.TryGetValue(cacheKey, out var cachedField))
             {
                 value = cachedField;
                 currentFields = value.Fields;
@@ -179,7 +185,7 @@ public sealed class QueryBuilder
 
                 if (_options.UseFieldsCache)
                 {
-                    _fieldCache[name] = value;
+                    _fieldCache[cacheKey] = value;
                 }
             }
             else
