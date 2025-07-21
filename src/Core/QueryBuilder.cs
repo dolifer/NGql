@@ -172,19 +172,24 @@ public sealed class QueryBuilder
                 continue;
             }
 
-            if (!currentFields.TryGetValue(currentPath, out var childValue))
+            if (!currentFields.TryGetValue(name, out var childValue))
             {
                 var fieldArguments = isLastFragment ? arguments : EmptyArguments;
-                value = currentFields[currentPath] = GetNewField(name, alias, fieldArguments);
+                value = currentFields[name] = GetNewField(name, alias, fieldArguments);
 
                 if (_options.UseFieldsCache)
                 {
-                    _fieldCache[currentPath] = value;
+                    _fieldCache[name] = value;
                 }
             }
             else
             {
                 value = childValue;
+                // Update alias if one is provided and the field doesn't already have one
+                if (alias != null && value.Alias == null)
+                {
+                    value = currentFields[name] = new FieldDefinition(name, alias, value.Arguments);
+                }
             }
             
             fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];

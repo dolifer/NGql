@@ -233,4 +233,37 @@ public class QueryBuilderQueryTests
     }
 }");
     }
+
+    [Fact]
+    public void Ensure_Include_Correctly_WithAlias()
+    {
+        QueryBuilder myQuery = QueryBuilder.CreateDefaultBuilder(nameof(myQuery));
+        
+        QueryBuilder child = QueryBuilder.CreateDefaultBuilder(nameof(myQuery))
+                .AddField("Alias:path.to.object", new Dictionary<string, object>
+                {
+                    { "first", new Variable("$take", "Int") }
+                })
+                .AddField("path.to.object.edges.node", subFields: ["foo:bar"]);
+
+        child.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
+        
+        var text = myQuery.Include(child).ToString();
+
+        myQuery.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
+        
+        text.Should().Be(@"query myQuery($take:Int){
+    Alias:path{
+        to{
+            object(first:$take){
+                edges{
+                    node{
+                        foo:bar
+                    }
+                }
+            }
+        }
+    }
+}");
+    }
 }
