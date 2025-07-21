@@ -155,13 +155,15 @@ public sealed class QueryBuilder
                 : fieldPath[..nextDot];
 
             var currentPath = currentPart.ToString(); 
+            var (name, alias) = GetFieldNameAndAlias(currentPath);
+
             if (string.IsNullOrWhiteSpace(currentPath))
             {
                 fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
                 continue;
             }
             
-            if (_options.UseFieldsCache && _fieldCache.TryGetValue(currentPath, out var cachedField))
+            if (_options.UseFieldsCache && _fieldCache.TryGetValue(name, out var cachedField))
             {
                 value = cachedField;
                 currentFields = value.Fields;
@@ -173,7 +175,7 @@ public sealed class QueryBuilder
             if (!currentFields.TryGetValue(currentPath, out var childValue))
             {
                 var fieldArguments = isLastFragment ? arguments : EmptyArguments;
-                value = currentFields[currentPath] = GetNewField(currentPath, fieldArguments);
+                value = currentFields[currentPath] = GetNewField(name, alias, fieldArguments);
 
                 if (_options.UseFieldsCache)
                 {
@@ -191,14 +193,7 @@ public sealed class QueryBuilder
 
         return value ?? throw new InvalidOperationException($"Failed to create a new field for path: {fieldPath}");
     }
-    
-    private FieldDefinition GetNewField(string field, SortedDictionary<string, object> arguments)
-    {
-        var (name, alias) = GetFieldNameAndAlias(field);
 
-        return GetNewField(name, alias, arguments);
-    }
-    
     private FieldDefinition GetNewField(string name, string? alias, SortedDictionary<string, object> arguments)
     {
         Helpers.ExtractVariablesFromValue(arguments, _queryDefinition.Variables);

@@ -8,8 +8,7 @@ namespace NGql.Core.Abstractions;
 ///     Represents a query definition.
 /// </summary>
 /// <param name="Name">The name of the query.</param>
-/// <param name="Alias">The alias of the query.</param>
-public sealed record QueryDefinition([property: JsonPropertyName("name")] string Name, [property: JsonPropertyName("alias")] string? Alias = null)
+public sealed record QueryDefinition([property: JsonPropertyName("name")] string Name)
 {
     /// <summary>
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
