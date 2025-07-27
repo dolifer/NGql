@@ -203,7 +203,7 @@ public class QueryBuilderQueryTests
         // Arrange
         var parent1 = QueryBuilder
             .CreateDefaultBuilder("Parent1")
-            .AddField("f1alias:field1.child1", arguments: new Dictionary<string, object>() { { "first", "true" } })
+            .AddField("f1alias:field1.child1", arguments: new Dictionary<string, object?>() { { "first", "true" } })
             .AddField("field1.child1.edges.node", subFields: ["child11", "child12"])
             .AddField("field1.child1.edges.node.metrics.values.foo", subFields: ["bar", "baz"]);
             
@@ -240,12 +240,27 @@ public class QueryBuilderQueryTests
         QueryBuilder myQuery = QueryBuilder.CreateDefaultBuilder(nameof(myQuery));
 
         QueryBuilder child = QueryBuilder.CreateDefaultBuilder(nameof(myQuery))
-            .AddField("Alias:path.to.object", new Dictionary<string, object>
+            .AddField("Alias:path.to.object", new Dictionary<string, object?>
             {
-                { "first", new Variable("$take", "Int") }
+                { "first", new Variable("$take", "Int") },
+                { "nested", new Dictionary<string, object>
+                    {
+                        { "foo", "fooooo" },
+                        { "bar", "baaaaaar" }
+                    }
+                }
             })
             .AddField("path.to.object.edges.node.left", subFields: ["foo:bar","baz:qux"])
-            .AddField("path.to.object.edges.node.right", subFields: ["foo:bar", "baz:qux"]);
+            .AddField("path.to.object.edges.node.right", subFields: ["foo:bar", "baz:qux"])
+            .AddField("Alias:path.to.object", new Dictionary<string, object?>
+            {
+                { "second", new Variable("$take", "Int") },
+                { "nested", new Dictionary<string, object>()
+                    {
+                        { "baz", "qux" }
+                    }
+                }
+            });
 
         child.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
         
@@ -256,7 +271,7 @@ public class QueryBuilderQueryTests
         text.Should().Be(@"query myQuery($take:Int){
     Alias:path{
         to{
-            object(first:$take){
+            object(first:$take, nested:{bar:""baaaaaar"", baz:""qux"", foo:""fooooo""}, second:$take){
                 edges{
                     node{
                         left{

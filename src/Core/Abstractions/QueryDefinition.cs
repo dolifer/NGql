@@ -20,7 +20,7 @@ public sealed record QueryDefinition([property: JsonPropertyName("name")] string
     ///     The collection of variables related to fields or arguments.
     /// </summary>
     [JsonIgnore]
-    public SortedSet<Variable> Variables { get; } = new();
+    public SortedSet<Variable> Variables { get; internal set; } = new();
     
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => new QueryTextBuilder().Build(this);
