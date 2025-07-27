@@ -35,6 +35,45 @@ internal static class Helpers
             }
         }
     }
+
+    internal static SortedDictionary<string, object> MergeDictionaries(
+        IDictionary<string, object> existing,
+        IDictionary<string, object> update)
+    {
+        var result = new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+
+        // First, add all existing entries
+        foreach (var (key, value) in existing)
+        {
+            result[key] = value;
+        }
+
+        // Then merge or add update entries
+        foreach (var (key, updateValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue))
+            {
+                if (existingValue is IDictionary<string, object> existingDict && 
+                    updateValue is IDictionary<string, object> updateDict)
+                {
+                    // Recursively merge nested dictionaries
+                    result[key] = MergeDictionaries(existingDict, updateDict);
+                }
+                else
+                {
+                    // For non-dictionary values, update value overrides existing
+                    result[key] = updateValue;
+                }
+            }
+            else
+            {
+                result[key] = updateValue;
+            }
+        }
+
+        return result;
+    }
+
     
     internal static object? SortArgumentValue(object? value)
     {
