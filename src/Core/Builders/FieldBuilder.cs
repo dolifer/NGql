@@ -9,7 +9,7 @@ public sealed class FieldBuilder
 {
     private static readonly SortedDictionary<string, object?> EmptyArguments = [];
 
-    private readonly FieldDefinition _fieldDefinition;
+    private FieldDefinition _fieldDefinition;
 
     private FieldBuilder(FieldDefinition fieldDefinition)
     {
@@ -45,9 +45,13 @@ public sealed class FieldBuilder
     {
         var addedField = GetOrAddField(_fieldDefinition.Fields, fieldName, EmptyArguments, _fieldDefinition.Path);
 
-        var childFieldBuilder = new FieldBuilder(addedField);
-        
-        action(childFieldBuilder);
+        var fieldBuilder = new FieldBuilder(addedField);
+
+        action(fieldBuilder);
+
+        var updatedField = fieldBuilder.Build();
+
+        Helpers.ApplyFieldChanges(_fieldDefinition.Fields, updatedField);
 
         return this;
     }
@@ -183,7 +187,10 @@ public sealed class FieldBuilder
             kvp => kvp.Key,
             kvp => Helpers.SortArgumentValue(kvp.Value)));
 
-        return new FieldDefinition(name, alias, sortedArguments) { Path = path };
+        return new FieldDefinition(name, alias, sortedArguments, [])
+        {
+            Path = path
+        };
     }
 
     private static (string Name, string? Alias) GetFieldNameAndAlias(string field)
@@ -216,5 +223,42 @@ public sealed class FieldBuilder
     internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         RecursiveCreateField(fields, fieldDefinition);
+    }
+
+    public FieldBuilder WithAlias(string alias)
+    {
+        _fieldDefinition = _fieldDefinition with { Alias = alias };
+
+        return this;
+    }
+
+    public FieldBuilder Where(string key, object? value)
+    {
+        if (_fieldDefinition.Arguments != null && _fieldDefinition.Arguments.TryGetValue(key, out var existingValue))
+        {
+            if (existingValue is IDictionary<string, object> existingDict && value is IDictionary<string, object> newDict)
+            {
+                // Merge nested dictionaries
+                _fieldDefinition.Arguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
+            }
+            else
+            {
+                // Override the existing value with the new one
+                _fieldDefinition.Arguments[key] = value;
+            }
+        }
+        else
+        {
+            if (_fieldDefinition.Arguments is null)
+            {
+                _fieldDefinition = _fieldDefinition with { Arguments = new SortedDictionary<string, object?>() };
+            }
+            else
+            {
+                _fieldDefinition.Arguments[key] = value;
+            }
+        }
+
+        return this;
     }
 }
