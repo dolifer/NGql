@@ -33,6 +33,10 @@ public sealed record FieldDefinition
     [JsonPropertyName("name")]
     public string Name { get; init; }
 
+    /// <summary>The type of the field.</summary>
+    [JsonPropertyName("type")]
+    public string Type { get; init; }
+
     /// <summary></summary>
     [JsonPropertyName("alias")] public string? Alias { get; init; }
 
