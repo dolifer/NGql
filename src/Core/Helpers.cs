@@ -117,6 +117,14 @@ internal static class Helpers
 
     public static void ApplyFieldChanges(SortedDictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition fieldDefinition)
     {
+        var existingField = fieldDefinitions.Values.FirstOrDefault(x => x.Path == fieldDefinition.Path);
+        
+        if (existingField is not null)
+        {
+            fieldDefinitions[fieldDefinition.Name] = fieldDefinition;
+            return;
+        }
+        
         var pathParts = fieldDefinition.Path.Split('.');
         var currentFields = fieldDefinitions;
 
