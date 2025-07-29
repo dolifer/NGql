@@ -114,4 +114,26 @@ internal static class Helpers
             _ => value
         };
     }
+
+    public static void ApplyFieldChanges(SortedDictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition fieldDefinition)
+    {
+        var pathParts = fieldDefinition.Path.Split('.');
+        var currentFields = fieldDefinitions;
+
+        foreach (var part in pathParts)
+        {
+            if (!currentFields.TryGetValue(part, out var currentField))
+            {
+                return; // Path not found
+            }
+
+            if (part == pathParts[^1]) // Last part - update the values
+            {
+                currentFields[part] = fieldDefinition;
+                return;
+            }
+
+            currentFields = currentField.Fields;
+        }
+    }
 }

@@ -91,6 +91,10 @@ public sealed class QueryBuilder
 
         fieldBuilder.Invoke(builder);
 
+        var updatedField = builder.Build();
+
+        Helpers.ApplyFieldChanges(_queryDefinition.Fields, updatedField);
+
         return this;
     }
 
