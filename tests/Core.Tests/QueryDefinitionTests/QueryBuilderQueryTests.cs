@@ -243,10 +243,11 @@ public class QueryBuilderQueryTests
             .AddField("Alias:path.to.object", new Dictionary<string, object?>
             {
                 { "first", new Variable("$take", "Int") },
-                { "nested", new Dictionary<string, object>
+                { "nested", new 
                     {
-                        { "foo", "fooooo" },
-                        { "bar", "baaaaaar" }
+                        foo = "fooooo",
+                        bar = "baaaaaar",
+                        bazvar = new Variable("$bazvar", "Int")
                     }
                 }
             })
@@ -263,15 +264,17 @@ public class QueryBuilderQueryTests
             });
 
         child.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
+        child.Variables.Should().ContainSingle(v => v.Name == "$bazvar" && v.Type == "Int");
         
         var text = myQuery.Include(child).ToString();
 
         myQuery.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
+        myQuery.Variables.Should().ContainSingle(v => v.Name == "$bazvar" && v.Type == "Int");
         
-        text.Should().Be(@"query myQuery($take:Int){
+        text.Should().Be(@"query myQuery($bazvar:Int, $take:Int){
     Alias:path{
         to{
-            object(first:$take, nested:{bar:""baaaaaar"", baz:""qux"", foo:""fooooo""}, second:$take){
+            object(first:$take, nested:{bar:""baaaaaar"", baz:""qux"", bazvar:$bazvar, foo:""fooooo""}, second:$take){
                 edges{
                     node{
                         left{
