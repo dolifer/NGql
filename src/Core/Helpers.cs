@@ -33,6 +33,25 @@ internal static class Helpers
 
                 break;
             }
+            case { } obj when obj is not string &&
+                              obj is not Variable &&
+                              obj is not QueryBlock &&
+                              obj is not IDictionary &&
+                              obj is not IList &&
+                              !ValueFormatter.TryFormatPrimitiveType(obj, out _):
+            {
+                // Extract variables from object properties using reflection
+                var properties = obj.GetType().GetProperties();
+                foreach (var property in properties)
+                {
+                    var propertyValue = property.GetValue(obj);
+                    if (propertyValue != null)
+                    {
+                        ExtractVariablesFromValue(propertyValue, variables);
+                    }
+                }
+                break;
+            }
         }
     }
 
