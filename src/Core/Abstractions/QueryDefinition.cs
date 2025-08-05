@@ -26,7 +26,7 @@ public sealed record QueryDefinition(string Name, string Description = "")
     /// </summary>
     [JsonPropertyName("fields")]
     public SortedDictionary<string, FieldDefinition> Fields { get; init; } = new(StringComparer.OrdinalIgnoreCase);
-    
+
     /// <summary>
     ///     The collection of variables related to fields or arguments.
     /// </summary>

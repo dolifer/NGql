@@ -20,14 +20,17 @@ public sealed class QueryBuilder
 {
     private readonly QueryBuilderOptions _options;
 
-    private readonly QueryDefinition _queryDefinition;
+    /// <summary>
+    ///    The query definition that this builder is working with.
+    /// </summary>
+    public QueryDefinition Definition { get; }
 
     /// <inheritdoc cref="QueryBlock.Variables"/>
-    public IEnumerable<Variable> Variables => _queryDefinition.Variables;
+    public IEnumerable<Variable> Variables => Definition.Variables;
     
     private QueryBuilder(QueryDefinition queryDefinition, QueryBuilderOptions? options)
     {
-        _queryDefinition = queryDefinition;
+        Definition = queryDefinition;
         _options = options ?? QueryBuilderOptions.Default;
     }
 
@@ -87,13 +90,13 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
         
-        var builder = FieldBuilder.Create(_queryDefinition.Fields, field);
+        var builder = FieldBuilder.Create(Definition.Fields, field);
 
         fieldBuilder.Invoke(builder);
 
         var updatedField = builder.Build();
 
-        Helpers.ApplyFieldChanges(_queryDefinition.Fields, updatedField);
+        Helpers.ApplyFieldChanges(Definition.Fields, updatedField);
 
         return this;
     }
@@ -115,9 +118,9 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
 
-        Helpers.ExtractVariablesFromValue(arguments, _queryDefinition.Variables);
+        Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
-        var builder = FieldBuilder.Create(_queryDefinition.Fields, field, arguments);
+        var builder = FieldBuilder.Create(Definition.Fields, field, arguments);
 
         if (subFields is null || subFields.Length == 0)
         {
@@ -132,21 +135,21 @@ public sealed class QueryBuilder
         return this;
     }
 
-    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder._queryDefinition);
+    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
 
     private QueryBuilder IncludeImpl(QueryDefinition queryDefinition)
     {
-        _queryDefinition.Variables = new SortedSet<Variable>(_queryDefinition.Variables.Union(queryDefinition.Variables));
+        Definition.Variables = new SortedSet<Variable>(Definition.Variables.Union(queryDefinition.Variables));
         
         foreach (var fieldDefinition in queryDefinition.Fields.Values)
         {
-            FieldBuilder.Include(_queryDefinition.Fields, fieldDefinition);
+            FieldBuilder.Include(Definition.Fields, fieldDefinition);
         }
 
         return this;
     }
  
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => _queryDefinition.ToString();
+    public override string ToString() => Definition.ToString();
     public static implicit operator string(QueryBuilder query) => query.ToString();
 }
