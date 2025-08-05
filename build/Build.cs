@@ -111,7 +111,6 @@ class Build : NukeBuild
             }
 
             PushPackages("*.nupkg");
-            PushPackages("*.snupkg");
         });
 
     Target Coverage => _ => _
