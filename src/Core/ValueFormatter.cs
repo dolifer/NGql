@@ -22,6 +22,7 @@ internal static class ValueFormatter
             float floatValue => floatValue.ToString(CultureInfo.InvariantCulture),
             double doubleValue => doubleValue.ToString(CultureInfo.InvariantCulture),
             decimal decimalValue => decimalValue.ToString(CultureInfo.InvariantCulture),
+            EnumValue enumValue => enumValue.Value,
             Enum enumValue => enumValue.ToString(),
             Variable variable => variable.Name,
             _ => default

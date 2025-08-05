@@ -6,7 +6,7 @@ namespace NGql.Core;
 /// <summary>
 ///     Represents a variable in GraphQL query.
 /// </summary>
-public readonly struct Variable : IComparable, IComparable<Variable>
+public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable<Variable>
 {
     /// <summary>
     /// Name of the variable.
@@ -68,6 +68,8 @@ public readonly struct Variable : IComparable, IComparable<Variable>
     public static bool operator >=(Variable left, Variable right) => left.CompareTo(right) >= 0;
         
     public override bool Equals(object? obj) => CompareTo(obj) == 0;
-        
+
+    public bool Equals(Variable other) => CompareTo(other) == 0;
+
     public override int GetHashCode() => HashCode.Combine(Name, Type);
 }
