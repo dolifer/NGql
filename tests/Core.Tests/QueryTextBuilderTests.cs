@@ -83,6 +83,17 @@ public class QueryTextBuilderTests
         // assert
         valueString.Should().Be("OK");
     }
+    
+    [Fact]
+    public void BuildQueryParam_Parse_EnumValue()
+    {
+        // act
+        var enumValue = new EnumValue(HttpStatusCode.OK);
+        var valueString = BuildQueryParam(enumValue);
+
+        // assert
+        valueString.Should().Be("OK");
+    }
 
     [Fact]
     public void BuildQueryParam_Parse_Array()
@@ -117,11 +128,17 @@ public class QueryTextBuilderTests
             {"numbers", new [] { 123, 456, 789}},
             {"k1", "v1"},
             {"k2", 4.2},
-            {"k3", null}
+            {"k3", null},
+            {"k4", new EnumValue(HttpStatusCode.OK)},
+            {"k5", new Dictionary<string, object>
+            {
+                {"enum", HttpStatusCode.OK},
+                {"enumValue", new EnumValue(HttpStatusCode.OK)},
+            }}
         });
 
         // assert
-        valueString.Should().Be("{numbers:[123, 456, 789], k1:\"v1\", k2:4.2, k3:null}");
+        valueString.Should().Be("{numbers:[123, 456, 789], k1:\"v1\", k2:4.2, k3:null, k4:OK, k5:{enum:OK, enumValue:OK}}");
     }
 
     [Fact]

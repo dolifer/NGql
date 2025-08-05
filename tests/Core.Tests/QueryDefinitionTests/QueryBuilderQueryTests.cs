@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Net;
 using FluentAssertions;
 using Xunit;
 
@@ -243,6 +244,12 @@ public class QueryBuilderQueryTests
             .AddField("Alias:path.to.object", new Dictionary<string, object?>
             {
                 { "first", new Variable("$take", "Int") },
+                {"enums", new Dictionary<string, object?>
+                    {
+                        { "raw", HttpStatusCode.OK },
+                        { "enumValue", new EnumValue(HttpStatusCode.OK) }
+                    }
+                },
                 { "nested", new 
                     {
                         foo = "fooooo",
@@ -274,7 +281,7 @@ public class QueryBuilderQueryTests
         text.Should().Be(@"query myQuery($bazvar:Int, $take:Int){
     Alias:path{
         to{
-            object(first:$take, nested:{bar:""baaaaaar"", baz:""qux"", bazvar:$bazvar, foo:""fooooo""}, second:$take){
+            object(enums:{enumValue:OK, raw:OK}, first:$take, nested:{bar:""baaaaaar"", baz:""qux"", bazvar:$bazvar, foo:""fooooo""}, second:$take){
                 edges{
                     node{
                         left{
