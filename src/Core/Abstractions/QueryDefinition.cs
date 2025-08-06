@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using NGql.Core.Builders;
 
 namespace NGql.Core.Abstractions;
 
@@ -38,6 +39,10 @@ public sealed record QueryDefinition(string Name, string Description = "")
     /// </summary>
     [JsonPropertyName("tags")]
     public string[] Tags { get; init; } = [];
+
+    /// <summary></summary>
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, object?>? Metadata { get; set; } = [];
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => new QueryTextBuilder().Build(this);

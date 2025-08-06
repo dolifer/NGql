@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Net;
 using FluentAssertions;
+using NGql.Core.Builders;
 using Xunit;
 
 namespace NGql.Core.Tests.QueryDefinitionTests;

@@ -1,5 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using NGql.Core;
+using NGql.Core.Builders;
 
 namespace Benchmarks.Benchmarks;
 

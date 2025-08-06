@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NGql.Core.Abstractions;
 
-namespace NGql.Core;
+namespace NGql.Core.Extensions;
 
 internal static class Helpers
 {

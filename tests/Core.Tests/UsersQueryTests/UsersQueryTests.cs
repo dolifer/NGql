@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
+using NGql.Core.Builders;
 using Shared;
 using Xunit;
 

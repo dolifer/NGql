@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Builders;
 
@@ -120,7 +121,7 @@ public sealed class FieldBuilder
             if (!currentFields.TryGetValue(name, out var childValue))
             {
                 var fieldArguments = isLastFragment ? arguments : EmptyArguments;
-                value = currentFields[name] = GetNewField(name, alias, fieldArguments, cacheKey);
+                value = currentFields[name] = GetNewField(name, null, alias, fieldArguments, cacheKey);
             }
             else
             {
@@ -181,13 +182,13 @@ public sealed class FieldBuilder
         return existingField with { Arguments = mergedArguments };
     }
 
-    private static FieldDefinition GetNewField(string name, string? alias, SortedDictionary<string, object?> arguments, string path)
+    private static FieldDefinition GetNewField(string name, string type, string? alias, SortedDictionary<string, object?> arguments, string path)
     {
         var sortedArguments = new SortedDictionary<string, object?>(arguments.ToDictionary(
             kvp => kvp.Key,
             kvp => Helpers.SortArgumentValue(kvp.Value)));
 
-        return new FieldDefinition(name, alias, sortedArguments, [])
+        return new FieldDefinition(name, type, alias, sortedArguments, [])
         {
             Path = path
         };
@@ -210,7 +211,7 @@ public sealed class FieldBuilder
         }
         else
         {
-            parentField = GetNewField(fieldDefinition.Name, fieldDefinition.Alias, fieldDefinition.Arguments ?? EmptyArguments, fieldDefinition.Path);
+            parentField = GetNewField(fieldDefinition.Name, fieldDefinition.Type, fieldDefinition.Alias, fieldDefinition.Arguments ?? EmptyArguments, fieldDefinition.Path);
             fields[parentField.Path] = parentField;
         }
 
@@ -219,7 +220,7 @@ public sealed class FieldBuilder
             RecursiveCreateField(parentField.Fields, childFieldDefinition);
         }
     }
-    
+
     internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         RecursiveCreateField(fields, fieldDefinition);
