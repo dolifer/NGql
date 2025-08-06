@@ -17,34 +17,43 @@ public sealed class FieldBuilder
         _fieldDefinition = fieldDefinition;
     }
     
-    public FieldBuilder AddField(string fieldName)
+    public FieldBuilder AddField(string fieldName, string type = "String")
     {
-        GetOrAddField(_fieldDefinition.Fields, fieldName, EmptyArguments, _fieldDefinition.Path);
+        GetOrAddField(_fieldDefinition.Fields, fieldName, type, EmptyArguments, _fieldDefinition.Path);
+        return this;
+    }
+
+    public FieldBuilder AddField(FieldDefinition fieldDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+
+        GetOrAddField(_fieldDefinition.Fields, fieldDefinition.Name, fieldDefinition.Type, fieldDefinition.Arguments ?? [], _fieldDefinition.Path);
+
         return this;
     }
     
-    public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?> arguments)
+    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?> arguments)
     {
-        GetOrAddField(_fieldDefinition.Fields, fieldName, arguments, _fieldDefinition.Path);
+        GetOrAddField(_fieldDefinition.Fields, fieldName, type, arguments, _fieldDefinition.Path);
 
         return this;
     }
 
     public FieldBuilder AddField(string fieldName, string[] subFields)
     {
-        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, EmptyArguments, _fieldDefinition.Path);
+        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, "object", EmptyArguments, _fieldDefinition.Path);
         
         foreach (var subField in subFields)
         {
-            GetOrAddField(field.Fields, subField, EmptyArguments, field.Path);
+            GetOrAddField(field.Fields, subField, "String", EmptyArguments, field.Path);
         }
         
         return this;
     }
 
-    public FieldBuilder AddField(string fieldName, Action<FieldBuilder> action)
+    public FieldBuilder AddField(string fieldName, string type, Action<FieldBuilder> action)
     {
-        var addedField = GetOrAddField(_fieldDefinition.Fields, fieldName, EmptyArguments, _fieldDefinition.Path);
+        var addedField = GetOrAddField(_fieldDefinition.Fields, fieldName, type, EmptyArguments, _fieldDefinition.Path);
 
         var fieldBuilder = new FieldBuilder(addedField);
 
@@ -57,9 +66,9 @@ public sealed class FieldBuilder
         return this;
     }
 
-    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, SortedDictionary<string, object?>? arguments = null)
+    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null)
     {
-        var rootField = GetOrAddField(fieldDefinitions, fieldName, arguments ?? EmptyArguments, null);
+        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, arguments ?? EmptyArguments, null);
         
         var fieldBuilder = new FieldBuilder(rootField);
 
@@ -76,7 +85,7 @@ public sealed class FieldBuilder
         return _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
     }
 
-    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, SortedDictionary<string, object?> arguments, string? parentPath)
+    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string type, SortedDictionary<string, object?> arguments, string? parentPath)
     {
         FieldDefinition? value = null;
         var currentFields = fieldDefinitions;
@@ -121,7 +130,7 @@ public sealed class FieldBuilder
             if (!currentFields.TryGetValue(name, out var childValue))
             {
                 var fieldArguments = isLastFragment ? arguments : EmptyArguments;
-                value = currentFields[name] = GetNewField(name, null, alias, fieldArguments, cacheKey);
+                value = currentFields[name] = GetNewField(name, type, alias, fieldArguments, cacheKey);
             }
             else
             {
@@ -229,6 +238,13 @@ public sealed class FieldBuilder
     public FieldBuilder WithAlias(string alias)
     {
         _fieldDefinition = _fieldDefinition with { Alias = alias };
+
+        return this;
+    }
+
+    public FieldBuilder WithType(string type)
+    {
+        _fieldDefinition = _fieldDefinition with { Type = type };
 
         return this;
     }
