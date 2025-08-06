@@ -6,20 +6,11 @@ using NGql.Core.Extensions;
 
 namespace NGql.Core.Builders;
 
-public sealed class QueryBuilderOptions
-{
-    public static readonly QueryBuilderOptions Default = new();
-
-    public bool UseFieldsCache { get; set; } = true;
-}
-
 /// <summary>
 ///     Represents a query builder.
 /// </summary>
 public sealed class QueryBuilder
 {
-    private readonly QueryBuilderOptions _options;
-
     /// <summary>
     ///    The query definition that this builder is working with.
     /// </summary>
@@ -28,10 +19,9 @@ public sealed class QueryBuilder
     /// <inheritdoc cref="QueryBlock.Variables"/>
     public IEnumerable<Variable> Variables => Definition.Variables;
     
-    private QueryBuilder(QueryDefinition queryDefinition, QueryBuilderOptions? options)
+    private QueryBuilder(QueryDefinition queryDefinition)
     {
         Definition = queryDefinition;
-        _options = options ?? QueryBuilderOptions.Default;
     }
 
     /// <summary>
@@ -40,7 +30,7 @@ public sealed class QueryBuilder
     /// <param name="name">The name of the query.</param>
     /// <param name="options">The query building options</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder CreateDefaultBuilder(string name, QueryBuilderOptions? options = null) => new(new QueryDefinition(name),options);
+    public static QueryBuilder CreateDefaultBuilder(string name) => new(new QueryDefinition(name));
 
     /// <summary>
     ///     Creates a new instance of <see cref="QueryBuilder"/>.
@@ -48,7 +38,7 @@ public sealed class QueryBuilder
     /// <param name="queryDefinition">The query definition.</param>
     /// <param name="options">The query building options</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    public static QueryBuilder CreateFromDefinition(QueryDefinition queryDefinition, QueryBuilderOptions? options = null) => new(queryDefinition,options);
+    public static QueryBuilder CreateFromDefinition(QueryDefinition queryDefinition) => new(queryDefinition);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -67,6 +57,15 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string[]? subFields) => AddFieldImpl(field, new SortedDictionary<string, object?>(), subFields);
 
+    /// <summary>
+    ///     Adds a field to the query.
+    /// </summary>
+    /// <param name="field">Field name or path.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    public QueryBuilder AddField(string field, FieldDefinition[]? subFields) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields);
+    
     /// <summary>
     ///     Adds a field to the query.
     /// </summary>
@@ -90,7 +89,7 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
         
-        var builder = FieldBuilder.Create(Definition.Fields, field);
+        var builder = FieldBuilder.Create(Definition.Fields, field, "object");
 
         fieldBuilder.Invoke(builder);
 
@@ -110,8 +109,18 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields) => AddFieldImpl(field, new SortedDictionary<string, object?>(arguments), subFields);
-    
-    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object?> arguments, string[]? subFields)
+
+    /// <summary>
+    ///     Adds a field to the query.
+    /// </summary>
+    /// <param name="field">Field name or path.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(arguments), subFields);
+
+    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -120,7 +129,7 @@ public sealed class QueryBuilder
 
         Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
-        var builder = FieldBuilder.Create(Definition.Fields, field, arguments);
+        var builder = FieldBuilder.Create(Definition.Fields, field, "object", arguments);
 
         if (subFields is null || subFields.Length == 0)
         {
@@ -133,6 +142,15 @@ public sealed class QueryBuilder
         }
 
         return this;
+    }
+
+    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object?> arguments, string[]? subFields)
+    {
+        var subFieldDefinitions = subFields?
+            .Select(subField => new FieldDefinition(subField))
+            .ToArray();
+
+        return AddFieldDefinitionImpl(field, arguments, subFieldDefinitions);
     }
 
     public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
