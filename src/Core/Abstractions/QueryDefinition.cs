@@ -35,16 +35,16 @@ public sealed record QueryDefinition(string Name, string Description = "")
     public SortedSet<Variable> Variables { get; internal set; } = new();
 
     /// <summary>
-    /// The tags for the query.
+    /// Metadata associated with the query definition.
+    /// This can include additional information such as descriptions, tags, or any other relevant data.
+    ///
+    /// Not used during query text generation but can be useful for documentation or introspection purposes.
     /// </summary>
-    [JsonPropertyName("tags")]
-    public string[] Tags { get; init; } = [];
-
-    /// <summary></summary>
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?>? Metadata { get; set; } = [];
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => new QueryTextBuilder().Build(this);
+
     public static implicit operator string(QueryDefinition query) => query.ToString();
 }

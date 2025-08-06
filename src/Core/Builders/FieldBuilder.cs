@@ -17,7 +17,7 @@ public sealed class FieldBuilder
         _fieldDefinition = fieldDefinition;
     }
     
-    public FieldBuilder AddField(string fieldName, string type = "String")
+    public FieldBuilder AddField(string fieldName, string type = Constants.DefaultFieldType)
     {
         GetOrAddField(_fieldDefinition.Fields, fieldName, type, EmptyArguments, _fieldDefinition.Path);
         return this;
@@ -41,11 +41,11 @@ public sealed class FieldBuilder
 
     public FieldBuilder AddField(string fieldName, string[] subFields)
     {
-        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, "object", EmptyArguments, _fieldDefinition.Path);
-        
+        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, Constants.ObjectFieldType, EmptyArguments, _fieldDefinition.Path);
+
         foreach (var subField in subFields)
         {
-            GetOrAddField(field.Fields, subField, "String", EmptyArguments, field.Path);
+            GetOrAddField(field.Fields, subField, Constants.DefaultFieldType, EmptyArguments, field.Path);
         }
         
         return this;
@@ -66,32 +66,45 @@ public sealed class FieldBuilder
         return this;
     }
 
+    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName)
+    {
+        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType, EmptyArguments);
+    }
+    
     public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null)
     {
-        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, arguments ?? EmptyArguments, null);
-        
+        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, arguments ?? EmptyArguments);
+
         var fieldBuilder = new FieldBuilder(rootField);
 
         return fieldBuilder;
     }
     
-    public static FieldBuilder Create(FieldDefinition fieldDefinition)
-    {
-        return new(fieldDefinition);
-    }
+    public static FieldBuilder Create(FieldDefinition fieldDefinition) => new(fieldDefinition);
 
     public FieldDefinition Build()
-    {
-        return _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
-    }
+        => _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
 
-    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string type, SortedDictionary<string, object?> arguments, string? parentPath)
+    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? type = null, SortedDictionary<string, object?>? arguments = null, string? parentPath = null)
     {
         FieldDefinition? value = null;
         var currentFields = fieldDefinitions;
+        arguments ??= new SortedDictionary<string, object?>();
+        type ??= Constants.DefaultFieldType;
+
         var fullPath = string.IsNullOrWhiteSpace(parentPath)
             ? []
             : parentPath.Split('.', StringSplitOptions.RemoveEmptyEntries).ToList();
+
+        // Parse type from fieldPath if provided in format "Type fieldPath"
+        var fieldPathStr = fieldPath.ToString();
+        var spaceIndex = fieldPathStr.IndexOf(' ');
+        if (spaceIndex > 0 && (char.IsUpper(fieldPathStr[0]) || fieldPathStr[0] == '['))
+        {
+            // Type specification must be at beginning and start with uppercase letter or '['
+            type = fieldPathStr[..spaceIndex];
+            fieldPath = fieldPathStr[(spaceIndex + 1)..].AsSpan();
+        }
 
         while (fieldPath.Length > 0)
         {
@@ -121,8 +134,15 @@ public sealed class FieldBuilder
                 {
                     value = currentFields[name] = MergeFieldArguments(value, arguments);
                 }
+
+                // If this is not the last fragment, ensure it's an object type for nesting
+                if (!isLastFragment && value.Type != Constants.ObjectFieldType)
+                {
+                    value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
+                }
+
                 currentFields = value.Fields;
-                
+
                 fieldPath = GetNextFieldPath(fieldPath, nextDot);
                 continue;
             }
@@ -130,7 +150,9 @@ public sealed class FieldBuilder
             if (!currentFields.TryGetValue(name, out var childValue))
             {
                 var fieldArguments = isLastFragment ? arguments : EmptyArguments;
-                value = currentFields[name] = GetNewField(name, type, alias, fieldArguments, cacheKey);
+                // For intermediate nodes, always use object type
+                var fieldType = isLastFragment ? type : Constants.ObjectFieldType;
+                value = currentFields[name] = GetNewField(name, fieldType, alias, fieldArguments, cacheKey);
             }
             else
             {
@@ -143,9 +165,22 @@ public sealed class FieldBuilder
                         Alias = alias
                     };
                 }
+
+                // If this is not the last fragment, ensure it's an object type for nesting
+                if (!isLastFragment && value.Type != Constants.ObjectFieldType)
+                {
+                    value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
+                }
+
                 if (isLastFragment && arguments.Count > 0)
                 {
                     value = currentFields[name] = MergeFieldArguments(value, arguments);
+                }
+
+                // If this is the last fragment and we should update the type
+                if (isLastFragment && type != Constants.DefaultFieldType && value.Type != type)
+                {
+                    value = currentFields[name] = value with { Type = type };
                 }
             }
             
@@ -220,7 +255,7 @@ public sealed class FieldBuilder
         }
         else
         {
-            parentField = GetNewField(fieldDefinition.Name, fieldDefinition.Type, fieldDefinition.Alias, fieldDefinition.Arguments ?? EmptyArguments, fieldDefinition.Path);
+            parentField = GetNewField(fieldDefinition.Name, fieldDefinition.Type ?? Constants.DefaultFieldType, fieldDefinition.Alias, fieldDefinition.Arguments ?? EmptyArguments, fieldDefinition.Path);
             fields[parentField.Path] = parentField;
         }
 
@@ -268,7 +303,7 @@ public sealed class FieldBuilder
         {
             if (_fieldDefinition.Arguments is null)
             {
-                _fieldDefinition = _fieldDefinition with { Arguments = new SortedDictionary<string, object?>() };
+                _fieldDefinition = _fieldDefinition with { Arguments = [] };
             }
             else
             {
