@@ -9,6 +9,7 @@ using GraphQL.Client.Serializer.SystemTextJson;
 using NGql.Client.Tests.Extensions;
 using NGql.Client.Tests.Fixtures;
 using NGql.Core;
+using NGql.Core.Builders;
 using Server.Data.Entities;
 using Shared;
 using Xunit;

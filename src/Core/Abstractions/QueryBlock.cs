@@ -2,6 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using NGql.Core.Builders;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Abstractions;
 

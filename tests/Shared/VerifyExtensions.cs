@@ -1,4 +1,5 @@
 using NGql.Core;
+using NGql.Core.Builders;
 using VerifyTests;
 using VerifyXunit;
 

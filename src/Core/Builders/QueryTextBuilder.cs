@@ -1,13 +1,12 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
-namespace NGql.Core;
+namespace NGql.Core.Builders;
 
 internal sealed class QueryTextBuilder
 {

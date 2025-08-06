@@ -4,7 +4,7 @@ using System.Net;
 using System.Text;
 using FluentAssertions;
 using Xunit;
-using static NGql.Core.QueryTextBuilder;
+using static NGql.Core.Builders.QueryTextBuilder;
 
 // ReSharper disable RedundantCast
 namespace NGql.Core.Tests;
