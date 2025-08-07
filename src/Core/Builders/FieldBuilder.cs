@@ -135,8 +135,8 @@ public sealed class FieldBuilder
                     value = currentFields[name] = MergeFieldArguments(value, arguments);
                 }
 
-                // If this is not the last fragment, ensure it's an object type for nesting
-                if (!isLastFragment && value.Type != Constants.ObjectFieldType)
+                // Check if we should convert this field to object type for nesting
+                if (!isLastFragment && value.ShouldConvertToObjectType())
                 {
                     value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
                 }
@@ -166,8 +166,8 @@ public sealed class FieldBuilder
                     };
                 }
 
-                // If this is not the last fragment, ensure it's an object type for nesting
-                if (!isLastFragment && value.Type != Constants.ObjectFieldType)
+                // Check if we should convert this field to object type for nesting
+                if (!isLastFragment && value.ShouldConvertToObjectType())
                 {
                     value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
                 }
