@@ -14,4 +14,14 @@ public static class Constants
     /// The field type used for object/container fields that have nested fields.
     /// </summary>
     public const string ObjectFieldType = "object";
+
+    /// <summary>
+    /// The marker for array types.
+    /// </summary>
+    public const string ArrayTypeMarker = "[]";
+
+    /// <summary>
+    /// The marker for nullable types.
+    /// </summary>
+    public const string NullableTypeMarker = "?";
 }

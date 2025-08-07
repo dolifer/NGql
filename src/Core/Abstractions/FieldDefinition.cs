@@ -18,6 +18,18 @@ public sealed record FieldDefinition
         : this(name, type, alias, sortedArguments, [])
     {
     }
+
+    /// <summary>
+    /// Gets a value indicating whether this field type is an array.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsArray => Type != null && (Type == Constants.ArrayTypeMarker || Type.Contains("["));
+
+    /// <summary>
+    /// Gets a value indicating whether this field type is nullable.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsNullable => Type != null && (Type == Constants.NullableTypeMarker || Type.EndsWith("?"));
     
     public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?> sortedArguments, SortedDictionary<string, FieldDefinition> fields)
     {
