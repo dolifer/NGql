@@ -249,14 +249,28 @@ public sealed class FieldBuilder
 
     private static void RecursiveCreateField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        if (fields.TryGetValue(fieldDefinition.Path, out var parentField))
+        FieldDefinition parentField;
+
+        // Try to find an existing field with the same name (not path)
+        var existingField = fields.Values.FirstOrDefault(f => f.Name == fieldDefinition.Name && f.Alias == fieldDefinition.Alias);
+
+        if (existingField != null)
         {
-            fields[parentField.Path] = MergeFieldArguments(parentField, fieldDefinition.Arguments ?? EmptyArguments);
+            // Merge with existing field
+            parentField = MergeFieldArguments(existingField, fieldDefinition.Arguments ?? EmptyArguments);
+            fields[existingField.Name] = parentField;
+        }
+        else if (fields.TryGetValue(fieldDefinition.Path, out var pathField))
+        {
+            // Field exists with same path
+            parentField = MergeFieldArguments(pathField, fieldDefinition.Arguments ?? EmptyArguments);
+            fields[pathField.Path] = parentField;
         }
         else
         {
+            // Create new field
             parentField = GetNewField(fieldDefinition.Name, fieldDefinition.Type ?? Constants.DefaultFieldType, fieldDefinition.Alias, fieldDefinition.Arguments ?? EmptyArguments, fieldDefinition.Path);
-            fields[parentField.Path] = parentField;
+            fields[fieldDefinition.Name] = parentField;
         }
 
         foreach (var childFieldDefinition in fieldDefinition.Fields.Values)

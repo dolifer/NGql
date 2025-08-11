@@ -47,4 +47,14 @@ public sealed record QueryDefinition(string Name, string Description = "")
     public override string ToString() => new QueryTextBuilder().Build(this);
 
     public static implicit operator string(QueryDefinition query) => query.ToString();
+
+    /// <summary>
+    /// Merging strategy for this query definition.
+    /// </summary>
+    public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
+
+    /// <summary>
+    /// Specific merging rules for field paths. Key is field path, value is the target merge path.
+    /// </summary>
+    public Dictionary<string, string> MergingRules { get; set; } = new();
 }
