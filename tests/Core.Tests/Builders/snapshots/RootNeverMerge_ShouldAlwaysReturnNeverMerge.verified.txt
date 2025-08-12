@@ -1,0 +1,12 @@
+﻿query root{
+    tables{
+        users{
+            edges{
+                node{
+                    id
+                    name
+                }
+            }
+        }
+    }
+}

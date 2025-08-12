@@ -23,7 +23,7 @@ public sealed class QueryBuilder
     /// <summary>
     ///     Maps original query names to their merged definition names.
     /// </summary>
-    internal Dictionary<string, string> QueryMap { get; } = new();
+    private readonly Dictionary<string, string> _queryMap = new();
 
     private QueryBuilder(QueryDefinition queryDefinition)
     {
@@ -211,7 +211,7 @@ public sealed class QueryBuilder
         // Update QueryMap with merge results (only for incoming query)
         foreach (var (queryName, fieldPath) in mergeResult.QueryMap)
         {
-            QueryMap[queryName] = fieldPath;
+            _queryMap[queryName] = fieldPath;
         }
 
         // Update root query mapping if fields changed
@@ -242,7 +242,7 @@ public sealed class QueryBuilder
         if (Definition.Fields.Count > 0)
         {
             // Keep existing root mapping if it exists and points to a valid field
-            if (QueryMap.TryGetValue(Definition.Name, out var existingPath) && 
+            if (_queryMap.TryGetValue(Definition.Name, out var existingPath) && 
                 Definition.Fields.ContainsKey(existingPath))
             {
                 return; // Keep the existing valid mapping
@@ -253,23 +253,14 @@ public sealed class QueryBuilder
             var fieldPath = !string.IsNullOrEmpty(firstField.Alias)
                 ? firstField.Alias
                 : firstField.Name;
-            QueryMap[Definition.Name] = fieldPath;
+            _queryMap[Definition.Name] = fieldPath;
         }
         else
         {
             // If no fields, map to itself
-            QueryMap[Definition.Name] = Definition.Name;
+            _queryMap[Definition.Name] = Definition.Name;
         }
     }
-
-    /// <summary>
-    /// Gets the query path for a given query name, returning the merged path if the query was merged,
-    /// or the original name if it remains separate.
-    /// </summary>
-    /// <param name="queryName">The original query name to lookup.</param>
-    /// <returns>The final query path (merged target or original name).</returns>
-    public string GetQueryPath(string queryName)
-        => QueryMap.GetValueOrDefault(queryName, queryName);
 
     /// <summary>
     /// Gets the count of fields in the QueryDefinition.
@@ -280,4 +271,71 @@ public sealed class QueryBuilder
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => Definition.ToString();
     public static implicit operator string(QueryBuilder query) => query.ToString();
+
+    /// <summary>
+    /// Gets the path segments to reach a specific node within a query.
+    /// </summary>
+    /// <param name="queryName">The name of the query to find the path for.</param>
+    /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
+    /// <returns>An array of path segments to reach the specified node.</returns>
+    public string[] GetPathTo(string queryName, string? nodePath = null)
+    {
+        // Get the root path for the query from QueryMap
+        var rootPath = _queryMap.GetValueOrDefault(queryName, queryName);
+        
+        // If the query doesn't exist in our map, return empty array
+        if (string.IsNullOrEmpty(rootPath))
+        {
+            return [];
+        }
+
+        // If no node path specified, return just the root
+        if (string.IsNullOrEmpty(nodePath))
+        {
+            return [rootPath];
+        }
+        
+        // Find the path to the target node in the field structure
+        if (Definition.Fields.TryGetValue(rootPath, out var rootField))
+        {
+            var nodeSegments = nodePath.Split('.');
+            var targetNode = nodeSegments[^1]; // Last segment is what we're looking for
+            
+            // Search for the target node and return the path to its parent
+            var path = FindPathToNode(rootField, targetNode, [rootPath]);
+            if (path is { Length: > 1 })
+            {
+                // Return path excluding the target node itself (path to parent)
+                return path.Take(path.Length - 1).ToArray();
+            }
+        }
+        
+        return [rootPath];
+    }
+    
+    /// <summary>
+    /// Recursively searches for a target node and returns the full path to it.
+    /// </summary>
+    private static string[]? FindPathToNode(FieldDefinition field, string targetNode, string[] currentPath)
+    {
+        // Check if any direct child matches the target node
+        foreach (var childField in field.Fields.Values)
+        {
+            var fieldIdentifier = !string.IsNullOrEmpty(childField.Alias) ? childField.Alias : childField.Name;
+            
+            if (childField.Name.Equals(targetNode, StringComparison.OrdinalIgnoreCase))
+            {
+                // Found the target node, return the path including the target
+                return currentPath.Concat([fieldIdentifier]).ToArray();
+            }
+
+            var childPath = FindPathToNode(childField, targetNode, currentPath.Concat([fieldIdentifier]).ToArray());
+            if (childPath != null)
+            {
+                return childPath;
+            }
+        }
+
+        return null;
+    }
 }

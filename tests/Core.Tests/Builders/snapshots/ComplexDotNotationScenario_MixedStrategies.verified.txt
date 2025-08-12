@@ -1,0 +1,27 @@
+﻿query root{
+    app{
+        user{
+            profile{
+                personal{
+                    firstName
+                    lastName
+                }
+            }
+            settings{
+                preferences{
+                    language
+                    theme
+                }
+            }
+        }
+    }
+    app_1:app{
+        user{
+            profile{
+                personal{
+                    middleName
+                }
+            }
+        }
+    }
+}

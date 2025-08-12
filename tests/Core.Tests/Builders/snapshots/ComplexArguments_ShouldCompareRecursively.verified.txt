@@ -1,0 +1,16 @@
+﻿query root{
+    users{
+        profile(filter:{metadata:{priority:1}, status:"active"}){
+            id
+            name
+        }
+    }
+    users_1:users{
+        profile(filter:{metadata:{priority:2}, status:"active"}){
+            email
+        }
+    }
+    users_2:users(filter:{metadata:{priority:3}, status:"active"}){
+        email
+    }
+}
