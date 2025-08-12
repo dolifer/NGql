@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
@@ -92,7 +93,6 @@ internal static class Helpers
 
         return result;
     }
-
     
     internal static object? SortArgumentValue(object? value)
     {
@@ -162,5 +162,75 @@ internal static class Helpers
 
             currentFields = currentField.Fields;
         }
+    }
+
+    /// <summary>
+    /// Normalizes arguments by ensuring non-null SortedDictionary.
+    /// </summary>
+    /// <param name="arguments">The arguments to normalize</param>
+    /// <returns>A non-null SortedDictionary</returns>
+    internal static SortedDictionary<string, object?> NormalizeArguments(SortedDictionary<string, object?>? arguments)
+        => arguments ?? new SortedDictionary<string, object?>();
+
+    /// <summary>
+    /// Compares two argument dictionaries for equality.
+    /// </summary>
+    /// <param name="args1">First argument dictionary</param>
+    /// <param name="args2">Second argument dictionary</param>
+    /// <returns>True if arguments are equal, false otherwise</returns>
+    internal static bool AreArgumentsEqual(SortedDictionary<string, object?> args1, SortedDictionary<string, object?> args2)
+    {
+        // For merging purposes, we need exact argument equality
+        // Empty/null arguments should only match other empty/null arguments
+        if (args1.Count != args2.Count)
+            return false;
+
+        // Both must have the same number of arguments (including 0)
+        foreach (var (key, value1) in args1)
+        {
+            if (!args2.TryGetValue(key, out var value2))
+                return false;
+
+            if (!AreValuesEqual(value1, value2))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Compares two values for equality, handling complex objects via JSON serialization.
+    /// </summary>
+    /// <param name="value1">First value</param>
+    /// <param name="value2">Second value</param>
+    /// <returns>True if values are equal, false otherwise</returns>
+    private static bool AreValuesEqual(object? value1, object? value2)
+    {
+        if (ReferenceEquals(value1, value2))
+            return true;
+
+        if (value1 == null || value2 == null)
+            return false;
+
+        // Handle different types strictly - they should not be equal
+        if (value1.GetType() != value2.GetType())
+            return false;
+
+        // For complex objects, serialize and compare with consistent ordering
+        if (value1 is not string && value1.GetType().IsClass)
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+            };
+            
+            var json1 = JsonSerializer.Serialize(value1, options);
+            var json2 = JsonSerializer.Serialize(value2, options);
+            return json1 == json2;
+        }
+
+        return value1.Equals(value2);
     }
 }

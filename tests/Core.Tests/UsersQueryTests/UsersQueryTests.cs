@@ -34,7 +34,7 @@ public class UsersQueryTests
 
     private static QueryBuilder UsersBatchQueryBuilderBase => QueryBuilder
         .CreateDefaultBuilder("all_users")
-        .AddField("base", new Dictionary<string, object>
+        .AddField("base", new Dictionary<string, object?>
             {
                 {
                     "z", "last"

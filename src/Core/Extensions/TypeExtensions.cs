@@ -22,14 +22,14 @@ public static class TypeExtensions
             return false;
 
         // If it's the default string type, it should be converted
-        if (fieldDefinition.Type == Constants.DefaultFieldType)
+        if (fieldDefinition.Type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition.Type))
             return true;
 
         // Special types like arrays or custom complex types should maintain their type
         // even when nested fields are added
         if (fieldDefinition.IsArray || fieldDefinition.IsNullable || 
-            fieldDefinition.Type.Contains("[") || fieldDefinition.Type.Contains("]") ||
-            fieldDefinition.Type.EndsWith("?"))
+            fieldDefinition.Type.Contains('[') || fieldDefinition.Type.Contains(']') ||
+            fieldDefinition.Type.EndsWith('?'))
             return false;
 
         // Check for common primitive types that should be converted
@@ -73,14 +73,14 @@ public static class TypeExtensions
         var arrayStart = type.IndexOf('[');
         if (arrayStart > 0)
         {
-            var baseType = type.Substring(0, arrayStart);
+            var baseType = type[..arrayStart];
             return stripArrayMarker ? baseType : type;
         }
 
         // Handle nullable notation
         if (type.EndsWith(Constants.NullableTypeMarker) && type.Length > 1)
         {
-            var baseType = type.Substring(0, type.Length - 1);
+            var baseType = type[..^1];
             return stripNullableMarker ? baseType : type;
         }
 

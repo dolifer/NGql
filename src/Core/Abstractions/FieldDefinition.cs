@@ -19,6 +19,15 @@ public sealed record FieldDefinition
     {
     }
 
+    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?> sortedArguments, SortedDictionary<string, FieldDefinition> fields)
+    {
+        Name = name;
+        Type = type;
+        Alias = alias;
+        Arguments = sortedArguments;
+        Fields = fields;
+    }
+
     /// <summary>
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
@@ -30,15 +39,6 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonIgnore]
     public bool IsNullable => Type != null && (Type == Constants.NullableTypeMarker || Type.EndsWith("?"));
-    
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?> sortedArguments, SortedDictionary<string, FieldDefinition> fields)
-    {
-        Name = name;
-        Type = type;
-        Alias = alias;
-        Arguments = sortedArguments;
-        Fields = fields;
-    }
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.

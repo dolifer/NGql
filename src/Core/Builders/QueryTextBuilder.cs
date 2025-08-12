@@ -92,7 +92,7 @@ internal sealed class QueryTextBuilder
 
             _stringBuilder.Append(field.Name);
 
-            if (field.Arguments?.Count > 0)
+            if (field.Arguments is { Count: > 0})
                 BuildFieldArguments(field.Arguments);
 
             if (field.Fields.Count > 0)
@@ -109,7 +109,7 @@ internal sealed class QueryTextBuilder
         }
     }
 
-    private void BuildFieldArguments(IReadOnlyDictionary<string, object> arguments)
+    private void BuildFieldArguments(IReadOnlyDictionary<string, object?> arguments)
     {
         _stringBuilder.Append('(');
 
@@ -156,13 +156,13 @@ internal sealed class QueryTextBuilder
         {
             case IList listValue:
             {
-                WriteCollection('[', ']', listValue, listValue.Count, builder);
+                WriteCollection('[', ']', listValue, builder);
                 break;
             }
 
             case IDictionary dictValue:
             {
-                WriteCollection('{', '}', dictValue, dictValue.Count, builder);
+                WriteCollection('{', '}', dictValue, builder);
                 break;
             }
 
@@ -171,13 +171,13 @@ internal sealed class QueryTextBuilder
                 var values = valueType
                     .GetProperties()
                     .ToDictionary(x => x.Name, x => x.GetValue(value));
-                WriteCollection('{', '}', values, values.Count, builder);
+                WriteCollection('{', '}', values, builder);
                 break;
             }
         }
     }
 
-    private static void WriteCollection(char prefix, char suffix, IEnumerable list, int count, StringBuilder builder)
+    private static void WriteCollection(char prefix, char suffix, IEnumerable list, StringBuilder builder)
     {
         builder.Append(prefix);
 
