@@ -26,6 +26,18 @@ public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatab
 
     public override string ToString() => Value;
 
+    public static bool operator ==(EnumValue left, EnumValue right) => left.Equals(right);
+
+    public static bool operator !=(EnumValue left, EnumValue right) => !left.Equals(right);
+
+    public static bool operator <(EnumValue left, EnumValue right) => left.CompareTo(right) < 0;
+
+    public static bool operator >(EnumValue left, EnumValue right) => left.CompareTo(right) > 0;
+
+    public static bool operator <=(EnumValue left, EnumValue right) => left.CompareTo(right) <= 0;
+
+    public static bool operator >=(EnumValue left, EnumValue right) => left.CompareTo(right) >= 0;
+
     public int CompareTo(object? obj)
     {
         return obj switch
@@ -36,15 +48,6 @@ public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatab
         };
     }
 
-    public static bool operator ==(EnumValue left, EnumValue right) => left.Equals(right);
-    public static bool operator !=(EnumValue left, EnumValue right) => !left.Equals(right);
-        
-    public static bool operator <(EnumValue left, EnumValue right) => left.CompareTo(right) < 0;
-    public static bool operator >(EnumValue left, EnumValue right) => left.CompareTo(right) > 0;
-        
-    public static bool operator <=(EnumValue left, EnumValue right) => left.CompareTo(right) <= 0;
-    public static bool operator >=(EnumValue left, EnumValue right) => left.CompareTo(right) >= 0;
-    
     public int CompareTo(EnumValue other) => string.Compare(Value, other.Value, StringComparison.OrdinalIgnoreCase);
 
     public override bool Equals(object? obj) => CompareTo(obj) == 0;

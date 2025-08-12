@@ -1,6 +1,6 @@
 using System;
 
-namespace NGql.Core.Abstractions;
+namespace NGql.Core.Exceptions;
 
 /// <summary>
 /// Exception thrown when query merging fails

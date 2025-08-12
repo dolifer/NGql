@@ -8,7 +8,7 @@ namespace NGql.Core.Builders;
 
 public sealed class FieldBuilder
 {
-    private static readonly SortedDictionary<string, object?> EmptyArguments = [];
+    internal static readonly SortedDictionary<string, object?> EmptyArguments = [];
 
     private FieldDefinition _fieldDefinition;
 
@@ -132,7 +132,7 @@ public sealed class FieldBuilder
                 value = cachedField;
                 if (isLastFragment && arguments.Count > 0)
                 {
-                    value = currentFields[name] = MergeFieldArguments(value, arguments);
+                    value = currentFields[name] = value.MergeFieldArguments(arguments);
                 }
 
                 // Check if we should convert this field to object type for nesting
@@ -176,7 +176,7 @@ public sealed class FieldBuilder
 
                 if (isLastFragment && arguments.Count > 0)
                 {
-                    value = currentFields[name] = MergeFieldArguments(value, arguments);
+                    value = currentFields[name] = value.MergeFieldArguments(arguments);
                 }
 
                 // If this is the last fragment and we should update the type
@@ -196,36 +196,6 @@ public sealed class FieldBuilder
         {
             return nextDot == -1 ? ReadOnlySpan<char>.Empty : readOnlySpan[(nextDot + 1)..];
         }
-    }
-
-    private static FieldDefinition MergeFieldArguments(FieldDefinition existingField, SortedDictionary<string, object?> newArguments)
-    {
-        if (existingField.Arguments is null || existingField.Arguments.Count == 0)
-        {
-            return existingField;
-        }
-
-        var mergedArguments = new SortedDictionary<string, object?>(existingField.Arguments ?? EmptyArguments);
-        foreach (var (key, newValue) in newArguments)
-        {
-            if (!mergedArguments.TryGetValue(key, out var existingValue))
-            {
-                mergedArguments[key] = newValue;
-                continue;
-            }
-
-            if (existingValue is IDictionary<string, object> existingDict && newValue is IDictionary<string, object> newDict)
-            {
-                // Merge nested dictionaries
-                mergedArguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
-                continue;
-            }
-
-            // For non-dictionary values, the new value overrides existing
-            mergedArguments[key] = newValue;
-        }
-
-        return existingField with { Arguments = mergedArguments };
     }
 
     private static FieldDefinition GetNewField(string name, string type, string? alias, SortedDictionary<string, object?> arguments, string path, Dictionary<string, object?>? metadata = null)
@@ -260,13 +230,13 @@ public sealed class FieldBuilder
         if (existingField != null)
         {
             // Merge with existing field
-            parentField = MergeFieldArguments(existingField, fieldDefinition.Arguments ?? EmptyArguments);
+            parentField = existingField.MergeFieldArguments(fieldDefinition.Arguments ?? EmptyArguments);
             fields[existingField.Name] = parentField;
         }
         else if (fields.TryGetValue(fieldDefinition.Path, out var pathField))
         {
             // Field exists with same path
-            parentField = MergeFieldArguments(pathField, fieldDefinition.Arguments ?? EmptyArguments);
+            parentField = pathField.MergeFieldArguments(fieldDefinition.Arguments ?? EmptyArguments);
             fields[pathField.Path] = parentField;
         }
         else
@@ -283,9 +253,7 @@ public sealed class FieldBuilder
     }
 
     internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
-    {
-        RecursiveCreateField(fields, fieldDefinition);
-    }
+        => RecursiveCreateField(fields, fieldDefinition);
 
     public FieldBuilder WithAlias(string alias)
     {

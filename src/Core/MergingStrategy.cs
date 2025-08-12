@@ -1,4 +1,4 @@
-namespace NGql.Core.Abstractions;
+namespace NGql.Core;
 
 /// <summary>
 /// Defines strategies for merging query definitions
