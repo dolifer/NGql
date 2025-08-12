@@ -1,0 +1,21 @@
+﻿query MergedQuery{
+    EmailQuery:tables{
+        users{
+            edges{
+                node{
+                    email
+                }
+            }
+        }
+    }
+    UserProfileQuery:tables{
+        users{
+            edges{
+                Alias:node{
+                    id
+                    name
+                }
+            }
+        }
+    }
+}

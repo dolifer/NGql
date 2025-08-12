@@ -1,0 +1,13 @@
+﻿query root{
+    tables{
+        users{
+            id
+        }
+    }
+    tables_1:tables{
+        users{
+            id
+            name
+        }
+    }
+}

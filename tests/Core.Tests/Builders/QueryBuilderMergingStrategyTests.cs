@@ -26,8 +26,8 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childBuilder);
 
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("tables"); // We keep map for all builders, including self
-        rootBuilder.GetQueryPath("UserProfile").Should().Be("tables"); // Should be separate definition
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["tables"]); // We keep map for all builders, including self
+        rootBuilder.GetPathTo("UserProfile").Should().BeEquivalentTo(["tables"]); // Should be separate definition
 
         rootBuilder.DefinitionsCount.Should().Be(1);
 
@@ -42,7 +42,7 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         var emailQueryBuilder = CreateDefaultBuilder("emailQuery")
             .AddField("EmailQuery:tables.users.edges.node", ["email"]); // Same root path, no arguments
         var idNameQueryBuilder = CreateDefaultBuilder("idName", MergingStrategy.NeverMerge)
-            .AddField("UserProfileQuery:tables.users.edges.node", ["id", "name"]);
+            .AddField("UserProfileQuery:tables.users.edges.Alias:node", ["id", "name"]);
 
         // Act
         rootBuilder
@@ -50,8 +50,14 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
             .Include(idNameQueryBuilder);
 
         // Assert
-        rootBuilder.GetQueryPath("emailQuery").Should().Be("EmailQuery"); // Not changed
-        rootBuilder.GetQueryPath("idName").Should().Be("UserProfileQuery"); // Should be separate definition
+        rootBuilder.GetPathTo("emailQuery").Should().BeEquivalentTo(["EmailQuery"]); // Not changed
+        rootBuilder.GetPathTo("idName").Should().BeEquivalentTo(["UserProfileQuery"]); // Should be separate definition
+
+        rootBuilder.GetPathTo("emailQuery", "edges").Should().BeEquivalentTo(["EmailQuery", "users"]);
+        rootBuilder.GetPathTo("emailQuery", "edges.node").Should().BeEquivalentTo(["EmailQuery", "users", "edges"]);
+        
+        rootBuilder.GetPathTo("idName", "node").Should().BeEquivalentTo(["UserProfileQuery", "users", "edges"]);
+        rootBuilder.GetPathTo("idName", "edges.node.id").Should().BeEquivalentTo(["UserProfileQuery", "users", "edges", "Alias"]);
 
         rootBuilder.DefinitionsCount.Should().Be(2);
 
@@ -77,14 +83,14 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         {
             case MergingStrategy.MergeByFieldPath:
                 // Should merge due to field path compatibility
-                rootBuilder.GetQueryPath("root").Should().Be("tables");
-                rootBuilder.GetQueryPath("child").Should().Be("tables");
+                rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["tables"]);
+                rootBuilder.GetPathTo("child").Should().BeEquivalentTo(["tables"]);
 
                 rootBuilder.DefinitionsCount.Should().Be(1); // Root only (child merged)
                 break;
             case MergingStrategy.NeverMerge:
-                rootBuilder.GetQueryPath("root").Should().Be("tables");
-                rootBuilder.GetQueryPath("child").Should().Be("tables_1");
+                rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["tables"]);
+                rootBuilder.GetPathTo("child").Should().BeEquivalentTo(["tables_1"]);
 
                 rootBuilder.DefinitionsCount.Should().Be(2); // Root (1) + separate child (1) = 2 definitions
                 break;
@@ -119,10 +125,10 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childDifferentPath);
 
         // Assert
-        rootBuilder.GetQueryPath("samePath").Should().Be("tables"); // Same path, no args - should merge to main
-        rootBuilder.GetQueryPath("withArgs").Should().Be("tables_1"); // Different argument pattern
-        rootBuilder.GetQueryPath("withArgs2").Should().Be("tables_1"); // Different argument pattern
-        rootBuilder.GetQueryPath("differentPath").Should().Be("tables"); // Same path prefix, no conflicting args - should merge
+        rootBuilder.GetPathTo("samePath").Should().BeEquivalentTo(["tables"]); // Same path, no args - should merge to main
+        rootBuilder.GetPathTo("withArgs").Should().BeEquivalentTo(["tables_1"]); // Different argument pattern
+        rootBuilder.GetPathTo("withArgs2").Should().BeEquivalentTo(["tables_1"]); // Different argument pattern
+        rootBuilder.GetPathTo("differentPath").Should().BeEquivalentTo(["tables"]); // Same path prefix, no conflicting args - should merge
 
         rootBuilder.DefinitionsCount.Should().Be(2); // Root + withArgs = 2 separate definitions (differentPath merges with root)
     }
@@ -150,13 +156,13 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
 
         // Assert basic merging behavior
         // child1 should merge - exact same path
-        rootBuilder.GetQueryPath("child1").Should().Be("user");
+        rootBuilder.GetPathTo("child1").Should().BeEquivalentTo(["user"]);
 
         // child2 should not merge - same root, different branch
-        rootBuilder.GetQueryPath("child2").Should().Be("user");
+        rootBuilder.GetPathTo("child2").Should().BeEquivalentTo(["user"]);
 
         // child3 should not merge - completely different root
-        rootBuilder.GetQueryPath("child3").Should().Be("company");
+        rootBuilder.GetPathTo("child3").Should().BeEquivalentTo(["company"]);
 
         await rootBuilder.Verify("DotNotationMerging_SimpleNestedPaths");
     }
@@ -191,12 +197,12 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(child5);
 
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("organization");
-        rootBuilder.GetQueryPath("child1").Should().Be("organization"); // Exact path match: organization.department.team.members
-        rootBuilder.GetQueryPath("child2").Should().Be("organization"); // 3 segment match: organization.department.team
-        rootBuilder.GetQueryPath("child3").Should().Be("organization"); // 2 segment match: organization.department
-        rootBuilder.GetQueryPath("child4").Should().Be("organization"); // 1 segment match: organization
-        rootBuilder.GetQueryPath("child5").Should().Be("company"); // 0 segment match: different root (company vs organization)
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["organization"]);
+        rootBuilder.GetPathTo("child1").Should().BeEquivalentTo(["organization"]); // Exact path match: organization.department.team.members
+        rootBuilder.GetPathTo("child2").Should().BeEquivalentTo(["organization"]); // 3 segment match: organization.department.team
+        rootBuilder.GetPathTo("child3").Should().BeEquivalentTo(["organization"]); // 2 segment match: organization.department
+        rootBuilder.GetPathTo("child4").Should().BeEquivalentTo(["organization"]); // 1 segment match: organization
+        rootBuilder.GetPathTo("child5").Should().BeEquivalentTo(["company"]); // 0 segment match: different root (company vs organization)
 
         rootBuilder.DefinitionsCount.Should().Be(2); // Root (1) + child5 separate (1) = 2 definitions
         rootBuilder.Definition.Fields.Should().HaveCount(2); // Only organization field
@@ -230,9 +236,9 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childSamePathWithArgs);
 
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("user");
-        rootBuilder.GetQueryPath("noArgs").Should().Be("user_1");
-        rootBuilder.GetQueryPath("withArgs").Should().Be("user_2");
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["user"]);
+        rootBuilder.GetPathTo("noArgs").Should().BeEquivalentTo(["user_1"]);
+        rootBuilder.GetPathTo("withArgs").Should().BeEquivalentTo(["user_2"]);
 
         rootBuilder.DefinitionsCount.Should().Be(3); // all the same path start - user
         
@@ -257,9 +263,9 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childDefault);
 
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("app");
-        rootBuilder.GetQueryPath("neverMerge").Should().Be("app_1"); // Never merge overrides path similarity
-        rootBuilder.GetQueryPath("default").Should().Be("app");
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["app"]);
+        rootBuilder.GetPathTo("neverMerge").Should().BeEquivalentTo(["app_1"]); // Never merge overrides path similarity
+        rootBuilder.GetPathTo("default").Should().BeEquivalentTo(["app"]);
 
         rootBuilder.DefinitionsCount.Should().Be(2);
         
@@ -290,8 +296,8 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         // Assert
         // Both children should merge because they have the same field path (user.profile)
         // regardless of aliases - the merging logic should look at original field names and paths
-        rootBuilder.GetQueryPath("child1").Should().Be("user");
-        rootBuilder.GetQueryPath("child2").Should().Be("user");
+        rootBuilder.GetPathTo("child1").Should().BeEquivalentTo(["user"]);
+        rootBuilder.GetPathTo("child2").Should().BeEquivalentTo(["user"]);
 
         rootBuilder.DefinitionsCount.Should().Be(1); // Root only (both children merged)
     }
@@ -310,7 +316,7 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childBuilder);
 
         // Assert
-        rootBuilder.GetQueryPath("child").Should().Be("user");
+        rootBuilder.GetPathTo("child").Should().BeEquivalentTo(["user"]);
         rootBuilder.Definition.Fields["user"].Fields.Should().ContainKey("profile");
     }
 
@@ -349,9 +355,9 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(child2Again);
     
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("users");
-        rootBuilder.GetQueryPath("child1").Should().Be("users");
-        rootBuilder.GetQueryPath("child2").Should().NotBe("users");
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["users"]);
+        rootBuilder.GetPathTo("child1").Should().BeEquivalentTo(["users"]);
+        rootBuilder.GetPathTo("child2").Should().NotBeEquivalentTo(["users"]);
 
         await rootBuilder.Verify();
     }
@@ -377,9 +383,9 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
     
         // Assert
         if (shouldMerge)
-            rootBuilder.GetQueryPath("child").Should().Be("root");
+            rootBuilder.GetPathTo("child").Should().BeEquivalentTo(["root"]);
         else
-            rootBuilder.GetQueryPath("child").Should().NotBe("root");
+            rootBuilder.GetPathTo("child").Should().NotBeEquivalentTo(["root"]);
     }
 
     [Fact]
@@ -437,8 +443,8 @@ public class QueryBuilderMergingStrategyTests(ITestOutputHelper testOutputHelper
         rootBuilder.Include(childBuilder);
     
         // Assert
-        rootBuilder.GetQueryPath("root").Should().Be("users");
-        rootBuilder.GetQueryPath("child").Should().Be("users"); // Should merge - null == empty
+        rootBuilder.GetPathTo("root").Should().BeEquivalentTo(["users"]);
+        rootBuilder.GetPathTo("child").Should().BeEquivalentTo(["users"]); // Should merge - null == empty
         rootBuilder.DefinitionsCount.Should().Be(1); // Root only (child merged)
     }
 }
