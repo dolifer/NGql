@@ -120,8 +120,8 @@ public sealed class FieldBuilder
         type ??= Constants.DefaultFieldType;
 
         var fullPath = string.IsNullOrWhiteSpace(parentPath)
-            ? []
-            : parentPath.Split('.', StringSplitOptions.RemoveEmptyEntries).ToList();
+            ? new List<string>()
+            : SplitPathToList(parentPath.AsSpan());
 
         // Parse type from fieldPath if provided in format "Type fieldPath"
         var fieldPathStr = fieldPath.ToString();
@@ -268,6 +268,43 @@ public sealed class FieldBuilder
         var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
 
         return (namePart, alias);
+    }
+
+    /// <summary>
+    /// Efficiently splits a path string into a list using Span operations to avoid string allocations.
+    /// </summary>
+    /// <param name="pathSpan">Path to split as ReadOnlySpan</param>
+    /// <returns>List of path segments</returns>
+    private static List<string> SplitPathToList(ReadOnlySpan<char> pathSpan)
+    {
+        var result = new List<string>();
+        
+        while (!pathSpan.IsEmpty)
+        {
+            var dotIndex = pathSpan.IndexOf('.');
+            ReadOnlySpan<char> segment;
+            
+            if (dotIndex == -1)
+            {
+                // Last segment
+                segment = pathSpan;
+                pathSpan = ReadOnlySpan<char>.Empty;
+            }
+            else
+            {
+                // Extract current segment and advance
+                segment = pathSpan[..dotIndex];
+                pathSpan = pathSpan[(dotIndex + 1)..];
+            }
+            
+            // Skip empty segments
+            if (!segment.IsEmpty && !segment.IsWhiteSpace())
+            {
+                result.Add(segment.ToString());
+            }
+        }
+        
+        return result;
     }
 
     /// <summary>

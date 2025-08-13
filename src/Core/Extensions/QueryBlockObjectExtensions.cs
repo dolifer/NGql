@@ -53,17 +53,37 @@ internal static class QueryBlockObjectExtensions
     /// <typeparam name="T">The type to include</typeparam>
     public static void IncludeAtPath<T>(this QueryBlock block, string path, string name, string? alias = null)
     {
-        var paths = path.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        // Use Span to avoid string allocations during path parsing
+        var pathSpan = path.AsSpan();
         var currentBlock = block;
 
-        foreach (var t in paths)
+        while (!pathSpan.IsEmpty)
         {
-            if (string.IsNullOrWhiteSpace(t))
+            var dotIndex = pathSpan.IndexOf('.');
+            ReadOnlySpan<char> currentSegment;
+            
+            if (dotIndex == -1)
+            {
+                // Last segment
+                currentSegment = pathSpan;
+                pathSpan = ReadOnlySpan<char>.Empty;
+            }
+            else
+            {
+                // Extract current segment and advance
+                currentSegment = pathSpan[..dotIndex];
+                pathSpan = pathSpan[(dotIndex + 1)..];
+            }
+
+            // Skip empty segments
+            if (currentSegment.IsEmpty || currentSegment.IsWhiteSpace())
             {
                 continue;
             }
 
-            var subQuery = new QueryBlock(t);
+            // Convert to string only when creating the QueryBlock
+            var segmentString = currentSegment.ToString();
+            var subQuery = new QueryBlock(segmentString);
             currentBlock.AddField(subQuery);
             currentBlock = subQuery;
         }

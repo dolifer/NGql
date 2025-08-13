@@ -69,18 +69,21 @@ public static class TypeExtensions
         if (type == Constants.NullableTypeMarker)
             return stripNullableMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.NullableTypeMarker;
 
+        // Use Span for efficient type parsing
+        var typeSpan = type.AsSpan();
+
         // Handle array notation with brackets
-        var arrayStart = type.IndexOf('[');
+        var arrayStart = typeSpan.IndexOf('[');
         if (arrayStart > 0)
         {
-            var baseType = type[..arrayStart];
+            var baseType = typeSpan[..arrayStart].ToString();
             return stripArrayMarker ? baseType : type;
         }
 
         // Handle nullable notation
-        if (type.EndsWith(Constants.NullableTypeMarker) && type.Length > 1)
+        if (typeSpan.EndsWith(Constants.NullableTypeMarker.AsSpan()) && typeSpan.Length > 1)
         {
-            var baseType = type[..^1];
+            var baseType = typeSpan[..^1].ToString();
             return stripNullableMarker ? baseType : type;
         }
 
