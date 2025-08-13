@@ -116,8 +116,23 @@ public sealed class QueryMap
         
         if (rootField != null)
         {
-            var nodeSegments = nodePath.Split('.');
-            var targetNode = nodeSegments[^1]; // Last segment is what we're looking for
+            // Use Span to avoid string allocation during path splitting
+            var nodePathSpan = nodePath.AsSpan();
+            ReadOnlySpan<char> targetNodeSpan;
+            
+            // Find the last segment (target node) using Span operations
+            var lastDotIndex = nodePathSpan.LastIndexOf('.');
+            if (lastDotIndex == -1)
+            {
+                targetNodeSpan = nodePathSpan;
+            }
+            else
+            {
+                targetNodeSpan = nodePathSpan[(lastDotIndex + 1)..];
+            }
+            
+            // Convert to string only when needed for the search
+            var targetNode = targetNodeSpan.ToString();
             
             // Search for the target node and return the path to its parent
             var path = FindPathToNode(rootField, targetNode, [rootPath]);

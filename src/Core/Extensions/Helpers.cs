@@ -181,6 +181,11 @@ internal static class Helpers
         };
     }
 
+    /// <summary>
+    /// Applies field changes to the field definitions dictionary using optimized path parsing.
+    /// </summary>
+    /// <param name="fieldDefinitions">Target field definitions dictionary</param>
+    /// <param name="fieldDefinition">Field definition to apply</param>
     public static void ApplyFieldChanges(SortedDictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition fieldDefinition)
     {
         var existingField = fieldDefinitions.Values.FirstOrDefault(x => x.Path == fieldDefinition.Path);
@@ -191,19 +196,40 @@ internal static class Helpers
             return;
         }
         
-        var pathParts = fieldDefinition.Path.Split('.');
+        // Use Span to avoid string allocations during path parsing
+        var pathSpan = fieldDefinition.Path.AsSpan();
         var currentFields = fieldDefinitions;
 
-        foreach (var part in pathParts)
+        // Process path segments using Span operations
+        while (!pathSpan.IsEmpty)
         {
-            if (!currentFields.TryGetValue(part, out var currentField))
+            var dotIndex = pathSpan.IndexOf('.');
+            ReadOnlySpan<char> currentSegment;
+            
+            if (dotIndex == -1)
+            {
+                // Last segment
+                currentSegment = pathSpan;
+                pathSpan = ReadOnlySpan<char>.Empty;
+            }
+            else
+            {
+                // Extract current segment and advance
+                currentSegment = pathSpan[..dotIndex];
+                pathSpan = pathSpan[(dotIndex + 1)..];
+            }
+
+            // Convert segment to string only when needed for dictionary lookup
+            var segmentString = currentSegment.ToString();
+            
+            if (!currentFields.TryGetValue(segmentString, out var currentField))
             {
                 return; // Path not found
             }
 
-            if (part == pathParts[^1]) // Last part - update the values
+            if (pathSpan.IsEmpty) // Last segment - update the values
             {
-                currentFields[part] = fieldDefinition;
+                currentFields[segmentString] = fieldDefinition;
                 return;
             }
 

@@ -13,10 +13,34 @@ internal sealed class QueryTextBuilder
     private readonly StringBuilder _stringBuilder = new();
     private const int IndentSize = 4;
 
+    // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
+    private static readonly string[] PaddingCache = new string[20];
+    
+    static QueryTextBuilder()
+    {
+        for (int i = 0; i < PaddingCache.Length; i++)
+        {
+            PaddingCache[i] = new string(' ', i * IndentSize);
+        }
+    }
+
+    /// <summary>
+    /// Gets padding string for the specified indent level, using cache for common levels.
+    /// </summary>
+    /// <param name="indent">Indentation level</param>
+    /// <returns>Padding string</returns>
+    private static string GetPadding(int indent)
+    {
+        var paddingLevel = indent / IndentSize;
+        return paddingLevel < PaddingCache.Length 
+            ? PaddingCache[paddingLevel] 
+            : new string(' ', indent);
+    }
+
     public string Build(QueryBlock queryBlock, int indent = 0, string? prefix = null)
     {
-        string pad = new(' ', indent);
-        string prevPad = pad;
+        var pad = GetPadding(indent);
+        var prevPad = pad;
 
         if (!string.IsNullOrWhiteSpace(queryBlock.Alias) && indent != 0)
         {
@@ -73,7 +97,7 @@ internal sealed class QueryTextBuilder
     
     private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
     {
-        string padding = new(' ', indent);
+        var padding = GetPadding(indent);
 
         // Sort fields by both alias and name to maintain consistent ordering
         var orderedFields = fields.Values
@@ -200,7 +224,7 @@ internal sealed class QueryTextBuilder
         }
 
         _stringBuilder.AppendLine("{");
-        string padding = new(' ', indent);
+        var padding = GetPadding(indent);
         
         // Sort fields by their string representation or QueryBlock properties
         var orderedFields = queryBlock.FieldsList
