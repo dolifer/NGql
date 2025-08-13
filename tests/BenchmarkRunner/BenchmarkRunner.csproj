@@ -5,6 +5,7 @@
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <RootNamespace>Benchmarks</RootNamespace>
         <IsPackable>false</IsPackable>
+        <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
     </PropertyGroup>
 
     <ItemGroup>
