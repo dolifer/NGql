@@ -41,7 +41,7 @@ internal static class FieldDefinitionExtensions
     /// <param name="existingField">The existing field definition</param>
     /// <param name="incomingField">The incoming field definition</param>
     /// <returns>True if nested fields are compatible, false otherwise</returns>
-    internal static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
+    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
     {
         // Rule: At each segment of path, the arguments must match exactly
         // This means if one field has arguments at any level and the other doesn't have that path,
@@ -77,14 +77,11 @@ internal static class FieldDefinitionExtensions
         // Check existing nested fields
         foreach (var (existingKey, existingNestedField) in existingField.Fields)
         {
-            if (!incomingField.Fields.ContainsKey(existingKey))
-            {
-                // Existing field has a path that doesn't exist in incoming field
+            // Existing field has a path that doesn't exist in incoming field
+            if (!incomingField.Fields.ContainsKey(existingKey) && HasAnyArguments(existingNestedField))
                 // If the existing nested field (or any of its descendants) has arguments,
                 // then these fields are incompatible
-                if (HasAnyArguments(existingNestedField))
-                    return false;
-            }
+                return false;
         }
 
         return true;

@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using FluentAssertions;
 using NGql.Core.Abstractions;
 using NGql.Core.Builders;
@@ -522,5 +524,268 @@ public class FieldBuilderTests
         result.Fields["email"].Should().NotBeNull();
         result.Fields["posts"].Arguments!["first"].Should().Be(10);
         result.Fields["profile"].Fields.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Can_Set_Metadata_Using_FieldBuilder()
+    {
+        // Arrange
+        var metadata = new Dictionary<string, object>
+        {
+            { "description", "User profile information" },
+            { "version", "1.0" },
+            { "deprecated", false }
+        };
+        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(metadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(3);
+        result.Metadata!["description"].Should().Be("User profile information");
+        result.Metadata!["version"].Should().Be("1.0");
+        result.Metadata!["deprecated"].Should().Be(false);
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Merge_With_Existing_Metadata()
+    {
+        // Arrange
+        var initialMetadata = new Dictionary<string, object>
+        {
+            { "description", "Initial description" },
+            { "version", "1.0" }
+        };
+        var additionalMetadata = new Dictionary<string, object>
+        {
+            { "description", "Updated description" }, // Should override
+            { "author", "John Doe" }, // Should add
+            { "tags", new[] { "user", "profile" } } // Should add
+        };
+
+        var fieldBuilder = FieldBuilder.Create([], "user", "User")
+            .WithMetadata(initialMetadata);
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(additionalMetadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(4);
+        result.Metadata!["description"].Should().Be("Updated description"); // Overridden
+        result.Metadata!["version"].Should().Be("1.0"); // Preserved
+        result.Metadata!["author"].Should().Be("John Doe"); // Added
+        result.Metadata!["tags"].Should().BeEquivalentTo(new[] { "user", "profile" }); // Added
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Handle_Nested_Dictionary_Merging()
+    {
+        // Arrange
+        var initialMetadata = new Dictionary<string, object>
+        {
+            { "config", new Dictionary<string, object> { { "enabled", true }, { "timeout", 30 } } },
+            { "version", "1.0" }
+        };
+        var additionalMetadata = new Dictionary<string, object>
+        {
+            { "config", new Dictionary<string, object> { { "timeout", 60 }, { "retries", 3 } } },
+            { "author", "Jane Doe" }
+        };
+
+        var fieldBuilder = FieldBuilder.Create([], "user", "User")
+            .WithMetadata(initialMetadata);
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(additionalMetadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(3);
+        result.Metadata!["version"].Should().Be("1.0");
+        result.Metadata!["author"].Should().Be("Jane Doe");
+        
+        var configMetadata = result.Metadata!["config"] as Dictionary<string, object?>;
+        configMetadata.Should().NotBeNull().And.HaveCount(3);
+        configMetadata!["enabled"].Should().Be(true); // Preserved from initial
+        configMetadata!["timeout"].Should().Be(60); // Overridden by additional
+        configMetadata!["retries"].Should().Be(3); // Added from additional
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Handle_Empty_Metadata()
+    {
+        // Arrange
+        var emptyMetadata = new Dictionary<string, object>();
+        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(emptyMetadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Handle_Null_Values()
+    {
+        // Arrange
+        var metadata = new Dictionary<string, object>
+        {
+            { "description", "User field" },
+            { "nullable_field", null! }, // Explicit null
+            { "empty_string", "" }
+        };
+        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(metadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(3);
+        result.Metadata!["description"].Should().Be("User field");
+        result.Metadata!["nullable_field"].Should().BeNull();
+        result.Metadata!["empty_string"].Should().Be("");
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Support_Complex_Object_Values()
+    {
+        // Arrange
+        var complexObject = new
+        {
+            Name = "Test Object",
+            Properties = new[] { "prop1", "prop2" },
+            Settings = new { Enabled = true, Count = 42 }
+        };
+        var metadata = new Dictionary<string, object>
+        {
+            { "complex", complexObject },
+            { "simple", "value" }
+        };
+        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(metadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(2);
+        result.Metadata!["complex"].Should().Be(complexObject);
+        result.Metadata!["simple"].Should().Be("value");
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Be_Chainable_With_Other_Methods()
+    {
+        // Arrange
+        var metadata = new Dictionary<string, object>
+        {
+            { "description", "Chainable metadata test" },
+            { "priority", 1 }
+        };
+
+        // Act
+        var result = FieldBuilder.Create([], "user", "User")
+            .WithAlias("currentUser")
+            .WithMetadata(metadata)
+            .Where("id", "123")
+            .AddField("name")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Name.Should().Be("user");
+        result.Alias.Should().Be("currentUser");
+        result.Arguments!["id"].Should().Be("123");
+        result.Fields.Should().ContainKey("name");
+        result.Metadata.Should().NotBeNull().And.HaveCount(2);
+        result.Metadata!["description"].Should().Be("Chainable metadata test");
+        result.Metadata!["priority"].Should().Be(1);
+    }
+
+    [Fact]
+    public void WithMetadata_Should_Handle_Case_Insensitive_Keys()
+    {
+        // Arrange
+        var initialMetadata = new Dictionary<string, object>
+        {
+            { "Description", "Initial description" },
+            { "VERSION", "1.0" }
+        };
+        var additionalMetadata = new Dictionary<string, object>
+        {
+            { "description", "Updated description" }, // Different case
+            { "version", "2.0" } // Different case
+        };
+
+        var fieldBuilder = FieldBuilder.Create([], "user", "User")
+            .WithMetadata(initialMetadata);
+
+        // Act
+        var result = fieldBuilder
+            .WithMetadata(additionalMetadata)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(2);
+        
+        // Check that keys exist (case insensitive)
+        var hasDescription = result.Metadata!.Keys.Any(k => string.Equals(k, "description", StringComparison.OrdinalIgnoreCase));
+        var hasVersion = result.Metadata!.Keys.Any(k => string.Equals(k, "version", StringComparison.OrdinalIgnoreCase));
+        
+        hasDescription.Should().BeTrue();
+        hasVersion.Should().BeTrue();
+        
+        // Values should be updated
+        var descriptionValue = result.Metadata!.Where(kvp => 
+            string.Equals(kvp.Key, "description", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => kvp.Value).FirstOrDefault();
+        var versionValue = result.Metadata!.Where(kvp => 
+            string.Equals(kvp.Key, "version", StringComparison.OrdinalIgnoreCase))
+            .Select(kvp => kvp.Value).FirstOrDefault();
+            
+        descriptionValue.Should().Be("Updated description");
+        versionValue.Should().Be("2.0");
+    }
+
+    [Fact]
+    public void WithMetadata_Multiple_Calls_Should_Accumulate_Metadata()
+    {
+        // Arrange
+        var metadata1 = new Dictionary<string, object> { { "key1", "value1" } };
+        var metadata2 = new Dictionary<string, object> { { "key2", "value2" } };
+        var metadata3 = new Dictionary<string, object> { { "key3", "value3" } };
+
+        // Act
+        var result = FieldBuilder.Create([], "user", "User")
+            .WithMetadata(metadata1)
+            .WithMetadata(metadata2)
+            .WithMetadata(metadata3)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Metadata.Should().NotBeNull().And.HaveCount(3);
+        result.Metadata!["key1"].Should().Be("value1");
+        result.Metadata!["key2"].Should().Be("value2");
+        result.Metadata!["key3"].Should().Be("value3");
     }
 }

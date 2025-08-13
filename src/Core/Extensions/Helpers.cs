@@ -224,8 +224,8 @@ internal static class Helpers
     /// </summary>
     /// <param name="arguments">The arguments to normalize</param>
     /// <returns>A non-null Dictionary</returns>
-    internal static Dictionary<string, object> NormalizeArguments(Dictionary<string, object>? arguments)
-        => arguments ?? new Dictionary<string, object>();
+    internal static SortedDictionary<string, object?> NormalizeArguments(Dictionary<string, object?>? arguments)
+        => arguments is null ? new SortedDictionary<string, object?>() : new SortedDictionary<string, object?>(arguments);
 
     /// <summary>
     /// Normalizes metadata by ensuring non-null Dictionary with nullable values.

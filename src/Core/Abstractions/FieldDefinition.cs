@@ -32,13 +32,13 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => Type != null && (Type == Constants.ArrayTypeMarker || Type.Contains("["));
+    public bool IsArray => Type != null && (Type == Constants.ArrayTypeMarker || Type.Contains('['));
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => Type != null && (Type == Constants.NullableTypeMarker || Type.EndsWith("?"));
+    public bool IsNullable => Type != null && (Type == Constants.NullableTypeMarker || Type.EndsWith('?'));
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.

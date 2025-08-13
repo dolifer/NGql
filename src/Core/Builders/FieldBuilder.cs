@@ -273,7 +273,8 @@ public sealed class FieldBuilder
     {
         var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition.Metadata);
         var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
-        _fieldDefinition = _fieldDefinition with { Metadata = mergedMetadata };
+
+        _fieldDefinition.Metadata = mergedMetadata;
 
         return this;
     }
