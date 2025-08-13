@@ -97,8 +97,24 @@ public sealed class QueryMap
             return [rootPath];
         }
         
-        // Find the path to the target node in the field structure
-        if (queryDefinition.Fields.TryGetValue(rootPath, out var rootField))
+        // Find the root field - first try by the mapped path (which might be an alias),
+        // then try to find by matching alias or name
+        FieldDefinition? rootField = null;
+        
+        // Try direct lookup first (in case rootPath is the actual field name)
+        if (queryDefinition.Fields.TryGetValue(rootPath, out rootField))
+        {
+            // Found it directly
+        }
+        else
+        {
+            // rootPath might be an alias, so search for a field with that alias
+            rootField = queryDefinition.Fields.Values.FirstOrDefault(f => 
+                string.Equals(f.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(f.Name, rootPath, StringComparison.OrdinalIgnoreCase));
+        }
+        
+        if (rootField != null)
         {
             var nodeSegments = nodePath.Split('.');
             var targetNode = nodeSegments[^1]; // Last segment is what we're looking for
@@ -129,7 +145,11 @@ public sealed class QueryMap
         {
             var fieldIdentifier = !string.IsNullOrEmpty(childField.Alias) ? childField.Alias : childField.Name;
             
-            if (childField.Name.Equals(targetNode, StringComparison.OrdinalIgnoreCase))
+            // Check if the target matches either the field name or the alias
+            var isMatch = childField.Name.Equals(targetNode, StringComparison.OrdinalIgnoreCase) ||
+                         (!string.IsNullOrEmpty(childField.Alias) && childField.Alias.Equals(targetNode, StringComparison.OrdinalIgnoreCase));
+            
+            if (isMatch)
             {
                 // Found the target node, return the path including the target
                 return currentPath.Concat([fieldIdentifier]).ToArray();

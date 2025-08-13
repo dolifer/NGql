@@ -382,41 +382,127 @@ public class QueryBuilderWithMetadataTests
     }
 
     [Fact]
-    public void WithMetadata_Should_Preserve_Metadata_During_Query_Include_Operations()
+    public void AddField_With_Metadata_Should_Not_Affect_QueryBuilder_Metadata()
     {
         // Arrange
-        var rootMetadata = new Dictionary<string, object>
+        var queryMetadata = new Dictionary<string, object>
         {
-            { "query_type", "root" },
-            { "description", "Root query with metadata" }
+            { "query_description", "This is query metadata" },
+            { "query_version", "1.0" }
         };
-        var childMetadata = new Dictionary<string, object>
+        var fieldMetadata = new Dictionary<string, object?>
         {
-            { "query_type", "child" },
-            { "description", "Child query with metadata" }
+            { "field_description", "This is field metadata" },
+            { "field_type", "user_field" }
         };
-
-        var rootBuilder = QueryBuilder
-            .CreateDefaultBuilder("rootQuery", MergingStrategy.MergeByFieldPath)
-            .WithMetadata(rootMetadata)
-            .AddField("users", ["id", "name"]);
-
-        var childBuilder = QueryBuilder
-            .CreateDefaultBuilder("childQuery")
-            .WithMetadata(childMetadata)
-            .AddField("users", ["email"]);
 
         // Act
-        rootBuilder.Include(childBuilder);
-        var result = rootBuilder.Definition;
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("testQuery")
+            .WithMetadata(queryMetadata)
+            .AddField("users", arguments: null, metadata: fieldMetadata)
+            .AddField("posts", ["title", "content"]);
+
+        var result = queryBuilder.Definition;
 
         // Assert
-        result.Should().NotBeNull();
+        // QueryBuilder metadata should only contain query metadata
         result.Metadata.Should().NotBeNull().And.HaveCount(2);
-        result.Metadata!["query_type"].Should().Be("root"); // Root metadata preserved
-        result.Metadata!["description"].Should().Be("Root query with metadata");
-        
-        // Verify the child query was included properly
-        result.Fields["users"].Fields.Should().ContainKeys("id", "name", "email");
+        result.Metadata!["query_description"].Should().Be("This is query metadata");
+        result.Metadata!["query_version"].Should().Be("1.0");
+        result.Metadata!.Should().NotContainKey("field_description");
+        result.Metadata!.Should().NotContainKey("field_type");
+
+        // Field metadata should be on the field, not the query
+        result.Fields.Should().ContainKey("users");
+        var usersField = result.Fields["users"];
+        usersField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        usersField.Metadata!["field_description"].Should().Be("This is field metadata");
+        usersField.Metadata!["field_type"].Should().Be("user_field");
+
+        // Other fields should not have metadata
+        result.Fields.Should().ContainKey("posts");
+        var postsField = result.Fields["posts"];
+        postsField.Metadata.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AddField_With_Metadata_Multiple_Fields_Should_Keep_Metadata_Separate()
+    {
+        // Arrange
+        var queryMetadata = new Dictionary<string, object>
+        {
+            { "query_name", "multi_field_test" }
+        };
+        var usersFieldMetadata = new Dictionary<string, object?>
+        {
+            { "field_type", "users" },
+            { "cache_ttl", 300 }
+        };
+        var postsFieldMetadata = new Dictionary<string, object?>
+        {
+            { "field_type", "posts" },
+            { "cache_ttl", 600 }
+        };
+
+        // Act
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("multiFieldTest")
+            .WithMetadata(queryMetadata)
+            .AddField("users", arguments: null, metadata: usersFieldMetadata)
+            .AddField("posts", arguments: null, metadata: postsFieldMetadata);
+
+        var result = queryBuilder.Definition;
+
+        // Assert
+        // QueryBuilder metadata should remain unchanged
+        result.Metadata.Should().NotBeNull().And.HaveCount(1);
+        result.Metadata!["query_name"].Should().Be("multi_field_test");
+
+        // Users field should have its own metadata
+        var usersField = result.Fields["users"];
+        usersField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        usersField.Metadata!["field_type"].Should().Be("users");
+        usersField.Metadata!["cache_ttl"].Should().Be(300);
+
+        // Posts field should have its own metadata
+        var postsField = result.Fields["posts"];
+        postsField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        postsField.Metadata!["field_type"].Should().Be("posts");
+        postsField.Metadata!["cache_ttl"].Should().Be(600);
+
+        // Field metadata should not cross-contaminate
+        usersField.Metadata!.Should().NotContainValue("posts");
+        postsField.Metadata!.Should().NotContainValue("users");
+    }
+
+    [Fact]
+    public void AddField_With_SubFields_And_Metadata_Should_Apply_Metadata_To_Root_Field_Only()
+    {
+        // Arrange
+        var fieldMetadata = new Dictionary<string, object?>
+        {
+            { "description", "User profile information" },
+            { "sensitive", true }
+        };
+
+        // Act
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("nestedFieldTest")
+            .AddField("user", ["id", "name", "email"], metadata: fieldMetadata);
+
+        var result = queryBuilder.Definition;
+
+        // Assert
+        // Root field should have metadata
+        var userField = result.Fields["user"];
+        userField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        userField.Metadata!["description"].Should().Be("User profile information");
+        userField.Metadata!["sensitive"].Should().Be(true);
+
+        // Sub-fields should not have metadata
+        userField.Fields["id"].Metadata.Should().BeEmpty();
+        userField.Fields["name"].Metadata.Should().BeEmpty();
+        userField.Fields["email"].Metadata.Should().BeEmpty();
     }
 }
