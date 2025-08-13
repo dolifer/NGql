@@ -93,10 +93,11 @@ public sealed class QueryBuilder
     /// </summary>
     /// <param name="field">Field name or path.</param>
     /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, FieldDefinition[]? subFields) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields);
-    
+    public QueryBuilder AddField(string field, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields, metadata);
+
     /// <summary>
     ///     Adds a field to the query.
     /// </summary>
@@ -148,11 +149,12 @@ public sealed class QueryBuilder
     /// <param name="field">Field name or path.</param>
     /// <param name="arguments">The arguments for the field.</param>
     /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(arguments), subFields);
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(arguments), subFields, metadata);
 
-    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields)
+    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -165,7 +167,7 @@ public sealed class QueryBuilder
             ? Constants.ObjectFieldType // If subfields are present, treat as an object
             : Constants.DefaultFieldType; // Otherwise, use default type
 
-        var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments);
+        var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
         if (subFields is null || subFields.Length == 0)
         {

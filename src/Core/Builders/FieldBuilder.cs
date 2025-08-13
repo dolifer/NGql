@@ -32,16 +32,16 @@ public sealed class FieldBuilder
         return this;
     }
     
-    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?> arguments)
+    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?> arguments, Dictionary<string, object?>? metadata = null)
     {
-        GetOrAddField(_fieldDefinition.Fields, fieldName, type, arguments, _fieldDefinition.Path, null);
+        GetOrAddField(_fieldDefinition.Fields, fieldName, type, arguments, _fieldDefinition.Path, metadata);
 
         return this;
     }
 
-    public FieldBuilder AddField(string fieldName, string[] subFields)
+    public FieldBuilder AddField(string fieldName, string[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, Constants.ObjectFieldType, EmptyArguments, _fieldDefinition.Path, null);
+        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, Constants.ObjectFieldType, EmptyArguments, _fieldDefinition.Path, metadata);
 
         foreach (var subField in subFields)
         {
@@ -71,9 +71,9 @@ public sealed class FieldBuilder
         return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType, EmptyArguments);
     }
     
-    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null)
+    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
-        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, arguments ?? EmptyArguments, null, null);
+        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, arguments ?? EmptyArguments, null, metadata);
 
         var fieldBuilder = new FieldBuilder(rootField);
 
@@ -269,6 +269,15 @@ public sealed class FieldBuilder
         return this;
     }
 
+    public FieldBuilder WithMetadata(Dictionary<string, object> metadata)
+    {
+        var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition.Metadata);
+        var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
+        _fieldDefinition = _fieldDefinition with { Metadata = mergedMetadata };
+
+        return this;
+    }
+    
     public FieldBuilder Where(string key, object? value)
     {
         if (_fieldDefinition.Arguments != null && _fieldDefinition.Arguments.TryGetValue(key, out var existingValue))

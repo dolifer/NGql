@@ -93,6 +93,53 @@ internal static class Helpers
 
         return result;
     }
+
+    /// <summary>
+    /// Merges metadata dictionaries, handling nullable values appropriately.
+    /// </summary>
+    /// <param name="existing">The existing metadata dictionary</param>
+    /// <param name="update">The metadata dictionary to merge in</param>
+    /// <returns>A merged Dictionary with nullable values suitable for metadata</returns>
+    internal static Dictionary<string, object?> MergeMetadata(
+        Dictionary<string, object?>? existing,
+        Dictionary<string, object> update)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        // First, add all existing entries
+        if (existing != null)
+        {
+            foreach (var (key, value) in existing)
+            {
+                result[key] = value;
+            }
+        }
+
+        // Then merge or add update entries
+        foreach (var (key, updateValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue))
+            {
+                if (existingValue is Dictionary<string, object?> existingDict && 
+                    updateValue is Dictionary<string, object> updateDict)
+                {
+                    // Recursively merge nested dictionaries
+                    result[key] = MergeMetadata(existingDict, updateDict);
+                }
+                else
+                {
+                    // For non-dictionary values, update value overrides existing
+                    result[key] = updateValue;
+                }
+            }
+            else
+            {
+                result[key] = updateValue;
+            }
+        }
+
+        return result;
+    }
     
     internal static object? SortArgumentValue(object? value)
     {
@@ -171,6 +218,22 @@ internal static class Helpers
     /// <returns>A non-null SortedDictionary</returns>
     internal static SortedDictionary<string, object?> NormalizeArguments(SortedDictionary<string, object?>? arguments)
         => arguments ?? new SortedDictionary<string, object?>();
+    
+    /// <summary>
+    /// Normalizes arguments by ensuring non-null Dictionary.
+    /// </summary>
+    /// <param name="arguments">The arguments to normalize</param>
+    /// <returns>A non-null Dictionary</returns>
+    internal static Dictionary<string, object> NormalizeArguments(Dictionary<string, object>? arguments)
+        => arguments ?? new Dictionary<string, object>();
+
+    /// <summary>
+    /// Normalizes metadata by ensuring non-null Dictionary with nullable values.
+    /// </summary>
+    /// <param name="metadata">The metadata to normalize</param>
+    /// <returns>A non-null Dictionary with nullable values</returns>
+    internal static Dictionary<string, object?> NormalizeMetadata(Dictionary<string, object?>? metadata)
+        => metadata ?? new Dictionary<string, object?>();
 
     /// <summary>
     /// Compares two argument dictionaries for equality.

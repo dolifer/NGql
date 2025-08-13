@@ -27,7 +27,7 @@ public class QueryBenchmark
     public string Builder()
     {
         var builder = QueryBuilder.CreateDefaultBuilder("PersonAndFilms")
-            .AddField("person", new Dictionary<string, object>
+            .AddField("person", new Dictionary<string, object?>
             {
                 ["id"] = "cGVvcGxlOjE=",
             }, subFields: ["name", "filmConnection.films.title"]);
