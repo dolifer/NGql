@@ -154,27 +154,43 @@ public sealed class QueryBuilder
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
         => AddFieldDefinitionImpl(field, Helpers.NormalizeArguments(arguments), subFields, Helpers.NormalizeMetadata(metadata));
 
-    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, Dictionary<string, object?> metadata)
+    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
+
+    #region Private Implementation Methods
+
+    /// <summary>
+    /// Core implementation for adding field definitions with optimized parameter passing.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
+    /// <param name="subFields">Optional array of sub-field definitions</param>
+    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldDefinitionImpl(string field, in SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, in Dictionary<string, object?> metadata)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
 
+        // Extract variables from arguments for the query definition
         Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
+        // Determine field type based on presence of subfields
         var type = subFields?.Length > 0
             ? Constants.ObjectFieldType // If subfields are present, treat as an object
             : Constants.DefaultFieldType; // Otherwise, use default type
 
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
+        // Early return if no subfields to process
         if (subFields is null || subFields.Length == 0)
         {
             _queryMap.UpdateRootMapping(_definition);
             return this;
         }
 
+        // Add all subfields to the builder
         foreach (var subField in subFields)
         {
             builder.AddField(subField);
@@ -184,23 +200,36 @@ public sealed class QueryBuilder
         return this;
     }
 
-    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object?> arguments, string[]? subFields, Dictionary<string, object?> metadata)
+    /// <summary>
+    /// Implementation for adding fields with string array subfields, converting them to FieldDefinitions.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
+    /// <param name="subFields">Optional array of subfield names</param>
+    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldImpl(string field, in SortedDictionary<string, object?> arguments, string[]? subFields, in Dictionary<string, object?> metadata)
     {
+        // Convert string subfields to FieldDefinition objects
         var subFieldDefinitions = subFields?
             .Select(subField => new FieldDefinition(subField))
             .ToArray();
 
-        return AddFieldDefinitionImpl(field, arguments, subFieldDefinitions, metadata);
+        return AddFieldDefinitionImpl(field, in arguments, subFieldDefinitions, in metadata);
     }
 
-    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
-
-    private QueryBuilder IncludeImpl(QueryDefinition queryDefinition)
+    /// <summary>
+    /// Core implementation for including another query definition with optimized parameter passing.
+    /// </summary>
+    /// <param name="queryDefinition">Query definition to include (passed by reference for performance)</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder IncludeImpl(in QueryDefinition queryDefinition)
     {
         QueryMerger.MergeQuery(_definition, _queryMap, in queryDefinition);
-
         return this;
     }
+
+    #endregion
 
     public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
     {
