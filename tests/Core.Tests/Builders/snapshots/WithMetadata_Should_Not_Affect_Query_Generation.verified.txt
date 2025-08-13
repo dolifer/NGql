@@ -1,0 +1,7 @@
+﻿query queryWithExtraInfo{
+    users{
+        email
+        id
+        name
+    }
+}

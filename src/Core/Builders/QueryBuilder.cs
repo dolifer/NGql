@@ -75,18 +75,12 @@ public sealed class QueryBuilder
     ///     Adds a field to the query.
     /// </summary>
     /// <param name="field">Field name or path.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field) => AddFieldImpl(field, new SortedDictionary<string, object?>(), []);
-    
-    /// <summary>
-    ///     Adds a field to the query.
-    /// </summary>
-    /// <param name="field">Field name or path.</param>
-    /// <param name="subFields">The subfields for the field.</param>
-    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, string[]? subFields) => AddFieldImpl(field, new SortedDictionary<string, object?>(), subFields);
+    public QueryBuilder AddField(string field, Dictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
+        => AddFieldImpl(field, Helpers.NormalizeArguments(arguments), [], Helpers.NormalizeMetadata(metadata));
 
     /// <summary>
     ///     Adds a field to the query.
@@ -96,16 +90,19 @@ public sealed class QueryBuilder
     /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields, metadata);
+    public QueryBuilder AddField(string field, string[]? subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldImpl(field, new SortedDictionary<string, object?>(), subFields, Helpers.NormalizeMetadata(metadata));
 
     /// <summary>
     ///     Adds a field to the query.
     /// </summary>
     /// <param name="field">Field name or path.</param>
-    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments) => AddFieldImpl(field, new SortedDictionary<string, object?>(arguments), []);
+    public QueryBuilder AddField(string field, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields, Helpers.NormalizeMetadata(metadata));
 
     /// <summary>
     ///     Adds a field to the query.
@@ -139,9 +136,11 @@ public sealed class QueryBuilder
     /// <param name="field">Field name or path.</param>
     /// <param name="arguments">The arguments for the field.</param>
     /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields) => AddFieldImpl(field, new SortedDictionary<string, object?>(arguments), subFields);
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldImpl(field, Helpers.NormalizeArguments(arguments), subFields, Helpers.NormalizeMetadata(metadata));
 
     /// <summary>
     ///     Adds a field to the query.
@@ -152,9 +151,10 @@ public sealed class QueryBuilder
     /// <param name="metadata">The field metadata.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null) => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(arguments), subFields, metadata);
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldDefinitionImpl(field, Helpers.NormalizeArguments(arguments), subFields, Helpers.NormalizeMetadata(metadata));
 
-    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null)
+    private QueryBuilder AddFieldDefinitionImpl(string field, SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, Dictionary<string, object?> metadata)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -184,13 +184,13 @@ public sealed class QueryBuilder
         return this;
     }
 
-    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object?> arguments, string[]? subFields)
+    private QueryBuilder AddFieldImpl(string field, SortedDictionary<string, object?> arguments, string[]? subFields, Dictionary<string, object?> metadata)
     {
         var subFieldDefinitions = subFields?
             .Select(subField => new FieldDefinition(subField))
             .ToArray();
 
-        return AddFieldDefinitionImpl(field, arguments, subFieldDefinitions);
+        return AddFieldDefinitionImpl(field, arguments, subFieldDefinitions, metadata);
     }
 
     public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
@@ -198,6 +198,15 @@ public sealed class QueryBuilder
     private QueryBuilder IncludeImpl(QueryDefinition queryDefinition)
     {
         QueryMerger.MergeQuery(_definition, _queryMap, in queryDefinition);
+
+        return this;
+    }
+
+    public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
+    {
+        var existingMetadata = Helpers.NormalizeMetadata(_definition.Metadata);
+        var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
+        _definition.Metadata = mergedMetadata;
 
         return this;
     }
