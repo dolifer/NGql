@@ -134,13 +134,22 @@ public sealed class QueryMap
             // Convert to string only when needed for the search
             var targetNode = targetNodeSpan.ToString();
             
+            // Use the alias if available, otherwise use the field name for the initial path
+            var initialPath = !string.IsNullOrEmpty(rootField.Alias) ? rootField.Alias : rootField.Name;
+            
             // Search for the target node and return the path to its parent
-            var path = FindPathToNode(rootField, targetNode, [rootPath]);
+            var path = FindPathToNode(rootField, targetNode, [initialPath]);
             if (path is { Length: > 1 })
             {
                 // Return path excluding the target node itself (path to parent)
                 return path.Take(path.Length - 1).ToArray();
             }
+        }
+        
+        // Fallback: return the alias if available, otherwise the mapped path
+        if (rootField != null && !string.IsNullOrEmpty(rootField.Alias))
+        {
+            return [rootField.Alias];
         }
         
         return [rootPath];
