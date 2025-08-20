@@ -251,11 +251,11 @@ public sealed class FieldBuilder
             // Type specification must be at beginning and:
             // 1. Start with letter or '['
             // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
-            // 3. Be a reasonable type name (not just punctuation)
+            // 3. Be a reasonable type name (contain letters/digits) OR be an array marker (just "[]")
             if (potentialType.Length > 0 && 
                 (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
                 !potentialType.Contains('.') &&
-                potentialType.Any(char.IsLetterOrDigit))
+                (potentialType.Any(char.IsLetterOrDigit) || potentialType == "[]"))
             {
                 type = potentialType;
                 fieldPath = fieldPathStr[(spaceIndex + 1)..].AsSpan();

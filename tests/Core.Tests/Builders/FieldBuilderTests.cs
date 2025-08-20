@@ -137,6 +137,7 @@ public class FieldBuilderTests
     }
 
     [Theory]
+    [InlineData("Int[]")]
     [InlineData("Int")]
     [InlineData("Integer")]
     [InlineData("int")]
@@ -147,6 +148,7 @@ public class FieldBuilderTests
     [InlineData("Float")]
     [InlineData("ID")]
     [InlineData("Custom")]
+    [InlineData("[]")]
     public void AddField_Sets_Specified_Type_When_Type_Is_Provided(string typeValue)
     {
         // Arrange
@@ -180,14 +182,28 @@ public class FieldBuilderTests
             .AddField("name") // Default String type
             .AddField("age", "Int") // Custom type
             .AddField("isActive", "Boolean") // Custom type
+            .AddField("[] array") // Custom array type
+            .AddField("int[] userIds") // Custom array of int
+            .AddField("int[] user.data") // Custom nested array of int
             .Build();
 
         // Assert
-        result.Fields.Should().HaveCount(4);
+        result.Fields.Should().HaveCount(7);
         result.Fields["id"].Type.Should().Be("ID");
         result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType); // Default
         result.Fields["age"].Type.Should().Be("Int");
         result.Fields["isActive"].Type.Should().Be("Boolean");
+        result.Fields["array"].Type.Should().Be("[]");
+        result.Fields["userIds"].Type.Should().Be("int[]");
+
+        result.Fields["user"].Type.Should().Be(Constants.ObjectFieldType);
+
+        var userData = result.Fields["user"].Fields["data"];
+
+        userData.Type.Should().Be("int[]"); // Nested array of int
+        userData.Name.Should().Be("data");
+
+        userData.Fields.Should().BeEmpty(); // No nested fields in array
     }
 
     [Fact]
