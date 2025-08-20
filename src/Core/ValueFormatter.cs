@@ -1,10 +1,13 @@
 using System;
 using System.Globalization;
+using System.Numerics;
 
 namespace NGql.Core;
 
 internal static class ValueFormatter
 {
+    internal const string DateFormat = "yyyy-MM-dd'T'HH:mm:ss.fffK";
+    
     // Pre-allocated strings for common boolean values to avoid repeated allocations
     private const string TrueString = "true";
     private const string FalseString = "false";
@@ -36,6 +39,8 @@ internal static class ValueFormatter
             float floatValue => floatValue.ToString(CultureInfo.InvariantCulture),
             double doubleValue => doubleValue.ToString(CultureInfo.InvariantCulture),
             decimal decimalValue => decimalValue.ToString(CultureInfo.InvariantCulture),
+            DateTime dateTimeValue => $"\"{dateTimeValue.ToString(DateFormat, CultureInfo.InvariantCulture)}\"",
+            DateTimeOffset dateTimeOffsetValue => $"\"{dateTimeOffsetValue.ToString(DateFormat, CultureInfo.InvariantCulture)}\"",
             
             // Custom types
             EnumValue enumValue => enumValue.Value,
