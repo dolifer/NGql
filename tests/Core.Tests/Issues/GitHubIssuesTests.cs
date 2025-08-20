@@ -22,10 +22,10 @@ public class GitHubIssuesTests
         // Assert
         queryText.Should().Be($@"query BookingQuery{{
     getBookingSessions(date:""{date}"", packageId:""some-package-id-42""){{
+        endTime
         id
         name
         startTime
-        endTime
     }}
 }}");
     }

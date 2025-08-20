@@ -2,22 +2,21 @@
 using MediatR;
 using Server.Data.Entities;
 
-namespace Server.Commands
+namespace Server.Commands;
+
+public class UsersQuery : IRequest<IEnumerable<User>>
 {
-    public class UsersQuery : IRequest<IEnumerable<User>>
+    public string? Name { get; }
+
+    public UsersQuery(string? name = null)
     {
-        public string? Name { get; }
-
-        public UsersQuery(string? name = null)
-        {
-            Name = name;
-        }
+        Name = name;
     }
+}
 
-    public class UserQuery : IRequest<User>
-    {
-        public string Name { get; }
+public class UserQuery : IRequest<User>
+{
+    public string Name { get; }
 
-        public UserQuery(string name) => Name = name;
-    }
+    public UserQuery(string name) => Name = name;
 }

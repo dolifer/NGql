@@ -13,17 +13,22 @@
     <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
 
+  <!-- MinVer configuration -->
+  <PropertyGroup>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+  </PropertyGroup>
+  
   <PropertyGroup>
     <!-- Use the latest released C# language version -->
     <LangVersion>latest</LangVersion>
-    <TargetFrameworks>net6.0;net7.0;net8.0</TargetFrameworks>
+    <TargetFrameworks>net6.0;net7.0;net8.0;net9.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 
   <!-- Sonar Analyzers configuration -->
   <ItemGroup>
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="9.10.0.77988">
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.8.0.113526">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
@@ -36,6 +41,7 @@
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <NoWarn>NETSDK1138</NoWarn>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' != 'False'">
@@ -46,15 +52,19 @@
 
   <!-- tests projects -->
   <ItemGroup Condition="$(MSBuildProjectName.EndsWith('Tests'))">
-    <PackageReference Include="FluentAssertions" Version="6.10.0"/>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.4.1"/>
-    <PackageReference Include="xunit" Version="2.4.2"/>
-    <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5"/>
-    <PackageReference Include="JunitXml.TestLogger" Version="3.0.124"/>
+    <PackageReference Include="FluentAssertions" Version="6.12.1"/>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0"/>
+    <PackageReference Include="xunit" Version="2.9.3"/>
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2"/>
+    <PackageReference Include="JunitXml.TestLogger" Version="6.1.0"/>
     <PackageReference Include="coverlet.msbuild" Version="3.2.0" />
     <PackageReference Include="coverlet.collector" Version="3.2.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('Tests')) or $(MSBuildProjectName.EndsWith('Shared'))">
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+  </PropertyGroup>
 </Project>

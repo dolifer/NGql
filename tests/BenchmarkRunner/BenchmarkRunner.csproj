@@ -5,10 +5,11 @@
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <RootNamespace>Benchmarks</RootNamespace>
         <IsPackable>false</IsPackable>
+        <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="BenchmarkDotNet" Version="0.13.12" />
+      <PackageReference Include="BenchmarkDotNet" Version="0.15.2" />
     </ItemGroup>
 
     <ItemGroup>

@@ -1,0 +1,5 @@
+﻿mutation Create($name:String!){
+    user:createUser(name:$name){
+        name
+    }
+}

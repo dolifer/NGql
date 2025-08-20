@@ -3,18 +3,17 @@ using Microsoft.Extensions.DependencyInjection;
 using NFixtures.WebApi;
 using Server;
 
-namespace NGql.Client.Tests.Fixtures
-{
-    public class ApiFixture : StartupFixture<Startup>
-    {
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            base.ConfigureWebHost(builder);
-            builder.UseContentRoot(".");
-        }
+namespace NGql.Client.Tests.Fixtures;
 
-        protected override void ConfigureTestServices(IServiceCollection services)
-        {
-        }
+public class ApiFixture : StartupFixture<Startup>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.UseContentRoot(".");
+    }
+
+    protected override void ConfigureTestServices(IServiceCollection services)
+    {
     }
 }

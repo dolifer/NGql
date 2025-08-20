@@ -6,11 +6,12 @@
     <ItemGroup>
       <ProjectReference Include="..\..\src\Core\Core.csproj" />
       <ProjectReference Include="..\..\src\Server\Server.csproj" />
+      <ProjectReference Include="..\Shared\Shared.csproj" />
     </ItemGroup>
   
     <ItemGroup>
-      <PackageReference Include="GraphQL.Client" Version="4.0.1" />
-      <PackageReference Include="GraphQL.Client.Serializer.SystemTextJson" Version="4.0.1" />
+      <PackageReference Include="GraphQL.Client" Version="6.1.0" />
+      <PackageReference Include="GraphQL.Client.Serializer.SystemTextJson" Version="6.1.0" />
       <PackageReference Include="NFixtures.WebApi" Version="1.0.2" />
     </ItemGroup>
 </Project>

@@ -2,12 +2,11 @@
 using System.Threading.Tasks;
 using Server.Data.Entities;
 
-namespace Server.Data
+namespace Server.Data;
+
+public interface IUsersRepository
 {
-    public interface IUsersRepository
-    {
-        Task<IEnumerable<User>> GetUsers(string? name);
-        Task<User?> GetUser(string name);
-        Task<User> CreateUser(User user);
-    }
+    Task<IEnumerable<User>> GetUsers(string? name);
+    Task<User?> GetUser(string name);
+    Task<User> CreateUser(User user);
 }
