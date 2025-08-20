@@ -110,28 +110,24 @@ public sealed class FieldBuilder
     /// Core implementation of field creation with all the complex parsing and caching logic.
     /// Separated from the public interface to allow for optimized parameter passing.
     /// </summary>
-    private static FieldDefinition GetOrAddFieldCore(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? type, in SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddFieldCore(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? defaultFieldType, in SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         FieldDefinition? value = null;
         var currentFields = fieldDefinitions;
         
         // Use the passed arguments directly since they're guaranteed to be non-null
         var argumentsRef = arguments;
-        type ??= Constants.DefaultFieldType;
+        defaultFieldType ??= Constants.DefaultFieldType;
 
         var fullPath = string.IsNullOrWhiteSpace(parentPath)
             ? new List<string>()
             : SplitPathToList(parentPath.AsSpan());
 
         // Parse type from fieldPath if provided in format "Type fieldPath"
-        var fieldPathStr = fieldPath.ToString();
-        var spaceIndex = fieldPathStr.IndexOf(' ');
-        if (spaceIndex > 0 && (char.IsUpper(fieldPathStr[0]) || fieldPathStr[0] == '['))
-        {
-            // Type specification must be at beginning and start with uppercase letter or '['
-            type = fieldPathStr[..spaceIndex];
-            fieldPath = fieldPathStr[(spaceIndex + 1)..].AsSpan();
-        }
+        fieldPath = ParseFieldTypeFromPath(fieldPath, defaultFieldType, out var fieldType);
+
+        // Preprocess the field path to remove trailing dots and spaces
+        fieldPath = fieldPath.TrimEnd(['.', ' ']);
 
         while (fieldPath.Length > 0)
         {
@@ -142,10 +138,10 @@ public sealed class FieldBuilder
                 ? fieldPath
                 : fieldPath[..nextDot];
 
-            var currentPath = currentPart.ToString(); 
+            var currentPath = currentPart.ToString().Trim(); 
             var (name, alias) = GetFieldNameAndAlias(currentPath);
 
-            if (string.IsNullOrWhiteSpace(currentPath))
+            if (string.IsNullOrWhiteSpace(currentPath) || string.IsNullOrWhiteSpace(name))
             {
                 fieldPath = GetNextFieldPath(fieldPath, nextDot);
                 continue;
@@ -177,11 +173,24 @@ public sealed class FieldBuilder
             if (!currentFields.TryGetValue(name, out var childValue))
             {
                 var fieldArguments = isLastFragment ? argumentsRef : EmptyArguments;
-                // For intermediate nodes, always use object type
-                var fieldType = isLastFragment ? type : Constants.ObjectFieldType;
+                
+                // Determine the type to use for this field segment
+                string typeToUse;
+                if (isLastFragment)
+                {
+                    // For the last segment, use the specified type
+                    typeToUse = fieldType;
+                }
+                else
+                {
+                    // For intermediate segments, use object type when they will have nested fields
+                    // unless it's an array marker (special case)
+                    typeToUse = fieldType == Constants.ArrayTypeMarker ? fieldType : Constants.ObjectFieldType;
+                }
+                
                 // Only pass metadata for the last fragment (final field)
                 var fieldMetadata = isLastFragment ? metadata : null;
-                value = currentFields[name] = GetNewField(name, fieldType, alias, in fieldArguments, cacheKey, fieldMetadata);
+                value = currentFields[name] = GetNewField(name, typeToUse, alias, in fieldArguments, cacheKey, fieldMetadata);
             }
             else
             {
@@ -207,9 +216,9 @@ public sealed class FieldBuilder
                 }
 
                 // If this is the last fragment and we should update the type
-                if (isLastFragment && type != Constants.DefaultFieldType && value.Type != type)
+                if (isLastFragment && fieldType != Constants.DefaultFieldType && value.Type != fieldType)
                 {
-                    value = currentFields[name] = value with { Type = type };
+                    value = currentFields[name] = value with { Type = fieldType };
                 }
             }
             
@@ -217,13 +226,45 @@ public sealed class FieldBuilder
             currentFields = value.Fields;
         }
 
-        return value ?? throw new InvalidOperationException($"Failed to create a new field for path: {fieldPath}");
+        // If we didn't create any field (all segments were empty), throw an exception
+        if (value == null)
+        {
+            throw new InvalidOperationException($"Failed to create a new field for path: field path contains no valid segments");
+        }
+
+        return value;
 
         // Local helper function for advancing through the field path
         ReadOnlySpan<char> GetNextFieldPath(ReadOnlySpan<char> readOnlySpan, int nextDot)
         {
             return nextDot == -1 ? ReadOnlySpan<char>.Empty : readOnlySpan[(nextDot + 1)..];
         }
+    }
+
+    private static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, string defaultType, out string type)
+    {
+        var fieldPathStr = fieldPath.ToString();
+        var spaceIndex = fieldPathStr.IndexOf(' ');
+        if (spaceIndex > 0)
+        {
+            var potentialType = fieldPathStr[..spaceIndex];
+            // Type specification must be at beginning and:
+            // 1. Start with letter or '['
+            // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
+            // 3. Be a reasonable type name (not just punctuation)
+            if (potentialType.Length > 0 && 
+                (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
+                !potentialType.Contains('.') &&
+                potentialType.Any(char.IsLetterOrDigit))
+            {
+                type = potentialType;
+                fieldPath = fieldPathStr[(spaceIndex + 1)..].AsSpan();
+                return fieldPath;
+            }
+        }
+
+        type = defaultType;
+        return fieldPath;
     }
 
     /// <summary>

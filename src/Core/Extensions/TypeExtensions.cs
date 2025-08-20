@@ -25,6 +25,10 @@ public static class TypeExtensions
         if (fieldDefinition.Type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition.Type))
             return true;
 
+        // Special case: Array markers should be preserved ([] special case)
+        if (fieldDefinition.Type == Constants.ArrayTypeMarker)
+            return false;
+
         // Special types like arrays or custom complex types should maintain their type
         // even when nested fields are added
         if (fieldDefinition.IsArray || fieldDefinition.IsNullable || 
@@ -32,7 +36,7 @@ public static class TypeExtensions
             fieldDefinition.Type.EndsWith('?'))
             return false;
 
-        // Check for common primitive types that should be converted
+        // Check for common primitive types that should be converted to object when they have fields
         var lowerType = fieldDefinition.Type.ToLowerInvariant();
         var isPrimitiveType = lowerType == "int" || 
                              lowerType == "integer" ||
@@ -43,7 +47,13 @@ public static class TypeExtensions
                              lowerType == "double" ||
                              lowerType == "decimal";
 
-        return isPrimitiveType;
+        // If it's a primitive type and will have nested fields, convert to object
+        if (isPrimitiveType)
+            return true;
+
+        // For custom types (not primitive, not array, not nullable), 
+        // don't convert to object - preserve the custom type
+        return false;
     }
 
     /// <summary>
