@@ -353,6 +353,207 @@ var query = QueryBuilder
     });
 ```
 
+## Query Merging Strategies 🔄
+
+One of the most powerful features of the QueryBuilder API is intelligent query merging. When combining multiple query fragments using `.Include()`, NGql can automatically merge compatible queries to optimize the final GraphQL output.
+
+### Available Strategies
+
+| Strategy | Description | Use Case |
+|----------|-------------|----------|
+| `MergeByDefault` | Inherits merging behavior from parent (default) | Most flexible, adapts to context |
+| `MergeByFieldPath` | Merges queries with compatible field paths and arguments | Optimizing similar queries |
+| `NeverMerge` | Always keeps queries separate | When you need guaranteed separation |
+
+### 1. MergeByFieldPath Strategy
+
+Automatically merges queries that have compatible field paths and arguments:
+
+```c#
+// Create root query with MergeByFieldPath strategy
+var rootQuery = QueryBuilder
+    .CreateDefaultBuilder("OptimizedQuery", MergingStrategy.MergeByFieldPath)
+    .AddField("users", ["id", "name"]);
+
+// Fragment 1: Same path, no arguments - WILL MERGE
+var emailFragment = QueryBuilder
+    .CreateDefaultBuilder("EmailFragment")
+    .AddField("users", ["email"]);
+
+// Fragment 2: Different path - WILL MERGE (compatible)
+var profileFragment = QueryBuilder
+    .CreateDefaultBuilder("ProfileFragment")
+    .AddField("users.profile", ["bio", "avatar"]);
+
+// Fragment 3: Same path but with arguments - WON'T MERGE
+var filteredFragment = QueryBuilder
+    .CreateDefaultBuilder("FilteredFragment")
+    .AddField("users", new Dictionary<string, object?> { {"status", "active"} }, ["role"]);
+
+var finalQuery = rootQuery
+    .Include(emailFragment)      // Merges into main "users" field
+    .Include(profileFragment)    // Merges as nested field
+    .Include(filteredFragment);  // Creates separate field path
+```
+
+**Output:**
+```graphql
+query OptimizedQuery{
+    users{
+        id
+        name
+        email
+        profile{
+            bio
+            avatar
+        }
+    }
+    users_1(status:"active"){
+        role
+    }
+}
+```
+
+### 2. NeverMerge Strategy
+
+Forces queries to remain separate, even if they could be merged:
+
+```c#
+var rootQuery = QueryBuilder
+    .CreateDefaultBuilder("SeparateQueries", MergingStrategy.MergeByFieldPath)
+    .AddField("users", ["id"]);
+
+// This fragment will NEVER merge due to NeverMerge strategy
+var separateFragment = QueryBuilder
+    .CreateDefaultBuilder("AlwaysSeparate", MergingStrategy.NeverMerge)
+    .AddField("users", ["name", "email"]);  // Same path but won't merge
+
+var finalQuery = rootQuery.Include(separateFragment);
+```
+
+**Output:**
+```graphql
+query SeparateQueries{
+    users{
+        id
+    }
+    users_1{
+        name
+        email
+    }
+}
+```
+
+### 3. MergeByDefault Strategy
+
+Inherits the merging behavior from the parent query:
+
+```c#
+// Root uses MergeByFieldPath
+var rootQuery = QueryBuilder
+    .CreateDefaultBuilder("InheritedBehavior", MergingStrategy.MergeByFieldPath)
+    .AddField("users", ["id"]);
+
+// Child uses MergeByDefault - will inherit MergeByFieldPath behavior
+var childFragment = QueryBuilder
+    .CreateDefaultBuilder("ChildFragment", MergingStrategy.MergeByDefault)
+    .AddField("users", ["name"]);  // Will merge because parent allows it
+
+var finalQuery = rootQuery.Include(childFragment);
+```
+
+**Output:**
+```graphql
+query InheritedBehavior{
+    users{
+        id
+        name
+    }
+}
+```
+
+### Dynamic Strategy Assignment
+
+You can change merging strategies at runtime:
+
+```c#
+var query = QueryBuilder
+    .CreateDefaultBuilder("DynamicQuery")
+    .WithMergingStrategy(MergingStrategy.MergeByFieldPath)
+    .AddField("users.profile", ["name"]);
+
+// Later change strategy
+query.WithMergingStrategy(MergingStrategy.NeverMerge);
+```
+
+### Complex Merging Example
+
+```c#
+// Root query optimizes by field path
+var mainQuery = QueryBuilder
+    .CreateDefaultBuilder("ComplexMerging", MergingStrategy.MergeByFieldPath)
+    .AddField("organization.departments", ["id", "name"]);
+
+// Fragment 1: Compatible path - WILL MERGE
+var departmentDetails = QueryBuilder
+    .CreateDefaultBuilder("DeptDetails")
+    .AddField("organization.departments", ["budget", "headCount"]);
+
+// Fragment 2: Nested compatible path - WILL MERGE
+var teamInfo = QueryBuilder
+    .CreateDefaultBuilder("TeamInfo")
+    .AddField("organization.departments.teams", ["name", "lead"]);
+
+// Fragment 3: Same path with arguments - WON'T MERGE
+var activeDepartments = QueryBuilder
+    .CreateDefaultBuilder("ActiveDepts")
+    .AddField("organization.departments", 
+        new Dictionary<string, object?> { {"status", "active"} }, 
+        ["description"]);
+
+// Fragment 4: Force separation - WON'T MERGE
+var separateQuery = QueryBuilder
+    .CreateDefaultBuilder("Separate", MergingStrategy.NeverMerge)
+    .AddField("organization.departments", ["location"]);
+
+var result = mainQuery
+    .Include(departmentDetails)  // Merges
+    .Include(teamInfo)          // Merges as nested
+    .Include(activeDepartments) // Separate due to arguments
+    .Include(separateQuery);    // Separate due to NeverMerge
+```
+
+**Output:**
+```graphql
+query ComplexMerging{
+    organization{
+        departments{
+            id
+            name
+            budget
+            headCount
+            teams{
+                name
+                lead
+            }
+        }
+        departments_1(status:"active"){
+            description
+        }
+        departments_2{
+            location
+        }
+    }
+}
+```
+
+### Merging Rules
+
+1. **Field Path Compatibility**: Queries merge if their field paths are compatible (same root or nested)
+2. **Argument Matching**: Queries with different arguments create separate field instances
+3. **Strategy Hierarchy**: Child strategies are overridden by parent `NeverMerge` strategies
+4. **Type Safety**: Conflicting field types prevent merging and throw exceptions
+
 ## Comparison: Classic vs QueryBuilder
 
 | Feature | Classic API | QueryBuilder API |
@@ -362,7 +563,7 @@ var query = QueryBuilder
 | **Field Types** | Not supported | `"String user.name"` or inline type specification |
 | **Arguments** | `.Where("id", value)` | `.AddField("user", new Dictionary<string, object?> { {"id", value} })` |
 | **Aliases** | Not directly supported | `"alias:field"` syntax |
-| **Query Merging** | Manual composition | Automatic with `.Include()` |
+| **Query Merging** | Manual composition | Automatic with `.Include()` and strategies |
 | **Variables** | Constructor or `.Variable()` | Automatic detection from arguments |
 | **Array Types** | Not supported | `"[]"` and `"Type[]"` markers |
 | **Reusability** | Limited | High with fragments and merging |
@@ -478,9 +679,10 @@ The QueryBuilder API includes several performance optimizations:
 1. **Use QueryBuilder for New Projects**: The QueryBuilder API provides better maintainability and features
 2. **Leverage Dot Notation**: Use `"parent.child.field"` syntax for cleaner code
 3. **Create Reusable Fragments**: Build common query patterns as reusable components with `.Include()`
-4. **Type Your Fields**: Use type annotations for better GraphQL schema compliance
-5. **Use Variables**: Prefer variables over hardcoded values for reusability
-6. **Organize Complex Queries**: Break large queries into smaller, composable fragments
+4. **Choose Appropriate Merging Strategies**: Use `MergeByFieldPath` for optimization, `NeverMerge` for guaranteed separation
+5. **Type Your Fields**: Use type annotations for better GraphQL schema compliance
+6. **Use Variables**: Prefer variables over hardcoded values for reusability
+7. **Organize Complex Queries**: Break large queries into smaller, composable fragments
 
 ## Contributing
 
