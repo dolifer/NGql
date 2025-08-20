@@ -36,7 +36,7 @@ jobs:
         env:
           NugetApiKey: ${{ secrets.NUGET_API_KEY }}
       - name: Upload Coverage report
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: artifacts/coverage-report
