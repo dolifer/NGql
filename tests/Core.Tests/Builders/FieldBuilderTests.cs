@@ -138,7 +138,12 @@ public class FieldBuilderTests
 
     [Theory]
     [InlineData("Int")]
+    [InlineData("Integer")]
+    [InlineData("int")]
+    [InlineData("integer")]
     [InlineData("Boolean")]
+    [InlineData("Bool")]
+    [InlineData("bool")]
     [InlineData("Float")]
     [InlineData("ID")]
     [InlineData("Custom")]
@@ -149,13 +154,18 @@ public class FieldBuilderTests
 
         // Act
         var result = fieldBuilder
-            .AddField("field", typeValue) // Explicitly setting type
+            .AddField("field1", typeValue) // Explicitly setting type
+            .AddField($"{typeValue} field2") // Explicitly setting type
             .Build();
 
         // Assert
-        result.Fields["field"].Should().NotBeNull();
-        result.Fields["field"].Name.Should().Be("field");
-        result.Fields["field"].Type.Should().Be(typeValue); // Explicit type verification
+        result.Fields["field1"].Should().NotBeNull();
+        result.Fields["field1"].Name.Should().Be("field1");
+        result.Fields["field1"].Type.Should().Be(typeValue); // Explicit type verification
+        
+        result.Fields["field2"].Should().NotBeNull();
+        result.Fields["field2"].Name.Should().Be("field2");
+        result.Fields["field2"].Type.Should().Be(typeValue); // Explicit type verification
     }
 
     [Fact]
