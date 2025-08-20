@@ -1,0 +1,124 @@
+using System;
+using NGql.Core.Abstractions;
+
+namespace NGql.Core.Extensions;
+
+/// <summary>
+/// Extensions for working with field types.
+/// </summary>
+public static class TypeExtensions
+{
+    /// <summary>
+    /// Determines if a field type should be converted to an object type when nested fields are added.
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition to check.</param>
+    /// <returns>True if the type should be converted to object, false if it should preserve its type.</returns>
+    public static bool ShouldConvertToObjectType(this FieldDefinition fieldDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+
+        // If it's already an object type, no need to convert
+        if (fieldDefinition.Type == Constants.ObjectFieldType)
+            return false;
+
+        // If it's the default string type, it should be converted
+        if (fieldDefinition.Type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition.Type))
+            return true;
+
+        // Special case: Array markers should be preserved ([] special case)
+        if (fieldDefinition.Type == Constants.ArrayTypeMarker)
+            return false;
+
+        // Special types like arrays or custom complex types should maintain their type
+        // even when nested fields are added
+        if (fieldDefinition.IsArray || fieldDefinition.IsNullable || 
+            fieldDefinition.Type.Contains('[') || fieldDefinition.Type.Contains(']') ||
+            fieldDefinition.Type.EndsWith('?'))
+            return false;
+
+        // Check for common primitive types that should be converted to object when they have fields
+        var lowerType = fieldDefinition.Type.ToLowerInvariant();
+        var isPrimitiveType = lowerType == "int" || 
+                             lowerType == "integer" ||
+                             lowerType == "string" ||
+                             lowerType == "boolean" ||
+                             lowerType == "bool" ||
+                             lowerType == "float" ||
+                             lowerType == "double" ||
+                             lowerType == "decimal";
+
+        // If it's a primitive type and will have nested fields, convert to object
+        if (isPrimitiveType)
+            return true;
+
+        // For custom types (not primitive, not array, not nullable), 
+        // don't convert to object - preserve the custom type
+        return false;
+    }
+
+    /// <summary>
+    /// Gets the core type name.
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition.</param>
+    /// <param name="stripArrayMarker">Whether to strip the array marker.</param>
+    /// <param name="stripNullableMarker">Whether to strip the nullable marker.</param>
+    /// <returns>The processed type name according to the parameters.</returns>
+    public static string GetCoreTypeName(this FieldDefinition fieldDefinition, bool stripArrayMarker = false, bool stripNullableMarker = false)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+
+        if (string.IsNullOrEmpty(fieldDefinition.Type))
+            return Constants.DefaultFieldType;
+
+        var type = fieldDefinition.Type;
+
+        // Handle standalone type markers
+        if (type == Constants.ArrayTypeMarker)
+            return stripArrayMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.ArrayTypeMarker;
+
+        if (type == Constants.NullableTypeMarker)
+            return stripNullableMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.NullableTypeMarker;
+
+        // Use Span for efficient type parsing
+        var typeSpan = type.AsSpan();
+
+        // Handle array notation with brackets
+        var arrayStart = typeSpan.IndexOf('[');
+        if (arrayStart > 0)
+        {
+            var baseType = typeSpan[..arrayStart].ToString();
+            return stripArrayMarker ? baseType : type;
+        }
+
+        // Handle nullable notation
+        if (typeSpan.EndsWith(Constants.NullableTypeMarker.AsSpan()) && typeSpan.Length > 1)
+        {
+            var baseType = typeSpan[..^1].ToString();
+            return stripNullableMarker ? baseType : type;
+        }
+
+        return type;
+    }
+
+    /// <summary>
+    /// Gets just the base type name without any markers.
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition.</param>
+    /// <returns>The base type name without array or nullable markers.</returns>
+    public static string GetBaseTypeName(this FieldDefinition fieldDefinition)
+        => GetCoreTypeName(fieldDefinition, true, true);
+
+    /// <summary>
+    /// Determines if the type is a pure type marker ([] or ?)
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition to check.</param>
+    /// <returns>True if the type is a pure marker, false otherwise.</returns>
+    public static bool IsPureTypeMarker(this FieldDefinition fieldDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+
+        return fieldDefinition.Type 
+            is Constants.ArrayTypeMarker 
+            or Constants.NullableTypeMarker;
+    }
+}

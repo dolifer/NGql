@@ -1,0 +1,5 @@
+﻿query getUser{
+    alias:user(name:"Yoshi Lambert"){
+        name
+    }
+}

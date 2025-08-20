@@ -1,0 +1,7 @@
+﻿query getAllUsers{
+    foo{
+        bar:extendedUsers(name:"Yoshi Lambert"){
+            name
+        }
+    }
+}

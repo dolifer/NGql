@@ -1,3 +1,4 @@
+using _build;
 using Nuke.Common;
 using Nuke.Common.Git;
 using Nuke.Common.IO;
@@ -111,7 +112,6 @@ class Build : NukeBuild
             }
 
             PushPackages("*.nupkg");
-            PushPackages("*.snupkg");
         });
 
     Target Coverage => _ => _

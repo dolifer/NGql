@@ -1,0 +1,12 @@
+﻿query all_users($site:String!, $tenant:String!, $userIds:[String!]){
+    base(a:"first", condition:{is_test:false, site:$site, tenant_id:$tenant}, filters:{user_id:{in:$userIds}}, z:"last"){
+        edges{
+            node{
+                Balance:user_balance
+                Email:user_email
+                UserId:user_id
+                UserName:user_name
+            }
+        }
+    }
+}

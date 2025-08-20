@@ -1,0 +1,4 @@
+﻿query name{
+    id
+    name
+}

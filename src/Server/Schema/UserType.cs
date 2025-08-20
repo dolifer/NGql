@@ -1,13 +1,12 @@
 ﻿using GraphQL.Types;
 using Server.Data.Entities;
 
-namespace Server.Schema
+namespace Server.Schema;
+
+public class UserType : ObjectGraphType<User>
 {
-    public class UserType : ObjectGraphType<User>
+    public UserType()
     {
-        public UserType()
-        {
-            Field(o => o.Name);
-        }
+        Field(o => o.Name);
     }
 }

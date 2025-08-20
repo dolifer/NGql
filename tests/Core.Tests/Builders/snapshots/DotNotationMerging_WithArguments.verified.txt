@@ -1,0 +1,18 @@
+﻿query root{
+    user{
+        posts(limit:10){
+            date
+            title
+        }
+    }
+    user_1:user{
+        posts{
+            content
+        }
+    }
+    user_2:user{
+        posts(filter:"published"){
+            likes
+        }
+    }
+}

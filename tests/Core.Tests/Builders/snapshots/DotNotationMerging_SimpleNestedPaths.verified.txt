@@ -1,0 +1,17 @@
+﻿query root{
+    company{
+        info{
+            name
+        }
+    }
+    user{
+        profile{
+            bio
+            email
+            name
+        }
+        settings{
+            theme
+        }
+    }
+}

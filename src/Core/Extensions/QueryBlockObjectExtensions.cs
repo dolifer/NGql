@@ -7,7 +7,7 @@ using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
 
-public static class QueryBlockObjectExtensions
+internal static class QueryBlockObjectExtensions
 {
     internal static SortedDictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
     {
@@ -17,11 +17,16 @@ public static class QueryBlockObjectExtensions
         {
             if (kvp.Value is Variable variable)
             {
-                arguments[isRootElement ? variable.Name: kvp.Key] = kvp.Value;
+                arguments[isRootElement ? variable.Name : kvp.Key] = kvp.Value;
                 continue;
             }
-                        
+
             arguments[kvp.Key] = kvp.Value;
+        }
+
+        if (!isRootElement)
+        {
+            return arguments;
         }
 
         foreach (var variable in queryBlock.Variables)
@@ -37,7 +42,7 @@ public static class QueryBlockObjectExtensions
 
         return arguments;
     }
-    
+
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
@@ -48,24 +53,44 @@ public static class QueryBlockObjectExtensions
     /// <typeparam name="T">The type to include</typeparam>
     public static void IncludeAtPath<T>(this QueryBlock block, string path, string name, string? alias = null)
     {
-        var paths = path.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        // Use Span to avoid string allocations during path parsing
+        var pathSpan = path.AsSpan();
         var currentBlock = block;
 
-        foreach (var t in paths)
+        while (!pathSpan.IsEmpty)
         {
-            if (string.IsNullOrWhiteSpace(t))
+            var dotIndex = pathSpan.IndexOf('.');
+            ReadOnlySpan<char> currentSegment;
+            
+            if (dotIndex == -1)
+            {
+                // Last segment
+                currentSegment = pathSpan;
+                pathSpan = ReadOnlySpan<char>.Empty;
+            }
+            else
+            {
+                // Extract current segment and advance
+                currentSegment = pathSpan[..dotIndex];
+                pathSpan = pathSpan[(dotIndex + 1)..];
+            }
+
+            // Skip empty segments
+            if (currentSegment.IsEmpty || currentSegment.IsWhiteSpace())
             {
                 continue;
             }
-            
-            var subQuery = new QueryBlock(t);
+
+            // Convert to string only when creating the QueryBlock
+            var segmentString = currentSegment.ToString();
+            var subQuery = new QueryBlock(segmentString);
             currentBlock.AddField(subQuery);
             currentBlock = subQuery;
         }
 
         currentBlock.Include<T>(name, alias);
     }
-    
+
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
@@ -75,12 +100,14 @@ public static class QueryBlockObjectExtensions
     /// <returns>Query</returns>
     public static void Include<T>(this QueryBlock block, string name, string? alias = null)
     {
-        var properties = typeof(T).GetProperties();
-        
+        var properties = typeof(T).GetProperties()
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         var subQuery = new QueryBlock(name, alias: alias);
-        
+
         HandleProperties(subQuery, null, properties);
-        
+
         block.AddField(subQuery);
     }
 
@@ -93,7 +120,9 @@ public static class QueryBlockObjectExtensions
     public static void Include(this QueryBlock block, object obj)
     {
         var type = obj.GetType();
-        var properties = type.GetProperties();
+        var properties = type.GetProperties()
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
         HandleProperties(block, obj, properties);
     }
@@ -134,15 +163,18 @@ public static class QueryBlockObjectExtensions
     private static void HandleDictionary(QueryBlock block, string name, string? alias, IDictionary dict)
     {
         var subQuery = new QueryBlock(name, alias: alias);
-        foreach (var key in dict.Keys)
+        var sortedKeys = dict.Keys.Cast<object>()
+            .OrderBy(k => k.ToString(), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var key in sortedKeys)
         {
             if (dict[key] is IDictionary nestedDict)
             {
-                HandleDictionary(subQuery, key.ToString(), null, nestedDict);
+                HandleDictionary(subQuery, key.ToString()!, null, nestedDict);
             }
             else
             {
-                subQuery.AddField(key.ToString());
+                subQuery.AddField(key.ToString()!);
             }
         }
 
@@ -150,17 +182,15 @@ public static class QueryBlockObjectExtensions
     }
 
     private static bool IsSimpleType(Type type)
-        {
-            return
-                type.IsPrimitive ||
-                new Type[] {
+        => type.IsPrimitive ||
+            new Type[] {
                     typeof(string),
                     typeof(decimal),
                     typeof(DateTime),
                     typeof(DateTimeOffset),
                     typeof(TimeSpan),
                     typeof(Guid)
-                }.Contains(type) ||
-                Convert.GetTypeCode(type) != TypeCode.Object;
-        }
+            }.Contains(type) ||
+            Convert.GetTypeCode(type) != TypeCode.Object;
 }
+

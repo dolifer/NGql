@@ -1,0 +1,4 @@
+﻿query users(filter:{or:[{name:{isNull:true}}, {name:{equals:"John"}}], playerId:{in:["1", "2"]}}){
+    id
+    name
+}
