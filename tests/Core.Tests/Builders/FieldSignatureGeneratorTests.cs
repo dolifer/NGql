@@ -27,7 +27,7 @@ public class FieldSignatureGeneratorTests
         // Arrange
         var fields1 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(), 
+            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
                 new SortedDictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
@@ -36,7 +36,7 @@ public class FieldSignatureGeneratorTests
 
         var fields2 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(), 
+            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
                 new SortedDictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
@@ -131,7 +131,7 @@ public class FieldSignatureGeneratorTests
 
         var fields1 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(), 
+            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
                 new SortedDictionary<string, FieldDefinition>
                 {
                     ["node"] = new("node", "object", null, nestedArgs1, new SortedDictionary<string, FieldDefinition>())
@@ -140,7 +140,7 @@ public class FieldSignatureGeneratorTests
 
         var fields2 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(), 
+            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
                 new SortedDictionary<string, FieldDefinition>
                 {
                     ["node"] = new("node", "object", null, nestedArgs2, new SortedDictionary<string, FieldDefinition>())

@@ -11,8 +11,8 @@ public class QueryDefinitionQueryTests
     {
         // Arrange
         var query = new QueryDefinition("SimpleQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -24,8 +24,8 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-    
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
     parent{
@@ -33,14 +33,14 @@ public class QueryDefinitionQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Multiple_Nested_Fields_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("ComplexQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -69,8 +69,8 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-        
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexQuery{
     parent{
@@ -83,34 +83,34 @@ public class QueryDefinitionQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Multiple_Top_Level_Fields_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("MultipleTopLevelQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     { "field1", new FieldDefinition("field1") },
                     { "field2", new FieldDefinition("field2") }
                 }
-            };
-        
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MultipleTopLevelQuery{
     field1
     field2
 }");
     }
-    
+
     [Fact]
     public void Nested_And_Top_Level_Fields_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("MixedQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     { "field1", new FieldDefinition("field1") },
                     {
@@ -123,8 +123,8 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-        
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MixedQuery{
     field1
@@ -133,14 +133,14 @@ public class QueryDefinitionQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Deeply_Nested_Fields_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("DeepQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     {
                         "level1", new FieldDefinition("level1")
@@ -168,9 +168,9 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-                                                            
-        
+        };
+
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query DeepQuery{
     level1{
@@ -182,14 +182,14 @@ public class QueryDefinitionQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Fields_With_Multiple_Siblings_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("SiblingsQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -203,8 +203,8 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-        
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SiblingsQuery{
     parent{
@@ -214,14 +214,14 @@ public class QueryDefinitionQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Complex_Combination_Of_Fields_Syntax()
     {
         // Arrange
         var query = new QueryDefinition("ComplexCombinationQuery")
-            {
-                Fields =
+        {
+            Fields =
                 {
                     { "field1", new FieldDefinition("field1") },
                     {
@@ -252,8 +252,8 @@ public class QueryDefinitionQueryTests
                         }
                     }
                 }
-            };
-        
+        };
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexCombinationQuery{
     field1

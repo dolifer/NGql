@@ -34,7 +34,7 @@ public class QueryBuilderGetPathToTests
     {
         // Arrange
         var expectedItems = expected.Split(',');
-        
+
         // Create a query with a root field that has an alias (this is the key difference from the other test)
         var sourceQuery = CreateDefaultBuilder(queryName)
             .AddField(rootField, new Dictionary<string, object?> { { "first", 10 } })

@@ -24,4 +24,14 @@ public static class Constants
     /// The marker for nullable types.
     /// </summary>
     public const string NullableTypeMarker = "?";
+
+    /// <summary>
+    /// Empty arguments dictionary for performance optimization.
+    /// </summary>
+    public static readonly SortedDictionary<string, object?> EmptyArguments = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Empty metadata dictionary for performance optimization.
+    /// </summary>
+    public static readonly Dictionary<string, object?> EmptyMetadata = [];
 }

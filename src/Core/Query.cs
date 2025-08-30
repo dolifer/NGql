@@ -1,6 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using NGql.Core.Abstractions;
+﻿using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
 namespace NGql.Core;
@@ -18,7 +16,7 @@ public sealed class Query
     {
         Block = new QueryBlock(name, "query", null, variables);
     }
-    
+
     public Query(string name, string? alias, params Variable[] variables)
     {
         Block = new QueryBlock(name, "query", alias, variables);
@@ -73,21 +71,21 @@ public sealed class Query
         Block.AddField(subQuery.Block);
         return this;
     }
-        
+
     /// <inheritdoc cref="QueryBlockObjectExtensions.IncludeAtPath{T}"/>
     public Query IncludeAtPath<T>(string path, string name, string? alias = null)
     {
         Block.IncludeAtPath<T>(path, name, alias);
         return this;
     }
-        
+
     /// <inheritdoc cref="QueryBlockObjectExtensions.Include{T}"/>
     public Query Include<T>(string name, string? alias = null)
     {
         Block.Include<T>(name, alias);
         return this;
     }
-        
+
     /// <inheritdoc cref="QueryBlockObjectExtensions.Include"/>
     public Query Include(object obj)
     {

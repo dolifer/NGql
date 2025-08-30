@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
@@ -8,344 +5,475 @@ namespace NGql.Core.Builders;
 
 public sealed class FieldBuilder
 {
-    internal static readonly SortedDictionary<string, object?> EmptyArguments = [];
-
     private FieldDefinition _fieldDefinition;
 
     private FieldBuilder(FieldDefinition fieldDefinition)
     {
         _fieldDefinition = fieldDefinition;
     }
-    
-    public FieldBuilder AddField(string fieldName, string type = Constants.DefaultFieldType)
-    {
-        GetOrAddField(_fieldDefinition.Fields, fieldName, type, in EmptyArguments, _fieldDefinition.Path, null);
-        return this;
-    }
 
+    /// <summary>
+    /// Adds a field definition to the builder.
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition to add.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when fieldDefinition is null.</exception>
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
-
-        var arguments = fieldDefinition.Arguments ?? EmptyArguments;
+        var arguments = fieldDefinition.Arguments ?? Constants.EmptyArguments;
         GetOrAddField(_fieldDefinition.Fields, fieldDefinition.Name, fieldDefinition.Type, in arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
-
-        return this;
-    }
-    
-    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?> arguments, Dictionary<string, object?>? metadata = null)
-    {
-        GetOrAddField(_fieldDefinition.Fields, fieldName, type, in arguments, _fieldDefinition.Path, metadata);
-
         return this;
     }
 
-    public FieldBuilder AddField(string fieldName, string[] subFields, Dictionary<string, object?>? metadata = null)
-    {
-        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, Constants.ObjectFieldType, in EmptyArguments, _fieldDefinition.Path, metadata);
+    /// <summary>
+    /// Adds a field with optional type to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field (defaults to String).</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type = Constants.DefaultFieldType)
+        => AddFieldCore(fieldName, type, null, in Constants.EmptyArguments, in Constants.EmptyMetadata, null);
 
-        foreach (var subField in subFields)
-        {
-            GetOrAddField(field.Fields, subField, Constants.DefaultFieldType, in EmptyArguments, field.Path, null);
-        }
-        
-        return this;
-    }
+    /// <summary>
+    /// Adds a field with type and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? metadata)
+        => AddFieldCore(fieldName, type, null, in Constants.EmptyArguments, in metadata, null);
 
+    /// <summary>
+    /// Adds a field with subfields, arguments, and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, in arguments, in metadata, null);
+
+    /// <summary>
+    /// Adds a field with type, arguments, and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata = null)
+        => AddFieldCore(fieldName, type, null, in arguments, in metadata, null);
+
+    /// <summary>
+    /// Adds a field with type, subfields, and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldCore(fieldName, type, subFields, in Constants.EmptyArguments, in metadata, null);
+
+    /// <summary>
+    /// Adds a field with arguments to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in arguments, in Constants.EmptyMetadata, null);
+
+    /// <summary>
+    /// Adds a field with arguments and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in arguments, in metadata, null);
+
+    /// <summary>
+    /// Adds a field with type, subfields, and arguments to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments)
+        => AddFieldCore(fieldName, type, subFields, in arguments, in Constants.EmptyMetadata, null);
+
+    /// <summary>
+    /// Adds a field with type, subfields, arguments, and metadata to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
+        => AddFieldCore(fieldName, type, subFields, in arguments, in metadata, null);
+
+    /// <summary>
+    /// Adds a field with a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in Constants.EmptyArguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with metadata and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in Constants.EmptyArguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with type and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, null, in Constants.EmptyArguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with type, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, null, in Constants.EmptyArguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with arguments and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in arguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with arguments, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, in arguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with type, arguments, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, null, in arguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with type, arguments, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, null, in arguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with subfields and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string[] subFields, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, in Constants.EmptyArguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with subfields, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string[] subFields, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, in Constants.EmptyArguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with type, subfields, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, subFields, in Constants.EmptyArguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with type, subfields, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, subFields, in Constants.EmptyArguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with subfields, arguments, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, in arguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with subfields, arguments, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, in arguments, in metadata, action);
+
+    /// <summary>
+    /// Adds a field with type, subfields, arguments, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, subFields, in arguments, in Constants.EmptyMetadata, action);
+
+    /// <summary>
+    /// Adds a field with type, subfields, arguments, metadata, and a nested builder action to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="subFields">The subfields for the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <param name="action">The action to configure nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, type, subFields, in arguments, in metadata, action);
+
+    private FieldBuilder AddFieldCore(string fieldName, string type, string[]? subFields, in SortedDictionary<string, object?>? arguments, in Dictionary<string, object?>? metadata, Action<FieldBuilder>? action)
     {
-        var addedField = GetOrAddField(_fieldDefinition.Fields, fieldName, type, in EmptyArguments, _fieldDefinition.Path, null);
+        var args = arguments ?? Constants.EmptyArguments;
+        var field = GetOrAddField(_fieldDefinition.Fields, fieldName.AsSpan(), type, in args, _fieldDefinition.Path, metadata);
 
-        var fieldBuilder = new FieldBuilder(addedField);
+        if (subFields != null)
+        {
+            foreach (var subField in subFields)
+            {
+                GetOrAddField(field.Fields, subField.AsSpan(), Constants.DefaultFieldType, in Constants.EmptyArguments, field.Path, null);
+            }
+        }
 
+        if (action == null)
+        {
+            return this;
+        }
+
+        var fieldBuilder = new FieldBuilder(field);
         action(fieldBuilder);
 
-        var updatedField = fieldBuilder.Build();
-
-        Helpers.ApplyFieldChanges(_fieldDefinition.Fields, updatedField);
+        _fieldDefinition.Fields[field.Name] = fieldBuilder._fieldDefinition;
 
         return this;
     }
 
+    /// <summary>
+    /// Creates a new FieldBuilder instance for the specified field.
+    /// </summary>
+    /// <param name="fieldDefinitions">The collection of existing field definitions.</param>
+    /// <param name="fieldName">The name of the field to create.</param>
+    /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName)
     {
-        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType, EmptyArguments);
+        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType, Constants.EmptyArguments);
     }
-    
+
+    /// <summary>
+    /// Creates a new FieldBuilder instance for the specified field with type, arguments, and metadata.
+    /// </summary>
+    /// <param name="fieldDefinitions">The collection of existing field definitions.</param>
+    /// <param name="fieldName">The name of the field to create.</param>
+    /// <param name="type">The type of the field.</param>
+    /// <param name="arguments">The arguments for the field.</param>
+    /// <param name="metadata">The metadata for the field.</param>
+    /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
-        var argumentsToUse = arguments ?? EmptyArguments;
-        var rootField = GetOrAddField(fieldDefinitions, fieldName, type, in argumentsToUse, null, metadata);
+        var argumentsToUse = arguments ?? Constants.EmptyArguments;
+        var rootField = GetOrAddField(fieldDefinitions, fieldName.AsSpan(), type, in argumentsToUse, null, metadata);
 
         var fieldBuilder = new FieldBuilder(rootField);
 
         return fieldBuilder;
     }
-    
+
+    /// <summary>
+    /// Creates a new FieldBuilder instance from an existing field definition.
+    /// </summary>
+    /// <param name="fieldDefinition">The field definition to create the builder from.</param>
+    /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(FieldDefinition fieldDefinition) => new(fieldDefinition);
 
+    /// <summary>
+    /// Builds and returns the final field definition.
+    /// </summary>
+    /// <returns>The constructed FieldDefinition.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no field definition has been set.</exception>
     public FieldDefinition Build()
         => _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
 
-    #region Private Core Implementation Methods
-
-    /// <summary>
-    /// Core field creation and retrieval method with optimized parameter passing.
-    /// This method handles the complex logic of parsing field paths, managing aliases,
-    /// and creating nested field structures efficiently.
-    /// </summary>
-    /// <param name="fieldDefinitions">Dictionary to store field definitions</param>
-    /// <param name="fieldPath">Field path to parse (supports dot notation and aliases)</param>
-    /// <param name="type">Field type (optional, defaults to DefaultFieldType)</param>
-    /// <param name="arguments">Field arguments (passed by reference for performance)</param>
-    /// <param name="parentPath">Parent field path for nested structures</param>
-    /// <param name="metadata">Field metadata (optional)</param>
-    /// <returns>The created or retrieved FieldDefinition</returns>
-    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? type, in SortedDictionary<string, object?> arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+    private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? type, in SortedDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
     {
-        return GetOrAddFieldCore(fieldDefinitions, fieldPath, type, in arguments, parentPath, metadata);
-    }
-
-    /// <summary>
-    /// Core implementation of field creation with all the complex parsing and caching logic.
-    /// Separated from the public interface to allow for optimized parameter passing.
-    /// </summary>
-    private static FieldDefinition GetOrAddFieldCore(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? defaultFieldType, in SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
-    {
-        FieldDefinition? value = null;
         var currentFields = fieldDefinitions;
-        
-        // Use the passed arguments directly since they're guaranteed to be non-null
-        var argumentsRef = arguments;
-        defaultFieldType ??= Constants.DefaultFieldType;
+        var argumentsRef = arguments ?? Constants.EmptyArguments;
+        var fieldType = type ?? Constants.DefaultFieldType;
+        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToList(parentPath.AsSpan());
 
-        var fullPath = string.IsNullOrWhiteSpace(parentPath)
-            ? new List<string>()
-            : SplitPathToList(parentPath.AsSpan());
+        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
-        // Parse type from fieldPath if provided in format "Type fieldPath"
-        fieldPath = ParseFieldTypeFromPath(fieldPath, defaultFieldType, out var fieldType);
-
-        // Preprocess the field path to remove trailing dots and spaces
-        fieldPath = fieldPath.TrimEnd(['.', ' ']);
+        FieldDefinition? result = null;
 
         while (fieldPath.Length > 0)
         {
-            var nextDot = fieldPath.IndexOf('.');
-            var isLastFragment = nextDot == -1;
-
-            var currentPart = isLastFragment
-                ? fieldPath
-                : fieldPath[..nextDot];
-
-            var currentPath = currentPart.ToString().Trim(); 
-            var (name, alias) = GetFieldNameAndAlias(currentPath);
-
-            if (string.IsNullOrWhiteSpace(currentPath) || string.IsNullOrWhiteSpace(name))
+            var segment = ExtractNextSegment(ref fieldPath);
+            if (string.IsNullOrWhiteSpace(segment.Name))
             {
-                fieldPath = GetNextFieldPath(fieldPath, nextDot);
                 continue;
             }
 
-            fullPath.Add(name);
-            var cacheKey = string.Join(".", fullPath);
+            fullPath.Add(segment.Name);
 
-            if (fieldDefinitions.TryGetValue(cacheKey, out var cachedField))
-            {
-                value = cachedField;
-                if (isLastFragment && argumentsRef.Count > 0)
-                {
-                    value = currentFields[name] = value.MergeFieldArguments(argumentsRef);
-                }
+            // Use segment-level parsed type if available, otherwise use the overall parsed type
+            var typeToUse = segment.ParsedType ?? parsedFieldType;
 
-                // Check if we should convert this field to object type for nesting
-                if (!isLastFragment && value.ShouldConvertToObjectType())
-                {
-                    value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
-                }
-
-                currentFields = value.Fields;
-
-                fieldPath = GetNextFieldPath(fieldPath, nextDot);
-                continue;
-            }
-
-            if (!currentFields.TryGetValue(name, out var childValue))
-            {
-                var fieldArguments = isLastFragment ? argumentsRef : EmptyArguments;
-                
-                // Determine the type to use for this field segment
-                string typeToUse;
-                if (isLastFragment)
-                {
-                    // For the last segment, use the specified type
-                    typeToUse = fieldType;
-                }
-                else
-                {
-                    // For intermediate segments, use object type when they will have nested fields
-                    // unless it's an array marker (special case)
-                    typeToUse = fieldType == Constants.ArrayTypeMarker ? fieldType : Constants.ObjectFieldType;
-                }
-                
-                // Only pass metadata for the last fragment (final field)
-                var fieldMetadata = isLastFragment ? metadata : null;
-                value = currentFields[name] = GetNewField(name, typeToUse, alias, in fieldArguments, cacheKey, fieldMetadata);
-            }
-            else
-            {
-                value = childValue;
-                // Update alias if one is provided and the field doesn't already have one
-                if (alias != null && value.Alias == null)
-                {
-                    value = currentFields[name] = value with
-                    {
-                        Alias = alias
-                    };
-                }
-
-                // Check if we should convert this field to object type for nesting
-                if (!isLastFragment && value.ShouldConvertToObjectType())
-                {
-                    value = currentFields[name] = value with { Type = Constants.ObjectFieldType };
-                }
-
-                if (isLastFragment && argumentsRef.Count > 0)
-                {
-                    value = currentFields[name] = value.MergeFieldArguments(argumentsRef);
-                }
-
-                // If this is the last fragment and we should update the type
-                if (isLastFragment && fieldType != Constants.DefaultFieldType && value.Type != fieldType)
-                {
-                    value = currentFields[name] = value with { Type = fieldType };
-                }
-            }
-            
-            fieldPath = GetNextFieldPath(fieldPath, nextDot);
-            currentFields = value.Fields;
+            result = ProcessFieldSegment(currentFields, segment, argumentsRef, typeToUse, fullPath, metadata);
+            currentFields = result.Fields;
         }
 
-        // If we didn't create any field (all segments were empty), throw an exception
-        if (value == null)
-        {
-            throw new InvalidOperationException($"Failed to create a new field for path: field path contains no valid segments");
-        }
-
-        return value;
-
-        // Local helper function for advancing through the field path
-        ReadOnlySpan<char> GetNextFieldPath(ReadOnlySpan<char> readOnlySpan, int nextDot)
-        {
-            return nextDot == -1 ? ReadOnlySpan<char>.Empty : readOnlySpan[(nextDot + 1)..];
-        }
+        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
     }
 
-    private static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, string defaultType, out string type)
+    private static (string Name, string? Alias, bool IsLastFragment, string? ParsedType) ExtractNextSegment(ref ReadOnlySpan<char> fieldPath)
     {
-        var fieldPathStr = fieldPath.ToString();
-        var spaceIndex = fieldPathStr.IndexOf(' ');
-        if (spaceIndex > 0)
+        var nextDot = fieldPath.IndexOf('.');
+        var isLastFragment = nextDot == -1;
+        var currentPart = isLastFragment ? fieldPath : fieldPath[..nextDot];
+        var currentPath = currentPart.ToString().Trim();
+
+        // Parse and remove type information from the segment
+        var cleanedPath = Helpers.ParseFieldTypeFromPath(currentPath.AsSpan(), Constants.DefaultFieldType, out var parsedType);
+        var cleanedPathString = cleanedPath.ToString();
+
+        var (name, alias) = Helpers.GetFieldNameAndAlias(cleanedPathString);
+
+        fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
+
+        // Only return parsed type if it's not the default (meaning type was actually specified)
+        var typeToReturn = parsedType != Constants.DefaultFieldType ? parsedType : null;
+
+        return (name, alias, isLastFragment, typeToReturn);
+    }
+
+    private static FieldDefinition ProcessFieldSegment(SortedDictionary<string, FieldDefinition> currentFields, (string Name, string? Alias, bool IsLastFragment, string? ParsedType) segment, SortedDictionary<string, object?> argumentsRef, string parsedFieldType, List<string> fullPath, Dictionary<string, object?>? metadata)
+    {
+        if (!currentFields.TryGetValue(segment.Name, out var field))
         {
-            var potentialType = fieldPathStr[..spaceIndex];
-            // Type specification must be at beginning and:
-            // 1. Start with letter or '['
-            // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
-            // 3. Be a reasonable type name (contain letters/digits) OR be an array marker (just "[]")
-            if (potentialType.Length > 0 && 
-                (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
-                !potentialType.Contains('.') &&
-                (potentialType.Any(char.IsLetterOrDigit) || potentialType == "[]"))
+            return CreateNewField(currentFields, segment, argumentsRef, parsedFieldType, fullPath, metadata);
+        }
+
+        return UpdateExistingField(currentFields, segment, field, argumentsRef, parsedFieldType);
+    }
+
+    private static FieldDefinition CreateNewField(SortedDictionary<string, FieldDefinition> currentFields, (string Name, string? Alias, bool IsLastFragment, string? ParsedType) segment, SortedDictionary<string, object?> argumentsRef, string parsedFieldType, List<string> fullPath, Dictionary<string, object?>? metadata)
+    {
+        // Guard: field names should not contain spaces (type info should be consumed)
+        if (segment.Name.Contains(' '))
+        {
+            throw new InvalidOperationException($"Field name '{segment.Name}' contains spaces. Type information should be consumed during parsing.");
+        }
+
+        var fieldArgs = segment.IsLastFragment ? argumentsRef : Constants.EmptyArguments;
+        var intermediateType = parsedFieldType == Constants.ArrayTypeMarker ? parsedFieldType : Constants.ObjectFieldType;
+        var computedFieldType = segment.IsLastFragment ? parsedFieldType : intermediateType;
+        var fieldMetadata = segment.IsLastFragment ? metadata : null;
+
+        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldType, segment.Alias, in fieldArgs, string.Join(".", fullPath), fieldMetadata);
+        currentFields[segment.Name] = field;
+        return field;
+    }
+
+    private static FieldDefinition UpdateExistingField(SortedDictionary<string, FieldDefinition> currentFields, (string Name, string? Alias, bool IsLastFragment, string? ParsedType) segment, FieldDefinition field, SortedDictionary<string, object?> argumentsRef, string parsedFieldType)
+    {
+        if (segment.Alias != null && field.Alias == null)
+        {
+            field = currentFields[segment.Name] = field with { Alias = segment.Alias };
+        }
+
+        if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
+        {
+            field = currentFields[segment.Name] = field with { Type = Constants.ObjectFieldType };
+        }
+
+        if (segment.IsLastFragment)
+        {
+            if (argumentsRef.Count > 0)
             {
-                type = potentialType;
-                fieldPath = fieldPathStr[(spaceIndex + 1)..].AsSpan();
-                return fieldPath;
+                field = currentFields[segment.Name] = field.MergeFieldArguments(argumentsRef);
+            }
+
+            if (!string.Equals(parsedFieldType, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) && 
+                !string.Equals(field.Type, parsedFieldType, StringComparison.OrdinalIgnoreCase))
+            {
+                field = currentFields[segment.Name] = field with { Type = parsedFieldType };
             }
         }
 
-        type = defaultType;
-        return fieldPath;
-    }
-
-    /// <summary>
-    /// Creates a new FieldDefinition with sorted arguments for consistent behavior.
-    /// Arguments are passed by reference to avoid unnecessary copying of potentially large dictionaries.
-    /// </summary>
-    /// <param name="name">Field name</param>
-    /// <param name="type">Field type</param>
-    /// <param name="alias">Optional field alias</param>
-    /// <param name="arguments">Field arguments (passed by reference for performance)</param>
-    /// <param name="path">Field path for caching</param>
-    /// <param name="metadata">Optional field metadata</param>
-    /// <returns>New FieldDefinition instance</returns>
-    private static FieldDefinition GetNewField(string name, string type, string? alias, in SortedDictionary<string, object?> arguments, string path, Dictionary<string, object?>? metadata = null)
-    {
-        // Create a new sorted dictionary to ensure consistent argument ordering
-        var sortedArguments = new SortedDictionary<string, object?>(arguments.ToDictionary(
-            kvp => kvp.Key,
-            kvp => Helpers.SortArgumentValue(kvp.Value)));
-
-        return new FieldDefinition(name, type, alias, sortedArguments, [])
-        {
-            Path = path,
-            Metadata = metadata
-        };
-    }
-
-    #endregion
-
-    #region Helper Methods
-
-    /// <summary>
-    /// Parses a field string to extract the field name and optional alias.
-    /// Supports the format "Alias:FieldName" where Alias is optional.
-    /// </summary>
-    /// <param name="field">Field string to parse</param>
-    /// <returns>Tuple containing the field name and optional alias</returns>
-    private static (string Name, string? Alias) GetFieldNameAndAlias(string field)
-    {
-        var fieldNameParts = field.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : field;
-        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
-
-        return (namePart, alias);
-    }
-
-    /// <summary>
-    /// Efficiently splits a path string into a list using Span operations to avoid string allocations.
-    /// </summary>
-    /// <param name="pathSpan">Path to split as ReadOnlySpan</param>
-    /// <returns>List of path segments</returns>
-    private static List<string> SplitPathToList(ReadOnlySpan<char> pathSpan)
-    {
-        var result = new List<string>();
-        
-        while (!pathSpan.IsEmpty)
-        {
-            var dotIndex = pathSpan.IndexOf('.');
-            ReadOnlySpan<char> segment;
-            
-            if (dotIndex == -1)
-            {
-                // Last segment
-                segment = pathSpan;
-                pathSpan = ReadOnlySpan<char>.Empty;
-            }
-            else
-            {
-                // Extract current segment and advance
-                segment = pathSpan[..dotIndex];
-                pathSpan = pathSpan[(dotIndex + 1)..];
-            }
-            
-            // Skip empty segments
-            if (!segment.IsEmpty && !segment.IsWhiteSpace())
-            {
-                result.Add(segment.ToString());
-            }
-        }
-        
-        return result;
+        return field;
     }
 
     /// <summary>
@@ -356,38 +484,7 @@ public sealed class FieldBuilder
     /// <param name="fieldDefinition">Field definition to create/merge</param>
     private static void RecursiveCreateField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        FieldDefinition parentField;
-
-        // Try to find an existing field with the same name and alias
-        var existingField = fields.Values.FirstOrDefault(f => 
-            f.Name == fieldDefinition.Name && f.Alias == fieldDefinition.Alias);
-
-        var arguments = fieldDefinition.Arguments ?? EmptyArguments;
-
-        if (existingField != null)
-        {
-            // Merge with existing field by combining arguments
-            parentField = existingField.MergeFieldArguments(arguments);
-            fields[existingField.Name] = parentField;
-        }
-        else if (fields.TryGetValue(fieldDefinition.Path, out var pathField))
-        {
-            // Field exists with same path - merge arguments
-            parentField = pathField.MergeFieldArguments(arguments);
-            fields[pathField.Path] = parentField;
-        }
-        else
-        {
-            // Create new field since none exists
-            parentField = GetNewField(
-                fieldDefinition.Name, 
-                fieldDefinition.Type ?? Constants.DefaultFieldType, 
-                fieldDefinition.Alias, 
-                in arguments, 
-                fieldDefinition.Path, 
-                fieldDefinition.Metadata);
-            fields[fieldDefinition.Name] = parentField;
-        }
+        var parentField = CreateOrMergeField(fields, fieldDefinition);
 
         // Recursively process all child fields
         foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
@@ -396,11 +493,39 @@ public sealed class FieldBuilder
         }
     }
 
-    #endregion
+    private static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    {
+        var arguments = fieldDefinition.Arguments ?? Constants.EmptyArguments;
+
+        // Try to find existing field to merge with
+        var existingField = Helpers.FindExistingField(fields, fieldDefinition);
+        if (existingField != null)
+        {
+            var mergedField = existingField.MergeFieldArguments(arguments);
+            fields[existingField.Name] = mergedField;
+            return mergedField;
+        }
+
+        // Create new field
+        var newField = Helpers.CreateFieldDefinition(
+            fieldDefinition.Name,
+            fieldDefinition.Type ?? Constants.DefaultFieldType,
+            fieldDefinition.Alias,
+            in arguments,
+            fieldDefinition.Path,
+            fieldDefinition.Metadata);
+        fields[fieldDefinition.Name] = newField;
+        return newField;
+    }
 
     internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
         => RecursiveCreateField(fields, fieldDefinition);
 
+    /// <summary>
+    /// Sets an alias for the current field.
+    /// </summary>
+    /// <param name="alias">The alias to set for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder WithAlias(string alias)
     {
         _fieldDefinition = _fieldDefinition with { Alias = alias };
@@ -408,6 +533,11 @@ public sealed class FieldBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets the type for the current field.
+    /// </summary>
+    /// <param name="type">The type to set for the field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder WithType(string type)
     {
         _fieldDefinition = _fieldDefinition with { Type = type };
@@ -415,6 +545,11 @@ public sealed class FieldBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets or merges metadata for the current field.
+    /// </summary>
+    /// <param name="metadata">The metadata to set or merge with existing metadata.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder WithMetadata(Dictionary<string, object> metadata)
     {
         var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition.Metadata);
@@ -424,7 +559,13 @@ public sealed class FieldBuilder
 
         return this;
     }
-    
+
+    /// <summary>
+    /// Adds or updates an argument for the current field.
+    /// </summary>
+    /// <param name="key">The argument key.</param>
+    /// <param name="value">The argument value.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder Where(string key, object? value)
     {
         if (_fieldDefinition.Arguments != null && _fieldDefinition.Arguments.TryGetValue(key, out var existingValue))
@@ -454,4 +595,5 @@ public sealed class FieldBuilder
 
         return this;
     }
+
 }

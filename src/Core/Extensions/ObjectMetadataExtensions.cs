@@ -21,7 +21,7 @@ internal static class ObjectMetadataExtensions
         {
             return jsonPropertyAttribute.Name;
         }
-        
+
         return null;
     }
 }

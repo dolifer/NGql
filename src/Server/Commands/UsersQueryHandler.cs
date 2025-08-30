@@ -25,6 +25,6 @@ public class UsersQueryHandler : IRequestHandler<UsersQuery, IEnumerable<User>>
     public UsersQueryHandler(IUsersRepository repository)
         => _repository = repository;
 
-    public async Task<IEnumerable<User>> Handle(UsersQuery request, CancellationToken cancellationToken) 
+    public async Task<IEnumerable<User>> Handle(UsersQuery request, CancellationToken cancellationToken)
         => await _repository.GetUsers(request.Name);
 }

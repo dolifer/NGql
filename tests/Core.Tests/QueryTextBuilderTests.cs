@@ -83,7 +83,7 @@ public class QueryTextBuilderTests
         // assert
         valueString.Should().Be("OK");
     }
-    
+
     [Fact]
     public void BuildQueryParam_Parse_EnumValue()
     {
@@ -99,7 +99,7 @@ public class QueryTextBuilderTests
     public void BuildQueryParam_Parse_Array()
     {
         // act
-        var valueString = BuildQueryParam(new [] { 123, 456, 789});
+        var valueString = BuildQueryParam(new[] { 123, 456, 789 });
 
         // assert
         valueString.Should().Be("[123, 456, 789]");
@@ -118,7 +118,7 @@ public class QueryTextBuilderTests
         // assert
         valueString.Should().Be("{k1:\"v1\", k2:\"v2\"}");
     }
-        
+
     [Fact]
     public void BuildQueryParam_Parse_Object_Dictionary()
     {

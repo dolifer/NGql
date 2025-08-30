@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using NGql.Core.Abstractions;
-using NGql.Core.Builders;
 using NGql.Core.Exceptions;
 
 namespace NGql.Core.Extensions;
@@ -12,6 +8,14 @@ namespace NGql.Core.Extensions;
 /// </summary>
 internal static class FieldDefinitionExtensions
 {
+    /// <summary>
+    /// Gets the effective name for the field, preferring alias over name.
+    /// </summary>
+    /// <param name="field">The field definition</param>
+    /// <returns>The alias if available, otherwise the field name</returns>
+    internal static string GetEffectiveName(this FieldDefinition field)
+        => !string.IsNullOrEmpty(field.Alias) ? field.Alias : field.Name;
+
     /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
     /// </summary>
@@ -23,13 +27,15 @@ internal static class FieldDefinitionExtensions
         // For MergeByFieldPath strategy, fields can merge if:
         // 1. They have the same root field name
         // 2. Arguments at each segment of path must match exactly
-        
+
         // First, check if arguments at the root level are compatible
         var existingArgs = Helpers.NormalizeArguments(existingField.Arguments);
         var incomingArgs = Helpers.NormalizeArguments(incomingField.Arguments);
-        
+
         if (!Helpers.AreArgumentsEqual(existingArgs, incomingArgs))
+        {
             return false;
+        }
 
         // Then check if nested field structures are compatible
         return AreNestedFieldsCompatible(existingField, incomingField);
@@ -46,7 +52,7 @@ internal static class FieldDefinitionExtensions
         // Rule: At each segment of path, the arguments must match exactly
         // This means if one field has arguments at any level and the other doesn't have that path,
         // or has different arguments at the same path, they cannot merge.
-        
+
         // Check all incoming nested fields
         foreach (var (incomingKey, incomingNestedField) in incomingField.Fields)
         {
@@ -55,13 +61,17 @@ internal static class FieldDefinitionExtensions
                 // If the nested field exists in both, their arguments must match exactly
                 var existingNestedArgs = Helpers.NormalizeArguments(existingNestedField.Arguments);
                 var incomingNestedArgs = Helpers.NormalizeArguments(incomingNestedField.Arguments);
-                
+
                 if (!Helpers.AreArgumentsEqual(existingNestedArgs, incomingNestedArgs))
+                {
                     return false;
+                }
 
                 // Recursively check deeper levels
                 if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField))
+                {
                     return false;
+                }
             }
             else
             {
@@ -70,7 +80,9 @@ internal static class FieldDefinitionExtensions
                 // then these fields are incompatible because we can't match arguments
                 // at the same path segments
                 if (HasAnyArguments(incomingNestedField))
+                {
                     return false;
+                }
             }
         }
 
@@ -79,9 +91,11 @@ internal static class FieldDefinitionExtensions
         {
             // Existing field has a path that doesn't exist in incoming field
             if (!incomingField.Fields.ContainsKey(existingKey) && HasAnyArguments(existingNestedField))
+            {
                 // If the existing nested field (or any of its descendants) has arguments,
                 // then these fields are incompatible
                 return false;
+            }
         }
 
         return true;
@@ -97,7 +111,8 @@ internal static class FieldDefinitionExtensions
     internal static FieldDefinition MergeFields(FieldDefinition existing, FieldDefinition incoming)
     {
         // Check for type conflicts
-        if (!string.IsNullOrEmpty(existing.Type) && !string.IsNullOrEmpty(incoming.Type) && existing.Type != incoming.Type)
+        if (!string.IsNullOrEmpty(existing.Type) && !string.IsNullOrEmpty(incoming.Type) && 
+            !string.Equals(existing.Type, incoming.Type, StringComparison.OrdinalIgnoreCase))
         {
             throw new QueryMergeException($"Type conflict: existing field has type '{existing.Type}', incoming field has type '{incoming.Type}'");
         }
@@ -124,9 +139,9 @@ internal static class FieldDefinitionExtensions
             existing.Name,
             existing.Type ?? incoming.Type ?? Constants.DefaultFieldType,
             existing.Alias,
-            existing.Arguments ?? FieldBuilder.EmptyArguments,
+            existing.Arguments ?? Constants.EmptyArguments,
             mergedFields
-        ).MergeFieldArguments(incoming.Arguments ?? FieldBuilder.EmptyArguments);
+        ).MergeFieldArguments(incoming.Arguments ?? Constants.EmptyArguments);
     }
 
     /// <summary>
@@ -136,7 +151,7 @@ internal static class FieldDefinitionExtensions
     /// <returns>True if the field or any nested field has arguments, false otherwise</returns>
     private static bool HasAnyArguments(FieldDefinition field)
         => field.Arguments is { Count: > 0 } || field.Fields.Values.Any(HasAnyArguments);
-    
+
     internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?> newArguments)
     {
         if (existingField.Arguments is null || existingField.Arguments.Count == 0)
@@ -144,7 +159,7 @@ internal static class FieldDefinitionExtensions
             return existingField;
         }
 
-        var mergedArguments = new SortedDictionary<string, object?>(existingField.Arguments ?? FieldBuilder.EmptyArguments);
+        var mergedArguments = Helpers.CreateArgumentDictionary(existingField.Arguments ?? Constants.EmptyArguments);
         foreach (var (key, newValue) in newArguments)
         {
             if (!mergedArguments.TryGetValue(key, out var existingValue))

@@ -1,6 +1,5 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Abstractions;
 
@@ -22,6 +21,7 @@ public sealed record FieldDefinition
     public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?> sortedArguments, SortedDictionary<string, FieldDefinition> fields)
     {
         Name = name;
+        Root = Helpers.GetRootFieldName(name);  // Store root at creation time
         Type = type;
         Alias = alias;
         Arguments = sortedArguments;
@@ -45,7 +45,7 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonPropertyName("fields")]
     public SortedDictionary<string, FieldDefinition> Fields { get; } = new(StringComparer.OrdinalIgnoreCase);
-    
+
     internal string Path { get; set; } = string.Empty;
 
     /// <summary>
@@ -53,6 +53,12 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonPropertyName("name")]
     public string Name { get; init; }
+
+    /// <summary>
+    /// Gets the root field name extracted from the field path.
+    /// </summary>
+    [JsonIgnore]
+    public string Root { get; init; }
 
     /// <summary>
     /// The type of the field. Defaults to <see cref="Constants.DefaultFieldType"/> if not specified.
@@ -84,8 +90,10 @@ public sealed record FieldDefinition
     public override string ToString()
     {
         if (string.IsNullOrWhiteSpace(Type))
+        {
             return string.IsNullOrWhiteSpace(Alias) ? Name : $"{Alias}:{Name}";
-        
+        }
+
         return string.IsNullOrWhiteSpace(Alias) ? $"{Type} {Alias}:{Name}" : $"{Type} {Name}";
     }
 }

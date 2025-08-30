@@ -1,7 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using NGql.Core.Abstractions;
 
@@ -9,49 +6,96 @@ namespace NGql.Core.Extensions;
 
 internal static class Helpers
 {
-    internal static void ExtractVariablesFromValue(object value, SortedSet<Variable> variables)
+    /// <summary>
+    /// Creates a new SortedDictionary with case-insensitive string keys for field definitions.
+    /// </summary>
+    internal static SortedDictionary<string, FieldDefinition> CreateFieldDictionary()
+        => new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Creates a new SortedDictionary with case-insensitive string keys for field definitions, initialized with existing data.
+    /// </summary>
+    internal static SortedDictionary<string, FieldDefinition> CreateFieldDictionary(IDictionary<string, FieldDefinition> source)
+        => new(source, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Creates a new SortedDictionary with case-insensitive string keys for arguments.
+    /// </summary>
+    internal static SortedDictionary<string, object?> CreateArgumentDictionary()
+        => new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Creates a new SortedDictionary with case-insensitive string keys for arguments, initialized with existing data.
+    /// </summary>
+    internal static SortedDictionary<string, object?> CreateArgumentDictionary(IDictionary<string, object?> source)
+        => new(source, StringComparer.OrdinalIgnoreCase);
+
+    internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
-        switch (value)
+        if (value == null)
         {
-            case Variable variable:
-                variables.Add(variable);
-                break;
-            case IDictionary dict:
-            {
-                foreach (var val in dict.Values)
-                {
-                    ExtractVariablesFromValue(val, variables);
-                }
+            return;
+        }
 
-                break;
-            }
-            case IList list:
-            {
-                foreach (var item in list)
-                {
-                    ExtractVariablesFromValue(item, variables);
-                }
+        if (value is Variable variable)
+        {
+            variables.Add(variable);
+            return;
+        }
 
-                break;
-            }
-            case { } obj when obj is not string &&
-                              obj is not Variable &&
-                              obj is not QueryBlock &&
-                              obj is not IDictionary &&
-                              obj is not IList &&
-                              !ValueFormatter.TryFormatPrimitiveType(obj, out _):
+        if (value is IDictionary dict)
+        {
+            ExtractVariablesFromDictionary(dict, variables);
+            return;
+        }
+
+        if (value is IList list)
+        {
+            ExtractVariablesFromList(list, variables);
+            return;
+        }
+
+        if (ShouldExtractFromObjectProperties(value))
+        {
+            ExtractVariablesFromObjectProperties(value, variables);
+        }
+    }
+
+    private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables)
+    {
+        foreach (var val in dict.Values)
+        {
+            ExtractVariablesFromValue(val, variables);
+        }
+    }
+
+    private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables)
+    {
+        foreach (var item in list)
+        {
+            ExtractVariablesFromValue(item, variables);
+        }
+    }
+
+    private static bool ShouldExtractFromObjectProperties(object obj)
+    {
+        return obj is not string &&
+               obj is not Variable &&
+               obj is not QueryBlock &&
+               obj is not IDictionary &&
+               obj is not IList &&
+               !ValueFormatter.TryFormatPrimitiveType(obj, out _);
+    }
+
+    private static void ExtractVariablesFromObjectProperties(object obj, SortedSet<Variable> variables)
+    {
+        var properties = obj.GetType().GetProperties();
+        foreach (var property in properties)
+        {
+            var propertyValue = property.GetValue(obj);
+            if (propertyValue != null)
             {
-                // Extract variables from object properties using reflection
-                var properties = obj.GetType().GetProperties();
-                foreach (var property in properties)
-                {
-                    var propertyValue = property.GetValue(obj);
-                    if (propertyValue != null)
-                    {
-                        ExtractVariablesFromValue(propertyValue, variables);
-                    }
-                }
-                break;
+                ExtractVariablesFromValue(propertyValue, variables);
             }
         }
     }
@@ -73,7 +117,7 @@ internal static class Helpers
         {
             if (result.TryGetValue(key, out var existingValue))
             {
-                if (existingValue is IDictionary<string, object> existingDict && 
+                if (existingValue is IDictionary<string, object> existingDict &&
                     updateValue is IDictionary<string, object> updateDict)
                 {
                     // Recursively merge nested dictionaries
@@ -120,7 +164,7 @@ internal static class Helpers
         {
             if (result.TryGetValue(key, out var existingValue))
             {
-                if (existingValue is Dictionary<string, object?> existingDict && 
+                if (existingValue is Dictionary<string, object?> existingDict &&
                     updateValue is Dictionary<string, object> updateDict)
                 {
                     // Recursively merge nested dictionaries
@@ -140,101 +184,50 @@ internal static class Helpers
 
         return result;
     }
-    
+
     internal static object? SortArgumentValue(object? value)
     {
         // Handle null values
         if (value is null)
+        {
             return value;
+        }
 
         // Check if it's a primitive type that can be formatted
         if (ValueFormatter.TryFormatPrimitiveType(value, out _))
+        {
             return value;
-        
+        }
+
         return value switch
         {
             IDictionary<string, object?> dict => new SortedDictionary<string, object?>(
                 dict.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => SortArgumentValue(kvp.Value)
-                ), StringComparer.OrdinalIgnoreCase),
-        
+                    elementSelector: kvp => SortArgumentValue(kvp.Value),
+                    comparer: StringComparer.OrdinalIgnoreCase),
+                comparer: StringComparer.OrdinalIgnoreCase),
+
             IEnumerable<object> list when !value.GetType().IsArray => list.Select(SortArgumentValue).ToList(),
             Array arr => arr.Cast<object>().Select(SortArgumentValue).ToArray(),
-        
+
             // Handle objects by decomposing them into dictionaries
-            { } obj when obj is not string && 
-                         obj is not Variable && 
-                         obj is not QueryBlock && 
-                         obj is not IDictionary && 
+            { } obj when obj is not string &&
+                         obj is not Variable &&
+                         obj is not QueryBlock &&
+                         obj is not IDictionary &&
                          obj is not IList =>
                 new SortedDictionary<string, object?>(
                     obj.GetType().GetProperties()
                         .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
                         .ToDictionary(
                             p => p.Name,
-                            p => SortArgumentValue(p.GetValue(obj))
-                        ), 
-                    StringComparer.OrdinalIgnoreCase),
+                            p => SortArgumentValue(p.GetValue(obj)),
+                            comparer: StringComparer.OrdinalIgnoreCase),
+                    comparer: StringComparer.OrdinalIgnoreCase),
 
             _ => value
         };
-    }
-
-    /// <summary>
-    /// Applies field changes to the field definitions dictionary using optimized path parsing.
-    /// </summary>
-    /// <param name="fieldDefinitions">Target field definitions dictionary</param>
-    /// <param name="fieldDefinition">Field definition to apply</param>
-    public static void ApplyFieldChanges(SortedDictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition fieldDefinition)
-    {
-        var existingField = fieldDefinitions.Values.FirstOrDefault(x => x.Path == fieldDefinition.Path);
-        
-        if (existingField is not null)
-        {
-            fieldDefinitions[fieldDefinition.Name] = fieldDefinition;
-            return;
-        }
-        
-        // Use Span to avoid string allocations during path parsing
-        var pathSpan = fieldDefinition.Path.AsSpan();
-        var currentFields = fieldDefinitions;
-
-        // Process path segments using Span operations
-        while (!pathSpan.IsEmpty)
-        {
-            var dotIndex = pathSpan.IndexOf('.');
-            ReadOnlySpan<char> currentSegment;
-            
-            if (dotIndex == -1)
-            {
-                // Last segment
-                currentSegment = pathSpan;
-                pathSpan = ReadOnlySpan<char>.Empty;
-            }
-            else
-            {
-                // Extract current segment and advance
-                currentSegment = pathSpan[..dotIndex];
-                pathSpan = pathSpan[(dotIndex + 1)..];
-            }
-
-            // Convert segment to string only when needed for dictionary lookup
-            var segmentString = currentSegment.ToString();
-            
-            if (!currentFields.TryGetValue(segmentString, out var currentField))
-            {
-                return; // Path not found
-            }
-
-            if (pathSpan.IsEmpty) // Last segment - update the values
-            {
-                currentFields[segmentString] = fieldDefinition;
-                return;
-            }
-
-            currentFields = currentField.Fields;
-        }
     }
 
     /// <summary>
@@ -243,15 +236,15 @@ internal static class Helpers
     /// <param name="arguments">The arguments to normalize</param>
     /// <returns>A non-null SortedDictionary</returns>
     internal static SortedDictionary<string, object?> NormalizeArguments(SortedDictionary<string, object?>? arguments)
-        => arguments ?? new SortedDictionary<string, object?>();
-    
+        => arguments ?? new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// Normalizes arguments by ensuring non-null Dictionary.
     /// </summary>
     /// <param name="arguments">The arguments to normalize</param>
     /// <returns>A non-null Dictionary</returns>
     internal static SortedDictionary<string, object?> NormalizeArguments(Dictionary<string, object?>? arguments)
-        => arguments is null ? new SortedDictionary<string, object?>() : new SortedDictionary<string, object?>(arguments);
+        => arguments is null ? new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase) : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Normalizes metadata by ensuring non-null Dictionary with nullable values.
@@ -272,16 +265,22 @@ internal static class Helpers
         // For merging purposes, we need exact argument equality
         // Empty/null arguments should only match other empty/null arguments
         if (args1.Count != args2.Count)
+        {
             return false;
+        }
 
         // Both must have the same number of arguments (including 0)
         foreach (var (key, value1) in args1)
         {
             if (!args2.TryGetValue(key, out var value2))
+            {
                 return false;
+            }
 
             if (!AreValuesEqual(value1, value2))
+            {
                 return false;
+            }
         }
 
         return true;
@@ -296,14 +295,20 @@ internal static class Helpers
     private static bool AreValuesEqual(object? value1, object? value2)
     {
         if (ReferenceEquals(value1, value2))
+        {
             return true;
+        }
 
         if (value1 == null || value2 == null)
+        {
             return false;
+        }
 
         // Handle different types strictly - they should not be equal
         if (value1.GetType() != value2.GetType())
+        {
             return false;
+        }
 
         // For complex objects, serialize and compare with consistent ordering
         if (value1 is not string && value1.GetType().IsClass)
@@ -312,14 +317,216 @@ internal static class Helpers
             {
                 PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
                 WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
             };
-            
+
             var json1 = JsonSerializer.Serialize(value1, options);
             var json2 = JsonSerializer.Serialize(value2, options);
             return json1 == json2;
         }
 
         return value1.Equals(value2);
+    }
+
+    internal static (string Name, string? Alias) GetFieldNameAndAlias(string field)
+    {
+        var fieldNameParts = field.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : field;
+        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
+
+        return (namePart, alias);
+    }
+
+    /// <summary>
+    /// Efficiently splits a path string into a list using Span operations to avoid string allocations.
+    /// </summary>
+    /// <param name="pathSpan">Path to split as ReadOnlySpan</param>
+    /// <returns>List of path segments</returns>
+    internal static List<string> SplitPathToList(ReadOnlySpan<char> pathSpan)
+    {
+        var result = new List<string>();
+
+        while (!pathSpan.IsEmpty)
+        {
+            var dotIndex = pathSpan.IndexOf('.');
+            ReadOnlySpan<char> segment;
+
+            if (dotIndex == -1)
+            {
+                // Last segment
+                segment = pathSpan;
+                pathSpan = ReadOnlySpan<char>.Empty;
+            }
+            else
+            {
+                // Extract current segment and advance
+                segment = pathSpan[..dotIndex];
+                pathSpan = pathSpan[(dotIndex + 1)..];
+            }
+
+            // Skip empty segments
+            if (!segment.IsEmpty && !segment.IsWhiteSpace())
+            {
+                result.Add(segment.ToString());
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Parses field type from path if provided in format "Type fieldPath".
+    /// </summary>
+    /// <param name="fieldPath">Field path to parse</param>
+    /// <param name="defaultType">Default type to use if none specified</param>
+    /// <param name="type">Parsed type output</param>
+    /// <returns>Field path with type removed and trimmed</returns>
+    internal static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, string defaultType, out string type)
+    {
+        var spaceIndex = fieldPath.IndexOf(' ');
+        if (spaceIndex > 0)
+        {
+            var potentialType = fieldPath[..spaceIndex];
+            // Type specification must be at beginning and:
+            // 1. Start with letter or '['
+            // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
+            // 3. Be a reasonable type name (contain letters/digits) OR be an array marker (just "[]")
+            if (potentialType.Length > 0 &&
+                (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
+                potentialType.IndexOf('.') == -1 &&
+                (HasLetterOrDigit(potentialType) || potentialType.SequenceEqual("[]".AsSpan())))
+            {
+                type = potentialType.ToString();
+                fieldPath = fieldPath[(spaceIndex + 1)..];
+            }
+            else
+            {
+                type = defaultType;
+            }
+        }
+        else
+        {
+            type = defaultType;
+        }
+
+        return fieldPath.TrimEnd(['.', ' ']);
+    }
+
+    private static bool HasLetterOrDigit(ReadOnlySpan<char> span)
+    {
+        foreach (var c in span)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Creates a new FieldDefinition with sorted arguments for consistent behavior.
+    /// Arguments are passed by reference to avoid unnecessary copying of potentially large dictionaries.
+    /// </summary>
+    /// <param name="name">Field name</param>
+    /// <param name="type">Field type</param>
+    /// <param name="alias">Optional field alias</param>
+    /// <param name="arguments">Field arguments (passed by reference for performance)</param>
+    /// <param name="path">Field path for caching</param>
+    /// <param name="metadata">Optional field metadata</param>
+    /// <returns>New FieldDefinition instance</returns>
+    internal static FieldDefinition CreateFieldDefinition(string name, string type, string? alias, in SortedDictionary<string, object?> arguments, string path, Dictionary<string, object?>? metadata = null)
+    {
+        // Create a new sorted dictionary to ensure consistent argument ordering
+        var sortedArguments = new SortedDictionary<string, object?>(arguments.ToDictionary(
+            kvp => kvp.Key,
+            kvp => SortArgumentValue(kvp.Value)));
+
+        return new FieldDefinition(name, type, alias, sortedArguments, [])
+        {
+            Path = path,
+            Metadata = metadata
+        };
+    }
+
+    /// <summary>
+    /// Finds an existing field in the collection by name, alias, or path.
+    /// </summary>
+    /// <param name="fields">Field collection to search</param>
+    /// <param name="fieldDefinition">Field definition to find</param>
+    /// <returns>Existing field if found, null otherwise</returns>
+    internal static FieldDefinition? FindExistingField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    {
+        // Try to find field with same name and alias
+        var existingField = fields.Values.FirstOrDefault(f =>
+            f.Name == fieldDefinition.Name && f.Alias == fieldDefinition.Alias);
+
+        return existingField ?? fields.GetValueOrDefault(fieldDefinition.Path);
+    }
+
+    /// <summary>
+    /// Extracts the root field name from a field path, handling aliases and dotted paths.
+    /// </summary>
+    /// <param name="fieldPath">The field path to parse</param>
+    /// <returns>The root field name</returns>
+    internal static string GetRootFieldName(string fieldPath)
+    {
+        if (string.IsNullOrWhiteSpace(fieldPath))
+        {
+            return string.Empty;
+        }
+
+        var parts = fieldPath.Split('.');
+        if (parts.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var rootPart = parts[0].Split(':');
+        return rootPart.Length > 0 ? rootPart[^1].Trim() : string.Empty;
+    }
+
+    /// <summary>
+    /// Finds an existing field by traversing the field path.
+    /// </summary>
+    /// <param name="fields">The root fields collection</param>
+    /// <param name="fieldPath">The field path to search for</param>
+    /// <returns>The existing field if found, null otherwise</returns>
+    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, string fieldPath)
+    {
+        if (string.IsNullOrWhiteSpace(fieldPath))
+        {
+            return null;
+        }
+
+        var pathSegments = fieldPath.Split('.');
+        var currentFields = fields;
+        FieldDefinition? currentField = null;
+
+        foreach (var segment in pathSegments)
+        {
+            var fieldName = segment.Split(':').Last().Trim();
+
+            // Try exact match first
+            if (currentFields.ContainsKey(fieldName))
+            {
+                currentField = currentFields[fieldName];
+            }
+            // Try to find field with type annotation (e.g., "[] posts" when looking for "posts")
+            else
+            {
+                currentField = currentFields.Values.FirstOrDefault(f =>
+                    f.Name.Split(' ').Last().Trim() == fieldName);
+
+                if (currentField == null)
+                {
+                    return null;
+                }
+            }
+
+            currentFields = currentField.Fields;
+        }
+
+        return currentField;
     }
 }

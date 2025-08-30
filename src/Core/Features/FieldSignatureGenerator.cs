@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using System.Threading;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Features;
@@ -24,7 +20,9 @@ public static class FieldSignatureGenerator
     public static int GenerateSignature(SortedDictionary<string, FieldDefinition> fields)
     {
         if (fields.Count == 0)
+        {
             return 0;
+        }
 
         var builder = SignatureBuilder.Value!;
         builder.Clear();
@@ -73,7 +71,7 @@ public static class FieldSignatureGenerator
         }
 
         var currentPathSpan = currentPathBuffer[..pathLength];
-        
+
         // Append the path to the signature
         builder.Append(currentPathSpan);
 

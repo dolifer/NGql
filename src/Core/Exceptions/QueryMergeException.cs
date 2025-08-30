@@ -1,5 +1,3 @@
-using System;
-
 namespace NGql.Core.Exceptions;
 
 /// <summary>

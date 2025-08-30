@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.Json;
 using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 using NGql.Core.Exceptions;
@@ -24,13 +20,13 @@ internal static class QueryMerger
     private static MergeResult MergeQuery(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery, MergingStrategy rootStrategy)
     {
         var strategy = GetEffectiveMergingStrategy(rootStrategy, incomingQuery.MergingStrategy);
-        
+
         return strategy switch
         {
             MergingStrategy.MergeByDefault => HandleMergeByDefault(existingFields, incomingQuery),
             MergingStrategy.NeverMerge => HandleNeverMerge(existingFields, incomingQuery),
             MergingStrategy.MergeByFieldPath => HandleMergeByFieldPath(existingFields, incomingQuery),
-            _ => throw new NotImplementedException($"Merging strategy {strategy} is not implemented")
+            _ => throw new ArgumentOutOfRangeException(nameof(rootStrategy), $"Merging strategy {strategy} is not implemented"),
         };
     }
 
@@ -61,76 +57,52 @@ internal static class QueryMerger
         // Update root query mapping if fields changed
         queryMap.UpdateRootMapping(targetDefinition);
     }
-    
+
     private static MergingStrategy GetEffectiveMergingStrategy(MergingStrategy rootStrategy, MergingStrategy childStrategy)
     {
         // Child NeverMerge always takes precedence
         if (childStrategy == MergingStrategy.NeverMerge)
+        {
             return MergingStrategy.NeverMerge;
+        }
 
         return rootStrategy switch
         {
             MergingStrategy.NeverMerge => MergingStrategy.NeverMerge,
             MergingStrategy.MergeByDefault => childStrategy,
-            _ => rootStrategy
+            _ => rootStrategy,
         };
     }
 
     private static MergeResult HandleMergeByDefault(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
-        var updatedFields = new SortedDictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
-        var queryMap = new Dictionary<string, string>();
-
-        foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
+        return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
             FieldBuilder.Include(updatedFields, incomingField);
             queryMap[incomingQuery.Name] = originalFieldKey;
-        }
-
-        return new MergeResult(queryMap, updatedFields);
+        });
     }
 
     private static MergeResult HandleNeverMerge(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
-        var updatedFields = new SortedDictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
-        var queryMap = new Dictionary<string, string>();
-
-        foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
+        return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
-            var mappingTarget = !string.IsNullOrEmpty(incomingField.Alias) ? incomingField.Alias : incomingField.Name;
-            var uniqueKey = GenerateUniqueKey(mappingTarget, updatedFields.Keys);
-
-            // Create field with preserved original alias
-            var fieldToAdd = uniqueKey != originalFieldKey
-                ? incomingField with{ Alias = uniqueKey}
-                : incomingField;
-
-            updatedFields[uniqueKey] = fieldToAdd;
-
-            // For NeverMerge, always map to the original field key (which should be the alias when present)
-            queryMap[incomingQuery.Name] = uniqueKey;
-        }
-
-        return new MergeResult(queryMap, updatedFields);
+            AddFieldWithUniqueKey(updatedFields, originalFieldKey, incomingField, queryMap, incomingQuery.Name);
+        });
     }
 
     private static MergeResult HandleMergeByFieldPath(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
-        var updatedFields = new SortedDictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
-        var queryMap = new Dictionary<string, string>();
-
-        foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
+        return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
-            var mappingTarget = !string.IsNullOrEmpty(incomingField.Alias) ? incomingField.Alias : incomingField.Name;
             var mergeTarget = FindMergeTarget(updatedFields, incomingField);
-            
+
             if (mergeTarget != null)
             {
                 try
                 {
                     var mergedField = FieldDefinitionExtensions.MergeFields(mergeTarget.Value.Field, incomingField);
                     updatedFields[mergeTarget.Value.Key] = mergedField;
-                    // Map to the merge target key (where the field is actually stored)
                     queryMap[incomingQuery.Name] = mergeTarget.Value.Key;
                 }
                 catch (QueryMergeException ex)
@@ -140,20 +112,43 @@ internal static class QueryMerger
             }
             else
             {
-                // No merge target found - preserve the original field key (alias)
-                var uniqueKey = GenerateUniqueKey(mappingTarget, updatedFields.Keys);
-                
-                // Create field with preserved original alias
-                var fieldToAdd = uniqueKey != originalFieldKey 
-                    ? incomingField with{ Alias = uniqueKey }
-                    : incomingField;
-
-                updatedFields[uniqueKey] = fieldToAdd;
-                queryMap[incomingQuery.Name] = uniqueKey;
+                AddFieldWithUniqueKey(updatedFields, originalFieldKey, incomingField, queryMap, incomingQuery.Name);
             }
+        });
+    }
+
+    private static MergeResult ProcessFieldMerge(
+        SortedDictionary<string, FieldDefinition> existingFields, 
+        QueryDefinition incomingQuery,
+        Action<SortedDictionary<string, FieldDefinition>, string, FieldDefinition, Dictionary<string, string>> fieldProcessor)
+    {
+        var updatedFields = new SortedDictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
+        var queryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
+        {
+            fieldProcessor(updatedFields, originalFieldKey, incomingField, queryMap);
         }
 
         return new MergeResult(queryMap, updatedFields);
+    }
+
+    private static void AddFieldWithUniqueKey(
+        SortedDictionary<string, FieldDefinition> updatedFields,
+        string originalFieldKey,
+        FieldDefinition incomingField,
+        Dictionary<string, string> queryMap,
+        string queryName)
+    {
+        var mappingTarget = incomingField.GetEffectiveName();
+        var uniqueKey = GenerateUniqueKey(mappingTarget, updatedFields.Keys);
+
+        var fieldToAdd = !string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase)
+            ? incomingField with { Alias = uniqueKey }
+            : incomingField;
+
+        updatedFields[uniqueKey] = fieldToAdd;
+        queryMap[queryName] = uniqueKey;
     }
 
     private static (string Key, FieldDefinition Field)? FindMergeTarget(SortedDictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
@@ -162,7 +157,9 @@ internal static class QueryMerger
         {
             // First check if the root field names match
             if (!string.Equals(existingField.Name, incomingField.Name, StringComparison.OrdinalIgnoreCase))
+            {
                 continue;
+            }
 
             // Check if the field structures are compatible for merging
             if (FieldDefinitionExtensions.CanMergeFields(existingField, incomingField))
@@ -177,9 +174,11 @@ internal static class QueryMerger
     private static string GenerateUniqueKey(string baseKey, IEnumerable<string> existingKeys)
     {
         var existingKeySet = new HashSet<string>(existingKeys, StringComparer.OrdinalIgnoreCase);
-        
+
         if (!existingKeySet.Contains(baseKey))
+        {
             return baseKey;
+        }
 
         var counter = 1;
         string uniqueKey;

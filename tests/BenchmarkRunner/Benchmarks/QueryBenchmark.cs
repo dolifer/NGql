@@ -19,10 +19,10 @@ public class QueryBenchmark
                     .Select(new Query("films")
                         .Select("title")))
             );
-        
+
         return query.ToString();
     }
-    
+
     [Benchmark]
     public string Builder()
     {
@@ -31,7 +31,7 @@ public class QueryBenchmark
             {
                 ["id"] = "cGVvcGxlOjE=",
             }, subFields: ["name", "filmConnection.films.title"]);
-        
+
         return builder.ToString();
     }
 }

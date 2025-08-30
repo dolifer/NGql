@@ -78,23 +78,23 @@ public class QueryBuilderWithMetadataTests
         // Arrange
         var initialMetadata = new Dictionary<string, object>
         {
-            { "config", new Dictionary<string, object> 
-                { 
-                    { "caching", true }, 
+            { "config", new Dictionary<string, object>
+                {
+                    { "caching", true },
                     { "timeout", 5000 },
                     { "retries", 3 }
-                } 
+                }
             },
             { "version", "1.0" }
         };
         var additionalMetadata = new Dictionary<string, object>
         {
-            { "config", new Dictionary<string, object> 
-                { 
+            { "config", new Dictionary<string, object>
+                {
                     { "timeout", 10000 }, // Should override
                     { "logging", true }, // Should add
                     { "debug", false } // Should add
-                } 
+                }
             },
             { "environment", "production" }
         };
@@ -112,7 +112,7 @@ public class QueryBuilderWithMetadataTests
         result.Metadata.Should().NotBeNull().And.HaveCount(3);
         result.Metadata!["version"].Should().Be("1.0");
         result.Metadata!["environment"].Should().Be("production");
-        
+
         var configMetadata = result.Metadata!["config"] as Dictionary<string, object?>;
         configMetadata.Should().NotBeNull().And.HaveCount(5);
         configMetadata!["caching"].Should().Be(true); // Preserved from initial
@@ -262,26 +262,26 @@ public class QueryBuilderWithMetadataTests
         // Assert
         result.Should().NotBeNull();
         result.Metadata.Should().NotBeNull().And.HaveCount(4);
-        
+
         // Check that keys exist (case insensitive)
         var hasDescription = result.Metadata!.Keys.Any(k => string.Equals(k, "description", StringComparison.OrdinalIgnoreCase));
         var hasVersion = result.Metadata!.Keys.Any(k => string.Equals(k, "version", StringComparison.OrdinalIgnoreCase));
         var hasAuthor = result.Metadata!.Keys.Any(k => string.Equals(k, "author", StringComparison.OrdinalIgnoreCase));
         var hasTags = result.Metadata!.Keys.Any(k => string.Equals(k, "tags", StringComparison.OrdinalIgnoreCase));
-        
+
         hasDescription.Should().BeTrue();
         hasVersion.Should().BeTrue();
         hasAuthor.Should().BeTrue();
         hasTags.Should().BeTrue();
-        
+
         // Values should be updated
-        var descriptionValue = result.Metadata!.Where(kvp => 
+        var descriptionValue = result.Metadata!.Where(kvp =>
             string.Equals(kvp.Key, "description", StringComparison.OrdinalIgnoreCase))
             .Select(kvp => kvp.Value).FirstOrDefault();
-        var versionValue = result.Metadata!.Where(kvp => 
+        var versionValue = result.Metadata!.Where(kvp =>
             string.Equals(kvp.Key, "version", StringComparison.OrdinalIgnoreCase))
             .Select(kvp => kvp.Value).FirstOrDefault();
-            
+
         descriptionValue.Should().Be("Updated query description");
         versionValue.Should().Be("2.0");
     }
@@ -332,11 +332,11 @@ public class QueryBuilderWithMetadataTests
 
         // Assert
         await queryBuilder.Verify("WithMetadata_Should_Not_Affect_Query_Generation");
-        
+
         // Verify metadata is preserved but doesn't affect query text
         var definition = queryBuilder.Definition;
         definition.Metadata.Should().NotBeNull().And.HaveCount(3);
-        
+
         // Convert to string and verify no metadata appears in query text
         var queryText = queryBuilder.ToString();
         queryText.Should().NotContain("description");
