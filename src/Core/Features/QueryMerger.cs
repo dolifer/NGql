@@ -39,7 +39,7 @@ internal static class QueryMerger
     public static void MergeQuery(QueryDefinition targetDefinition, QueryMap queryMap, in QueryDefinition incomingQuery)
     {
         // Merge variables
-        targetDefinition.Variables = new SortedSet<Variable>(targetDefinition.Variables.Union(incomingQuery.Variables));
+        targetDefinition.Variables = new SortedSet<Variable>((targetDefinition._variables ?? []).Union(incomingQuery._variables ?? []));
 
         // Perform the field merge
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);

@@ -29,8 +29,8 @@ internal static class FieldDefinitionExtensions
         // 2. Arguments at each segment of path must match exactly
 
         // First, check if arguments at the root level are compatible
-        var existingArgs = Helpers.NormalizeArguments(existingField.Arguments);
-        var incomingArgs = Helpers.NormalizeArguments(incomingField.Arguments);
+        var existingArgs = existingField._arguments ?? Constants.EmptyArguments;
+        var incomingArgs = incomingField._arguments ?? Constants.EmptyArguments;
 
         if (!Helpers.AreArgumentsEqual(existingArgs, incomingArgs))
         {
@@ -59,8 +59,8 @@ internal static class FieldDefinitionExtensions
             if (existingField.Fields.TryGetValue(incomingKey, out var existingNestedField))
             {
                 // If the nested field exists in both, their arguments must match exactly
-                var existingNestedArgs = Helpers.NormalizeArguments(existingNestedField.Arguments);
-                var incomingNestedArgs = Helpers.NormalizeArguments(incomingNestedField.Arguments);
+                var existingNestedArgs = existingNestedField._arguments ?? Constants.EmptyArguments;
+                var incomingNestedArgs = incomingNestedField._arguments ?? Constants.EmptyArguments;
 
                 if (!Helpers.AreArgumentsEqual(existingNestedArgs, incomingNestedArgs))
                 {

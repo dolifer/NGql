@@ -72,11 +72,11 @@ internal sealed class QueryTextBuilder
             _stringBuilder.Append(queryDefinition.Name);
         }
 
-        if (queryDefinition.Variables.Count > 0)
+        if (queryDefinition._variables?.Count > 0)
         {
             _stringBuilder.Append('(');
             bool first = true;
-            foreach (var variable in queryDefinition.Variables)
+            foreach (var variable in queryDefinition._variables)
             {
                 if (!first)
                 {

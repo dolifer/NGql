@@ -247,30 +247,6 @@ internal static class Helpers
     }
 
     /// <summary>
-    /// Normalizes arguments by ensuring non-null SortedDictionary.
-    /// </summary>
-    /// <param name="arguments">The arguments to normalize</param>
-    /// <returns>A non-null SortedDictionary</returns>
-    internal static SortedDictionary<string, object?> NormalizeArguments(SortedDictionary<string, object?>? arguments)
-        => arguments ?? new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Normalizes arguments by ensuring non-null Dictionary.
-    /// </summary>
-    /// <param name="arguments">The arguments to normalize</param>
-    /// <returns>A non-null Dictionary</returns>
-    internal static SortedDictionary<string, object?> NormalizeArguments(Dictionary<string, object?>? arguments)
-        => arguments is null ? new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase) : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Normalizes metadata by ensuring non-null Dictionary with nullable values.
-    /// </summary>
-    /// <param name="metadata">The metadata to normalize</param>
-    /// <returns>A non-null Dictionary with nullable values</returns>
-    internal static Dictionary<string, object?> NormalizeMetadata(Dictionary<string, object?>? metadata)
-        => metadata ?? new Dictionary<string, object?>();
-
-    /// <summary>
     /// Compares two argument dictionaries for equality.
     /// </summary>
     /// <param name="args1">First argument dictionary</param>

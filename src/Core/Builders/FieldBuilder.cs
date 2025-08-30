@@ -688,8 +688,7 @@ public sealed class FieldBuilder
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder WithMetadata(Dictionary<string, object> metadata)
     {
-        var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition._metadata);
-        var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
+        var mergedMetadata = Helpers.MergeMetadata(_fieldDefinition._metadata, metadata);
 
         _fieldDefinition.Metadata = mergedMetadata;
 
