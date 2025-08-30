@@ -38,8 +38,29 @@ internal static class QueryMerger
     /// <param name="incomingQuery">Query definition to merge</param>
     public static void MergeQuery(QueryDefinition targetDefinition, QueryMap queryMap, in QueryDefinition incomingQuery)
     {
-        // Merge variables
-        targetDefinition.Variables = new SortedSet<Variable>((targetDefinition._variables ?? []).Union(incomingQuery._variables ?? []));
+        // FAST PATH: Merge variables efficiently
+        var targetVars = targetDefinition._variables;
+        var incomingVars = incomingQuery._variables;
+        
+        if (targetVars is null && incomingVars is null)
+        {
+            // Both null - no variables to merge
+            targetDefinition.Variables = new SortedSet<Variable>();
+        }
+        else if (targetVars is null)
+        {
+            // Only incoming has variables
+            targetDefinition.Variables = new SortedSet<Variable>(incomingVars!);
+        }
+        else if (incomingVars is null)
+        {
+            // Only target has variables - already set, no change needed
+        }
+        else
+        {
+            // Both have variables - need to merge
+            targetDefinition.Variables = new SortedSet<Variable>(targetVars.Union(incomingVars));
+        }
 
         // Perform the field merge
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);

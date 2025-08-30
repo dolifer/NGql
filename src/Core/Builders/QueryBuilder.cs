@@ -77,7 +77,7 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), [], metadata);
+        => AddFieldImpl(field, arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), null, metadata);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -162,7 +162,7 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/></returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string type)
-        => AddFieldImpl(field, Constants.EmptyArguments, [], null);
+        => AddFieldImpl(field, Constants.EmptyArguments, null, null);
 
     /// <summary>
     /// Adds a field to the query with type and metadata.
@@ -173,7 +173,7 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/></returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata)
-        => AddFieldImpl(field, Constants.EmptyArguments, [], metadata);
+        => AddFieldImpl(field, Constants.EmptyArguments, null, metadata);
 
     /// <summary>
     /// Adds a field to the query with arguments and metadata using Action.
@@ -194,7 +194,8 @@ public sealed class QueryBuilder
 
         ArgumentNullException.ThrowIfNull(fieldBuilder);
 
-        var builder = FieldBuilder.Create([], field, Constants.DefaultFieldType, arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), metadata);
+        var argumentsToUse = arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
+        var builder = FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, argumentsToUse, metadata);
         fieldBuilder(builder);
         var fieldDefinition = builder.Build();
 
@@ -223,7 +224,7 @@ public sealed class QueryBuilder
 
         ArgumentNullException.ThrowIfNull(fieldBuilder);
 
-        var builder = FieldBuilder.Create([], field, type, null, metadata);
+        var builder = FieldBuilder.Create(Definition.Fields, field, type, null, metadata);
         fieldBuilder(builder);
         var fieldDefinition = builder.Build();
 
@@ -243,7 +244,7 @@ public sealed class QueryBuilder
     /// <param name="subFields">Optional array of sub-field definitions</param>
     /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
     /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldDefinitionImpl(string field, in SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata)
+    private QueryBuilder AddFieldDefinitionImpl(string field, in SortedDictionary<string, object?> arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -254,12 +255,12 @@ public sealed class QueryBuilder
         Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
         // Determine field type based on presence of subfields and existing field type
-        var type = DetermineFieldType(field, subFields?.Length > 0);
+        var type = DetermineFieldType(field, subFields?.Any() == true);
 
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
         // Early return if no subfields to process
-        if (subFields is null || subFields.Length == 0)
+        if (subFields is null || !subFields.Any())
         {
             _queryMap.UpdateRootMapping(_definition);
             return this;
@@ -283,12 +284,11 @@ public sealed class QueryBuilder
     /// <param name="subFields">Optional array of subfield names</param>
     /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
     /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldImpl(string field, in SortedDictionary<string, object?> arguments, string[]? subFields, Dictionary<string, object?>? metadata)
+    private QueryBuilder AddFieldImpl(string field, in SortedDictionary<string, object?> arguments, in string[]? subFields, Dictionary<string, object?>? metadata)
     {
         // Convert string subfields to FieldDefinition objects
         var subFieldDefinitions = subFields?
-            .Select(subField => new FieldDefinition(subField))
-            .ToArray();
+            .Select(subField => new FieldDefinition(subField));
 
         return AddFieldDefinitionImpl(field, in arguments, subFieldDefinitions, metadata);
     }
@@ -337,6 +337,18 @@ public sealed class QueryBuilder
     /// </summary>
     private string DetermineFieldType(string field, bool hasSubFields)
     {
+        // FAST PATH: No subfields means default type
+        if (!hasSubFields)
+        {
+            return Constants.DefaultFieldType;
+        }
+
+        // FAST PATH: No space means no explicit type, skip parsing
+        if (field.IndexOf(' ') == -1)
+        {
+            return Constants.ObjectFieldType;
+        }
+
         // Parse type from field path to check for explicit type
         var fieldSpan = field.AsSpan();
         Helpers.ParseFieldTypeFromPath(fieldSpan, Constants.DefaultFieldType, out var parsedType);
@@ -344,11 +356,6 @@ public sealed class QueryBuilder
 
         // Find existing field - check the actual target field, not just root
         var existingField = Helpers.FindExistingFieldByPath(Definition.Fields, field);
-
-        if (!hasSubFields)
-        {
-            return Constants.DefaultFieldType;
-        }
 
         // Priority 1: Preserve existing explicit types (non-default, non-object)
         if (existingField?.Type != null &&

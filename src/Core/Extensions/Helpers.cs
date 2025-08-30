@@ -375,26 +375,26 @@ internal static class Helpers
     /// <returns>Field path with type removed and trimmed</returns>
     internal static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, string defaultType, out string type)
     {
+        // FAST PATH: No space means no type annotation
         var spaceIndex = fieldPath.IndexOf(' ');
-        if (spaceIndex > 0)
+        if (spaceIndex <= 0)
         {
-            var potentialType = fieldPath[..spaceIndex];
-            // Type specification must be at beginning and:
-            // 1. Start with letter or '['
-            // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
-            // 3. Be a reasonable type name (contain letters/digits) OR be an array marker (just "[]")
-            if (potentialType.Length > 0 &&
-                (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
-                potentialType.IndexOf('.') == -1 &&
-                (HasLetterOrDigit(potentialType) || potentialType.SequenceEqual("[]".AsSpan())))
-            {
-                type = potentialType.ToString();
-                fieldPath = fieldPath[(spaceIndex + 1)..];
-            }
-            else
-            {
-                type = defaultType;
-            }
+            type = defaultType;
+            return fieldPath.TrimEnd(['.', ' ']);
+        }
+
+        var potentialType = fieldPath[..spaceIndex];
+        // Type specification must be at beginning and:
+        // 1. Start with letter or '['
+        // 2. Not contain dots (to avoid treating field paths like "parent.." as types)
+        // 3. Be a reasonable type name (contain letters/digits) OR be an array marker (just "[]")
+        if (potentialType.Length > 0 &&
+            (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
+            potentialType.IndexOf('.') == -1 &&
+            (HasLetterOrDigit(potentialType) || potentialType.SequenceEqual("[]".AsSpan())))
+        {
+            type = potentialType.ToString();
+            fieldPath = fieldPath[(spaceIndex + 1)..];
         }
         else
         {
@@ -429,6 +429,16 @@ internal static class Helpers
     /// <returns>New FieldDefinition instance</returns>
     internal static FieldDefinition CreateFieldDefinition(string name, string type, string? alias, in SortedDictionary<string, object?> arguments, string path, Dictionary<string, object?>? metadata = null)
     {
+        // FAST PATH: Skip dictionary operations when arguments are empty
+        if (arguments.Count == 0)
+        {
+            return new FieldDefinition(name, type, alias, Constants.EmptyArguments, null)
+            {
+                Path = path,
+                Metadata = metadata
+            };
+        }
+
         // Create a new sorted dictionary to ensure consistent argument ordering
         var sortedArguments = new SortedDictionary<string, object?>(arguments.ToDictionary(
             kvp => kvp.Key,
@@ -489,6 +499,12 @@ internal static class Helpers
         if (string.IsNullOrWhiteSpace(fieldPath))
         {
             return null;
+        }
+
+        // FAST PATH: Simple field name without dots, spaces, or colons
+        if (fieldPath.IndexOf('.') == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        {
+            return fields.TryGetValue(fieldPath, out var simpleField) ? simpleField : null;
         }
 
         var pathSegments = fieldPath.Split('.');

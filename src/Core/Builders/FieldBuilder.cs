@@ -307,7 +307,7 @@ public sealed class FieldBuilder
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
         => AddFieldCore(fieldName, type, subFields, in arguments, in metadata, action);
 
-    private FieldBuilder AddFieldCore(string fieldName, string type, string[]? subFields, in SortedDictionary<string, object?>? arguments, in Dictionary<string, object?>? metadata, Action<FieldBuilder>? action)
+    private FieldBuilder AddFieldCore(string fieldName, string type, in string[]? subFields, in SortedDictionary<string, object?>? arguments, in Dictionary<string, object?>? metadata, Action<FieldBuilder>? action)
     {
         // FAIL-FAST: Use empty arguments if null or empty
         var args = arguments is { Count: > 0 } ? arguments : Constants.EmptyArguments;

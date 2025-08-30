@@ -83,7 +83,7 @@ public sealed class QueryMap
         var rootPath = GetMappedPath(queryName);
         if (string.IsNullOrEmpty(rootPath))
         {
-            return [];
+            return Array.Empty<string>();
         }
 
         if (string.IsNullOrEmpty(nodePath))
