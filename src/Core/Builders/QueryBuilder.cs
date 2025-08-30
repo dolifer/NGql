@@ -1,6 +1,9 @@
+using System;
+using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 using NGql.Core.Features;
+using NGql.Core.Pooling;
 
 namespace NGql.Core.Builders;
 
@@ -77,7 +80,14 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), null, metadata);
+    {
+        if (arguments?.Count > 0)
+        {
+            using var pooled = ArgumentsPool.GetPooled(arguments);
+            return AddFieldImpl(field, pooled.Dictionary, null, metadata);
+        }
+        return AddFieldImpl(field, Constants.EmptyArguments, null, metadata);
+    }
 
     /// <summary>
     ///     Adds a field to the query.
@@ -140,7 +150,10 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), subFields, metadata);
+    {
+        using var pooled = ArgumentsPool.GetPooled(arguments);
+        return AddFieldImpl(field, pooled.Dictionary, subFields, metadata);
+    }
 
     /// <summary>
     ///     Adds a field to the query.
@@ -152,7 +165,10 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase), subFields, metadata);
+    {
+        using var pooled = ArgumentsPool.GetPooled(arguments);
+        return AddFieldDefinitionImpl(field, pooled.Dictionary, subFields, metadata);
+    }
 
     /// <summary>
     /// Adds a field to the query with type only.
@@ -194,8 +210,8 @@ public sealed class QueryBuilder
 
         ArgumentNullException.ThrowIfNull(fieldBuilder);
 
-        var argumentsToUse = arguments is null ? Constants.EmptyArguments : new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
-        var builder = FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, argumentsToUse, metadata);
+        using var pooled = arguments?.Count > 0 ? ArgumentsPool.GetPooled(arguments) : default;
+        var builder = FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, pooled.Dictionary, metadata);
         fieldBuilder(builder);
         var fieldDefinition = builder.Build();
 
@@ -251,23 +267,29 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
 
-        // Extract variables from arguments for the query definition
-        Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        // FAST PATH: Check if subFields is null/empty early to avoid unnecessary work
+        var hasSubFields = subFields?.Any() == true;
+        
+        // FAST PATH: Only extract variables if arguments has content
+        if (arguments.Count > 0)
+        {
+            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        }
 
         // Determine field type based on presence of subfields and existing field type
-        var type = DetermineFieldType(field, subFields?.Any() == true);
+        var type = DetermineFieldType(field, hasSubFields);
 
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
-        // Early return if no subfields to process
-        if (subFields is null || !subFields.Any())
+        // FAST PATH: Early return if no subfields to process
+        if (!hasSubFields)
         {
             _queryMap.UpdateRootMapping(_definition);
             return this;
         }
 
         // Add all subfields to the builder
-        foreach (var subField in subFields)
+        foreach (var subField in subFields!)
         {
             builder.AddField(subField);
         }

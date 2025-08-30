@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -428,7 +429,7 @@ public sealed class FieldBuilder
             return existingField;
         }
 
-        // Create new simple field with optimized path building
+        // Create new simple field with simple path building
         var path = string.IsNullOrEmpty(parentPath) ? fieldName : $"{parentPath}.{fieldName}";
         var field = Helpers.CreateFieldDefinition(fieldName, fieldType, null, in arguments, path, metadata);
         fieldDefinitions[fieldName] = field;
@@ -445,7 +446,7 @@ public sealed class FieldBuilder
         }
 
         var currentFields = fieldDefinitions;
-        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToList(parentPath.AsSpan());
+        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToListSpan(parentPath.AsSpan());
         FieldDefinition? result = null;
 
         while (fieldPath.Length > 0)
@@ -455,8 +456,8 @@ public sealed class FieldBuilder
             var segment = isLastSegment ? fieldPath : fieldPath[..dotIndex];
             var segmentName = segment.ToString();
 
-            // FAIL-FAST: Skip empty segments immediately
-            if (string.IsNullOrWhiteSpace(segmentName))
+            // FAIL-FAST: Skip empty segments immediately using span check
+            if (segmentName.AsSpan().IsWhiteSpace())
             {
                 fieldPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
                 continue;
@@ -469,7 +470,8 @@ public sealed class FieldBuilder
                 var segmentArgs = isLastSegment ? arguments : Constants.EmptyArguments;
                 var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldType;
                 var segmentMetadata = isLastSegment ? metadata : null;
-                var segmentPath = string.Join(".", fullPath);
+                // Optimize path building for hot path
+                var segmentPath = fullPath.Count == 1 ? fullPath[0] : string.Join(".", fullPath);
 
                 field = Helpers.CreateFieldDefinition(segmentName, segmentType, null, in segmentArgs, segmentPath, segmentMetadata);
                 currentFields[segmentName] = field;
@@ -507,7 +509,7 @@ public sealed class FieldBuilder
         }
 
         var currentFields = fieldDefinitions;
-        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToList(parentPath.AsSpan());
+        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToListSpan(parentPath.AsSpan());
 
         fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
@@ -517,8 +519,8 @@ public sealed class FieldBuilder
         {
             var segment = ExtractNextSegment(ref fieldPath);
             
-            // FAIL-FAST: Skip empty segment names immediately
-            if (string.IsNullOrWhiteSpace(segment.Name))
+            // FAIL-FAST: Skip empty segment names immediately using span check
+            if (segment.Name.AsSpan().IsWhiteSpace())
             {
                 continue;
             }
@@ -543,9 +545,7 @@ public sealed class FieldBuilder
 
         // Parse and remove type information from the segment
         var cleanedPath = Helpers.ParseFieldTypeFromPath(currentPath.AsSpan(), Constants.DefaultFieldType, out var parsedType);
-        var cleanedPathString = cleanedPath.ToString();
-
-        var (name, alias) = Helpers.GetFieldNameAndAlias(cleanedPathString);
+        var (name, alias) = Helpers.GetFieldNameAndAliasSpan(cleanedPath);
 
         fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
 
@@ -578,7 +578,9 @@ public sealed class FieldBuilder
         var computedFieldType = segment.IsLastFragment ? parsedFieldType : intermediateType;
         var fieldMetadata = segment.IsLastFragment ? metadata : null;
 
-        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldType, segment.Alias, in fieldArgs, string.Join(".", fullPath), fieldMetadata);
+        // Optimize path building for hot path
+        var fieldPath = fullPath.Count == 1 ? fullPath[0] : string.Join(".", fullPath);
+        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldType, segment.Alias, in fieldArgs, fieldPath, fieldMetadata);
         currentFields[segment.Name] = field;
         return field;
     }
@@ -602,8 +604,8 @@ public sealed class FieldBuilder
                 field = currentFields[segment.Name] = field.MergeFieldArguments(argumentsRef);
             }
 
-            if (!string.Equals(parsedFieldType, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) && 
-                !string.Equals(field.Type, parsedFieldType, StringComparison.OrdinalIgnoreCase))
+            if (!parsedFieldType.AsSpan().Equals(Constants.DefaultFieldType.AsSpan(), StringComparison.OrdinalIgnoreCase) && 
+                !field.Type.AsSpan().Equals(parsedFieldType.AsSpan(), StringComparison.OrdinalIgnoreCase))
             {
                 field = currentFields[segment.Name] = field with { Type = parsedFieldType };
             }

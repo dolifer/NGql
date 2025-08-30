@@ -59,8 +59,10 @@ public sealed record QueryDefinition(string Name, string Description = "")
 
     internal Dictionary<string, object?>? _metadata;
 
+    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
+
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => new QueryTextBuilder().Build(this);
+    public override string ToString() => _builderCache.Value!.Build(this);
 
     public static implicit operator string(QueryDefinition query) => query.ToString();
 

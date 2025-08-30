@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
@@ -7,6 +8,110 @@ namespace NGql.Core.Extensions;
 
 internal static class Helpers
 {
+    /// <summary>
+    /// Parses field name and alias from a span for better performance
+    /// </summary>
+    internal static (string name, string? alias) GetFieldNameAndAliasSpan(ReadOnlySpan<char> fieldName)
+    {
+        // Match the original behavior exactly: split on ':' and only handle exactly 2 parts
+        var fieldString = fieldName.ToString();
+        var fieldNameParts = fieldString.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : fieldString;
+        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
+
+        return (namePart, alias);
+    }
+
+    /// <summary>
+    /// Splits a path span into a list for better performance
+    /// </summary>
+    internal static List<string> SplitPathToListSpan(ReadOnlySpan<char> path)
+    {
+        if (path.IsEmpty)
+            return new List<string>();
+
+        // Pre-size list by counting dots + 1 to avoid reallocations
+        var dotCount = 0;
+        for (var i = 0; i < path.Length; i++)
+        {
+            if (path[i] == '.') dotCount++;
+        }
+        var result = new List<string>(dotCount + 1);
+        
+        var start = 0;
+        for (var i = 0; i < path.Length; i++)
+        {
+            if (path[i] == '.')
+            {
+                if (i > start)
+                {
+                    result.Add(path[start..i].ToString());
+                }
+                start = i + 1;
+            }
+        }
+        
+        if (start < path.Length)
+        {
+            result.Add(path[start..].ToString());
+        }
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Parses field type and name from a span for better performance
+    /// </summary>
+    internal static (string fieldType, string fieldName) ParseFieldTypeAndNameSpan(ReadOnlySpan<char> field)
+    {
+        var spaceIndex = field.IndexOf(' ');
+        if (spaceIndex == -1)
+        {
+            return (Constants.DefaultFieldType, field.ToString());
+        }
+
+        var fieldType = field[..spaceIndex].ToString();
+        var fieldName = field[(spaceIndex + 1)..].ToString();
+        
+        return (fieldType, fieldName);
+    }
+
+    /// <summary>
+    /// Ref struct for span-based field name and alias parsing to avoid allocations
+    /// </summary>
+    internal ref struct FieldNameAliasPair
+    {
+        public ReadOnlySpan<char> Name;
+        public ReadOnlySpan<char> Alias;
+        public bool HasAlias;
+
+        public FieldNameAliasPair(ReadOnlySpan<char> name, ReadOnlySpan<char> alias, bool hasAlias)
+        {
+            Name = name;
+            Alias = alias;
+            HasAlias = hasAlias;
+        }
+    }
+
+    /// <summary>
+    /// Parses field name and alias from a span returning spans for zero allocation
+    /// </summary>
+    internal static FieldNameAliasPair GetFieldNameAndAliasSpanOptimized(ReadOnlySpan<char> fieldName)
+    {
+        // Match original behavior: use string split to handle edge cases correctly
+        var fieldString = fieldName.ToString();
+        var fieldNameParts = fieldString.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        
+        if (fieldNameParts.Length == 2)
+        {
+            var alias = fieldNameParts[0].AsSpan();
+            var name = fieldNameParts[1].AsSpan();
+            return new FieldNameAliasPair(name, alias, true);
+        }
+        
+        return new FieldNameAliasPair(fieldName, ReadOnlySpan<char>.Empty, false);
+    }
+
     /// <summary>
     /// Creates a new SortedDictionary with case-insensitive string keys for field definitions.
     /// </summary>
@@ -440,9 +545,11 @@ internal static class Helpers
         }
 
         // Create a new sorted dictionary to ensure consistent argument ordering
-        var sortedArguments = new SortedDictionary<string, object?>(arguments.ToDictionary(
-            kvp => kvp.Key,
-            kvp => SortArgumentValue(kvp.Value)));
+        var sortedArguments = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in arguments)
+        {
+            sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
+        }
 
         return new FieldDefinition(name, type, alias, sortedArguments, null)
         {
