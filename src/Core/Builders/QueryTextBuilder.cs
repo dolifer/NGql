@@ -119,15 +119,15 @@ internal sealed class QueryTextBuilder
 
             _stringBuilder.Append(field.Name);
 
-            if (field.Arguments is { Count: > 0 })
+            if (field._arguments is { Count: > 0 })
             {
-                BuildFieldArguments(field.Arguments);
+                BuildFieldArguments(field._arguments);
             }
 
-            if (field.Fields.Count > 0)
+            if (field._fields?.Count > 0)
             {
                 _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field.Fields, indent + IndentSize);
+                BuildFieldDefinitions(field._fields, indent + IndentSize);
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }

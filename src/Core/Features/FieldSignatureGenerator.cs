@@ -87,10 +87,10 @@ public static class FieldSignatureGenerator
     private static void AppendFieldSignatureRemainder(StringBuilder builder, FieldDefinition field, ReadOnlySpan<char> currentPath)
     {
         // Add arguments if present
-        if (field.Arguments is { Count: > 0 })
+        if (field._arguments is { Count: > 0 })
         {
             builder.Append('[');
-            foreach (var arg in field.Arguments.OrderBy(a => a.Key))
+            foreach (var arg in field._arguments.OrderBy(a => a.Key))
             {
                 builder.Append(arg.Key);
                 builder.Append(':');
@@ -103,9 +103,12 @@ public static class FieldSignatureGenerator
         builder.Append('|');
 
         // Recursively process child fields
-        foreach (var childField in field.Fields.Values.OrderBy(f => f.Name))
+        if (field._fields != null)
         {
-            AppendFieldSignature(builder, childField, currentPath);
+            foreach (var childField in field._fields.Values.OrderBy(f => f.Name))
+            {
+                AppendFieldSignature(builder, childField, currentPath);
+            }
         }
     }
 
@@ -115,10 +118,10 @@ public static class FieldSignatureGenerator
     private static void AppendFieldSignatureRemainder(StringBuilder builder, FieldDefinition field, string currentPath)
     {
         // Add arguments if present
-        if (field.Arguments is { Count: > 0 })
+        if (field._arguments is { Count: > 0 })
         {
             builder.Append('[');
-            foreach (var arg in field.Arguments.OrderBy(a => a.Key))
+            foreach (var arg in field._arguments.OrderBy(a => a.Key))
             {
                 builder.Append(arg.Key);
                 builder.Append(':');
@@ -131,9 +134,12 @@ public static class FieldSignatureGenerator
         builder.Append('|');
 
         // Recursively process child fields
-        foreach (var childField in field.Fields.Values.OrderBy(f => f.Name))
+        if (field._fields != null)
         {
-            AppendFieldSignature(builder, childField, currentPath.AsSpan());
+            foreach (var childField in field._fields.Values.OrderBy(f => f.Name))
+            {
+                AppendFieldSignature(builder, childField, currentPath.AsSpan());
+            }
         }
     }
 

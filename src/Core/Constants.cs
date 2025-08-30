@@ -28,7 +28,7 @@ public static class Constants
     /// <summary>
     /// Empty arguments dictionary for performance optimization.
     /// </summary>
-    public static readonly SortedDictionary<string, object?> EmptyArguments = new(StringComparer.OrdinalIgnoreCase);
+    internal static readonly SortedDictionary<string, object?> EmptyArguments = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Empty metadata dictionary for performance optimization.

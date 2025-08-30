@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using NGql.Core.Abstractions;
 
@@ -148,15 +149,30 @@ internal static class Helpers
         Dictionary<string, object?>? existing,
         Dictionary<string, object> update)
     {
+        // FAST PATH: If no existing metadata, just convert update to nullable
+        if (existing is null || existing.Count == 0)
+        {
+            var converted = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, value) in update)
+            {
+                converted[key] = value;
+            }
+            return converted;
+        }
+
+        // FAST PATH: If no update metadata, return existing
+        if (update.Count == 0)
+        {
+            return existing;
+        }
+
+        // SLOW PATH: Need to merge dictionaries
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
         // First, add all existing entries
-        if (existing != null)
+        foreach (var (key, value) in existing)
         {
-            foreach (var (key, value) in existing)
-            {
-                result[key] = value;
-            }
+            result[key] = value;
         }
 
         // Then merge or add update entries
@@ -442,7 +458,7 @@ internal static class Helpers
             kvp => kvp.Key,
             kvp => SortArgumentValue(kvp.Value)));
 
-        return new FieldDefinition(name, type, alias, sortedArguments, [])
+        return new FieldDefinition(name, type, alias, sortedArguments, null)
         {
             Path = path,
             Metadata = metadata
@@ -528,5 +544,17 @@ internal static class Helpers
         }
 
         return currentField;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static string NormalizeFieldName(string fieldName)
+    {
+        return fieldName.ToLowerInvariant();
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static string NormalizeFieldName(ReadOnlySpan<char> fieldName)
+    {
+        return fieldName.ToString().ToLowerInvariant();
     }
 }

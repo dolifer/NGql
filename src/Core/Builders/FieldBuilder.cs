@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
@@ -21,8 +22,18 @@ public sealed class FieldBuilder
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
-        var arguments = fieldDefinition.Arguments ?? Constants.EmptyArguments;
-        GetOrAddField(_fieldDefinition.Fields, fieldDefinition.Name, fieldDefinition.Type, in arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        var arguments = fieldDefinition._arguments ?? Constants.EmptyArguments;
+        
+        // FAST PATH: Check if field name is simple
+        var fieldName = fieldDefinition.Name;
+        if (fieldName.IndexOf('.') == -1 && fieldName.IndexOf(' ') == -1 && fieldName.IndexOf(':') == -1)
+        {
+            GetOrAddSimpleField(_fieldDefinition.Fields, fieldName, fieldDefinition.Type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        }
+        else
+        {
+            GetOrAddField(_fieldDefinition.Fields, fieldName, fieldDefinition.Type, in arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        }
         return this;
     }
 
@@ -298,14 +309,17 @@ public sealed class FieldBuilder
 
     private FieldBuilder AddFieldCore(string fieldName, string type, string[]? subFields, in SortedDictionary<string, object?>? arguments, in Dictionary<string, object?>? metadata, Action<FieldBuilder>? action)
     {
-        var args = arguments ?? Constants.EmptyArguments;
+        // FAIL-FAST: Use empty arguments if null or empty
+        var args = arguments is { Count: > 0 } ? arguments : Constants.EmptyArguments;
         var field = GetOrAddField(_fieldDefinition.Fields, fieldName.AsSpan(), type, in args, _fieldDefinition.Path, metadata);
 
-        if (subFields != null)
+        // FAIL-FAST: Skip subFields processing if array is null or empty
+        if (subFields?.Length > 0)
         {
             foreach (var subField in subFields)
             {
-                GetOrAddField(field.Fields, subField.AsSpan(), Constants.DefaultFieldType, in Constants.EmptyArguments, field.Path, null);
+                // Use full field processing to handle dotted paths, types, aliases, etc.
+                GetOrAddField(field.Fields, subField.AsSpan(), Constants.DefaultFieldType, Constants.EmptyArguments, field.Path, null);
             }
         }
 
@@ -344,8 +358,19 @@ public sealed class FieldBuilder
     /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
-        var argumentsToUse = arguments ?? Constants.EmptyArguments;
-        var rootField = GetOrAddField(fieldDefinitions, fieldName.AsSpan(), type, in argumentsToUse, null, metadata);
+        // FAIL-FAST: Use empty arguments if null or empty
+        var argumentsToUse = arguments is { Count: > 0 } ? arguments : Constants.EmptyArguments;
+        
+        // FAST PATH: Check if field name is simple
+        FieldDefinition rootField;
+        if (fieldName.IndexOf('.') == -1 && fieldName.IndexOf(' ') == -1 && fieldName.IndexOf(':') == -1)
+        {
+            rootField = GetOrAddSimpleField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
+        }
+        else
+        {
+            rootField = GetOrAddField(fieldDefinitions, fieldName.AsSpan(), type, in argumentsToUse, null, metadata);
+        }
 
         var fieldBuilder = new FieldBuilder(rootField);
 
@@ -369,9 +394,119 @@ public sealed class FieldBuilder
 
     private static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? type, in SortedDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
     {
-        var currentFields = fieldDefinitions;
         var argumentsRef = arguments ?? Constants.EmptyArguments;
         var fieldType = type ?? Constants.DefaultFieldType;
+        
+        // FAST PATH: Simple field name (single IndexOf check)
+        var dotIndex = fieldPath.IndexOf('.');
+        if (dotIndex == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        {
+            return GetOrAddSimpleField(fieldDefinitions, fieldPath.ToString(), fieldType, argumentsRef, parentPath, metadata);
+        }
+        
+        // MEDIUM PATH: Only dots (no spaces/colons)
+        if (fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        {
+            return GetOrAddDottedField(fieldDefinitions, fieldPath, fieldType, argumentsRef, parentPath, metadata);
+        }
+        
+        // SLOW PATH: Complex field processing
+        return GetOrAddComplexField(fieldDefinitions, fieldPath, fieldType, argumentsRef, parentPath, metadata);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition GetOrAddSimpleField(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string fieldType, SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
+        if (fieldDefinitions.TryGetValue(fieldName, out var existingField))
+        {
+            // FAIL-FAST: Skip argument merging if no arguments to merge
+            if (arguments.Count > 0)
+            {
+                existingField = existingField.MergeFieldArguments(arguments);
+                fieldDefinitions[fieldName] = existingField;
+            }
+            return existingField;
+        }
+
+        // Create new simple field with optimized path building
+        var path = string.IsNullOrEmpty(parentPath) ? fieldName : $"{parentPath}.{fieldName}";
+        var field = Helpers.CreateFieldDefinition(fieldName, fieldType, null, in arguments, path, metadata);
+        fieldDefinitions[fieldName] = field;
+        return field;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string fieldType, SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
+        // FAIL-FAST: Empty path check
+        if (fieldPath.IsEmpty)
+        {
+            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
+        }
+
+        var currentFields = fieldDefinitions;
+        var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToList(parentPath.AsSpan());
+        FieldDefinition? result = null;
+
+        while (fieldPath.Length > 0)
+        {
+            var dotIndex = fieldPath.IndexOf('.');
+            var isLastSegment = dotIndex == -1;
+            var segment = isLastSegment ? fieldPath : fieldPath[..dotIndex];
+            var segmentName = segment.ToString();
+
+            // FAIL-FAST: Skip empty segments immediately
+            if (string.IsNullOrWhiteSpace(segmentName))
+            {
+                fieldPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
+                continue;
+            }
+
+            fullPath.Add(segmentName);
+
+            if (!currentFields.TryGetValue(segmentName, out var field))
+            {
+                var segmentArgs = isLastSegment ? arguments : Constants.EmptyArguments;
+                var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldType;
+                var segmentMetadata = isLastSegment ? metadata : null;
+                var segmentPath = string.Join(".", fullPath);
+
+                field = Helpers.CreateFieldDefinition(segmentName, segmentType, null, in segmentArgs, segmentPath, segmentMetadata);
+                currentFields[segmentName] = field;
+            }
+            else 
+            {
+                // FAIL-FAST: Skip argument merging if no arguments to merge
+                if (isLastSegment && arguments.Count > 0)
+                {
+                    field = field.MergeFieldArguments(arguments);
+                    currentFields[segmentName] = field;
+                }
+                
+                // FAIL-FAST: Skip type conversion check if not needed
+                if (!isLastSegment && field.ShouldConvertToObjectType())
+                {
+                    field = currentFields[segmentName] = field with { Type = Constants.ObjectFieldType };
+                }
+            }
+
+            result = field;
+            currentFields = field.Fields;
+            fieldPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
+        }
+
+        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+    }
+
+    private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string fieldType, SortedDictionary<string, object?> arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
+        // FAIL-FAST: Empty path check
+        if (fieldPath.IsEmpty)
+        {
+            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
+        }
+
+        var currentFields = fieldDefinitions;
         var fullPath = string.IsNullOrWhiteSpace(parentPath) ? new List<string>() : Helpers.SplitPathToList(parentPath.AsSpan());
 
         fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
@@ -381,6 +516,8 @@ public sealed class FieldBuilder
         while (fieldPath.Length > 0)
         {
             var segment = ExtractNextSegment(ref fieldPath);
+            
+            // FAIL-FAST: Skip empty segment names immediately
             if (string.IsNullOrWhiteSpace(segment.Name))
             {
                 continue;
@@ -388,10 +525,9 @@ public sealed class FieldBuilder
 
             fullPath.Add(segment.Name);
 
-            // Use segment-level parsed type if available, otherwise use the overall parsed type
             var typeToUse = segment.ParsedType ?? parsedFieldType;
 
-            result = ProcessFieldSegment(currentFields, segment, argumentsRef, typeToUse, fullPath, metadata);
+            result = ProcessFieldSegment(currentFields, segment, arguments, typeToUse, fullPath, metadata);
             currentFields = result.Fields;
         }
 
@@ -495,7 +631,7 @@ public sealed class FieldBuilder
 
     private static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        var arguments = fieldDefinition.Arguments ?? Constants.EmptyArguments;
+        var arguments = fieldDefinition._arguments ?? Constants.EmptyArguments;
 
         // Try to find existing field to merge with
         var existingField = Helpers.FindExistingField(fields, fieldDefinition);
@@ -552,7 +688,7 @@ public sealed class FieldBuilder
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder WithMetadata(Dictionary<string, object> metadata)
     {
-        var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition.Metadata);
+        var existingMetadata = Helpers.NormalizeMetadata(_fieldDefinition._metadata);
         var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
 
         _fieldDefinition.Metadata = mergedMetadata;
@@ -568,28 +704,29 @@ public sealed class FieldBuilder
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder Where(string key, object? value)
     {
-        if (_fieldDefinition.Arguments != null && _fieldDefinition.Arguments.TryGetValue(key, out var existingValue))
+        if (_fieldDefinition._arguments != null && _fieldDefinition._arguments.TryGetValue(key, out var existingValue))
         {
             if (existingValue is IDictionary<string, object> existingDict && value is IDictionary<string, object> newDict)
             {
                 // Merge nested dictionaries
-                _fieldDefinition.Arguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
+                _fieldDefinition._arguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
             }
             else
             {
                 // Override the existing value with the new one
-                _fieldDefinition.Arguments[key] = value;
+                _fieldDefinition._arguments[key] = value;
             }
         }
         else
         {
-            if (_fieldDefinition.Arguments is null)
+            // Lazy create Arguments dictionary only when needed
+            if (_fieldDefinition._arguments is null)
             {
-                _fieldDefinition = _fieldDefinition with { Arguments = [] };
+                _fieldDefinition = _fieldDefinition with { Arguments = new() { [key] = value } };
             }
             else
             {
-                _fieldDefinition.Arguments[key] = value;
+                _fieldDefinition._arguments[key] = value;
             }
         }
 

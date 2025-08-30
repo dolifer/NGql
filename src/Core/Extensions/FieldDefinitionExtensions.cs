@@ -139,7 +139,7 @@ internal static class FieldDefinitionExtensions
             existing.Name,
             existing.Type ?? incoming.Type ?? Constants.DefaultFieldType,
             existing.Alias,
-            existing.Arguments ?? Constants.EmptyArguments,
+            existing.Arguments,
             mergedFields
         ).MergeFieldArguments(incoming.Arguments ?? Constants.EmptyArguments);
     }
@@ -154,12 +154,20 @@ internal static class FieldDefinitionExtensions
 
     internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?> newArguments)
     {
-        if (existingField.Arguments is null || existingField.Arguments.Count == 0)
+        // FAST PATH: If no new arguments to merge, return as-is
+        if (newArguments.Count == 0)
         {
             return existingField;
         }
 
-        var mergedArguments = Helpers.CreateArgumentDictionary(existingField.Arguments ?? Constants.EmptyArguments);
+        // FAST PATH: If existing field has no arguments, just set the new arguments
+        if (existingField._arguments is null || existingField._arguments.Count == 0)
+        {
+            return existingField with { Arguments = newArguments };
+        }
+
+        // SLOW PATH: Need to merge arguments
+        var mergedArguments = Helpers.CreateArgumentDictionary(existingField._arguments);
         foreach (var (key, newValue) in newArguments)
         {
             if (!mergedArguments.TryGetValue(key, out var existingValue))
