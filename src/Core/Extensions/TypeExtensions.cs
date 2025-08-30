@@ -1,4 +1,3 @@
-using System;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
@@ -18,27 +17,35 @@ public static class TypeExtensions
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
         // If it's already an object type, no need to convert
-        if (fieldDefinition.Type == Constants.ObjectFieldType)
+        if (fieldDefinition._type == Constants.ObjectFieldType)
+        {
             return false;
+        }
 
         // If it's the default string type, it should be converted
-        if (fieldDefinition.Type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition.Type))
+        if (fieldDefinition._type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition._type))
+        {
             return true;
+        }
 
         // Special case: Array markers should be preserved ([] special case)
-        if (fieldDefinition.Type == Constants.ArrayTypeMarker)
+        if (fieldDefinition._type == Constants.ArrayTypeMarker)
+        {
             return false;
+        }
 
         // Special types like arrays or custom complex types should maintain their type
         // even when nested fields are added
-        if (fieldDefinition.IsArray || fieldDefinition.IsNullable || 
-            fieldDefinition.Type.Contains('[') || fieldDefinition.Type.Contains(']') ||
-            fieldDefinition.Type.EndsWith('?'))
+        if (fieldDefinition.IsArray || fieldDefinition.IsNullable ||
+            fieldDefinition._type.Contains('[') || fieldDefinition._type.Contains(']') ||
+            fieldDefinition._type.EndsWith('?'))
+        {
             return false;
+        }
 
         // Check for common primitive types that should be converted to object when they have fields
-        var lowerType = fieldDefinition.Type.ToLowerInvariant();
-        var isPrimitiveType = lowerType == "int" || 
+        var lowerType = fieldDefinition._type.ToLowerInvariant();
+        var isPrimitiveType = lowerType == "int" ||
                              lowerType == "integer" ||
                              lowerType == "string" ||
                              lowerType == "boolean" ||
@@ -49,7 +56,9 @@ public static class TypeExtensions
 
         // If it's a primitive type and will have nested fields, convert to object
         if (isPrimitiveType)
+        {
             return true;
+        }
 
         // For custom types (not primitive, not array, not nullable), 
         // don't convert to object - preserve the custom type
@@ -68,16 +77,22 @@ public static class TypeExtensions
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
         if (string.IsNullOrEmpty(fieldDefinition.Type))
+        {
             return Constants.DefaultFieldType;
+        }
 
         var type = fieldDefinition.Type;
 
         // Handle standalone type markers
         if (type == Constants.ArrayTypeMarker)
+        {
             return stripArrayMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.ArrayTypeMarker;
+        }
 
         if (type == Constants.NullableTypeMarker)
+        {
             return stripNullableMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.NullableTypeMarker;
+        }
 
         // Use Span for efficient type parsing
         var typeSpan = type.AsSpan();
@@ -91,7 +106,7 @@ public static class TypeExtensions
         }
 
         // Handle nullable notation
-        if (typeSpan.EndsWith(Constants.NullableTypeMarker.AsSpan()) && typeSpan.Length > 1)
+        if (typeSpan.EndsWith(Constants.NullableTypeMarkerSpan) && typeSpan.Length > 1)
         {
             var baseType = typeSpan[..^1].ToString();
             return stripNullableMarker ? baseType : type;
@@ -117,8 +132,8 @@ public static class TypeExtensions
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
-        return fieldDefinition.Type 
-            is Constants.ArrayTypeMarker 
+        return fieldDefinition.Type
+            is Constants.ArrayTypeMarker
             or Constants.NullableTypeMarker;
     }
 }

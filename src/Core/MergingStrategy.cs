@@ -9,12 +9,12 @@ public enum MergingStrategy
     /// Uses the default merging behavior, which inherits from parent strategy
     /// </summary>
     MergeByDefault,
-    
+
     /// <summary>
     /// Merges queries based on field path compatibility
     /// </summary>
     MergeByFieldPath,
-    
+
     /// <summary>
     /// Never merge queries, always create separate definitions
     /// </summary>

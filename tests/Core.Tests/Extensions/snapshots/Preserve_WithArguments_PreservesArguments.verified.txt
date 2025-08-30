@@ -1,0 +1,7 @@
+﻿query QueryWithArgs{
+    user(id:"123"){
+        posts(limit:10){
+            title
+        }
+    }
+}

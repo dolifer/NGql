@@ -24,12 +24,12 @@ public class WhereTests
 
         // assert
         query.FieldsList.Should().BeEmpty();
-            
+
         string queryText = query.ToString();
         queryText.Should().Be(@"query name(filter1:{}, filter2:[], filter3:null, filter4:42){
 }");
     }
-        
+
     [Fact]
     public void Where_VariableArgument_AddsToWhere()
     {
@@ -51,7 +51,7 @@ public class WhereTests
         queryText.Should().Be(@"query name($id:Int){
 }");
     }
-        
+
     [Fact]
     public void Where_NumberArgument_AddsToWhere()
     {
@@ -103,14 +103,14 @@ public class WhereTests
 
         // assert
         query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
-            
+
         query.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
         query.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
-            
+
         queryText.Should().Be(@"query name($from:Int, $to:Int){
 }");
     }
-        
+
     [Fact]
     public void Where_NestedDictionary_Variable_AddsToWhere()
     {
@@ -129,16 +129,16 @@ public class WhereTests
 
         // assert
         query.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
-            
+
         var value = query.Arguments.Should().ContainKey("filters").WhoseValue as IDictionary<string, object>;
-            
+
         value.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
         value.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
-            
+
         queryText.Should().Be(@"query name($from:Int, $to:Int, filters:{from:$from, to:$to}){
 }");
     }
-        
+
     [Fact]
     public void Where_SubQuery_Variable_AddsToWhere()
     {
@@ -146,7 +146,7 @@ public class WhereTests
         var rootVariable = new Variable("$useCache", "Boolean");
         var toVariable = new Variable("$to", "Int");
         var fromVariable = new Variable("$from", "Int");
-        var query = new Query("name", rootVariable,rootVariable);
+        var query = new Query("name", rootVariable, rootVariable);
         var subQuery = new Query("nested", toVariable, toVariable);
         Dictionary<string, object> ageFilter = new()
         {
@@ -160,16 +160,16 @@ public class WhereTests
         // assert
         query.Variables.Should().BeEquivalentTo([fromVariable, toVariable, rootVariable]);
         subQuery.Variables.Should().BeEquivalentTo([fromVariable, toVariable]);
-            
+
         subQuery.Arguments.Should().ContainKey("from").WhoseValue.Should().Be(fromVariable);
         subQuery.Arguments.Should().ContainKey("to").WhoseValue.Should().Be(toVariable);
-            
+
         queryText.Should().Be(@"query name($from:Int, $to:Int, $useCache:Boolean){
     nested(from:$from, to:$to){
     }
 }");
     }
-        
+
     [Fact]
     public void Where_Multiple_Variables_Sorted_RootQuery()
     {
@@ -197,7 +197,7 @@ public class WhereTests
         queryText.Should().Be(@"query name($a:Int, $b:Int, $c:Int){
 }");
     }
-        
+
     [Fact]
     public void Where_Dictionary_AddsToWhere()
     {

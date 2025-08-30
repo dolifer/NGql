@@ -58,7 +58,7 @@ public class UsersQueryTests
                 }
             }
         );
-    
+
     private static readonly QueryBuilder UsersBatchQueryBuilder = UsersBatchQueryBuilderBase
         .AddField("base.edges.node", [
             "UserName:user_name",
@@ -66,7 +66,7 @@ public class UsersQueryTests
             "Email:user_email",
             "UserId:user_id"
         ]);
-    
+
     private static QueryBuilder UsersBatchQueryChild => QueryBuilder
         .CreateDefaultBuilder("all_users")
         .AddField("base.edges.node", [
@@ -78,7 +78,7 @@ public class UsersQueryTests
 
     private static readonly QueryBuilder UsersBatchQueryMerged = UsersBatchQueryBuilderBase
         .Include(UsersBatchQueryChild);
-    
+
     private static QueryBuilder UsersNameBalanceQueryChild => QueryBuilder
         .CreateDefaultBuilder("all_users")
         .AddField("base.edges.node", [
@@ -96,7 +96,7 @@ public class UsersQueryTests
     private static readonly QueryBuilder UsersBatchQueryMergedTwice = UsersBatchQueryBuilderBase
         .Include(UsersNameBalanceQueryChild)
         .Include(UsersEmailUserIdChild);
-    
+
     [Fact]
     public async Task UsersBatchQuery_Manual() => await VerifyBetsQuery(UsersBatchQuery);
 
@@ -104,37 +104,37 @@ public class UsersQueryTests
     public async Task UsersBatchQuery_Builder()
     {
         var builderQuery = UsersBatchQueryBuilder;
-        
+
         await VerifyBetsQuery(builderQuery);
     }
-    
+
     [Fact]
     public async Task UsersBatchQueryMerged_Builder()
     {
         var builderQuery = UsersBatchQueryMerged;
-        
+
         await VerifyBetsQuery(builderQuery);
     }
-    
+
     [Fact]
     public async Task UsersBatchQueryMergedTwice_Builder()
     {
         var builderQuery = UsersBatchQueryMergedTwice;
-        
+
         await VerifyBetsQuery(builderQuery);
     }
 
     private static async Task VerifyBetsQuery(QueryBuilder query)
     {
         await query.Verify("usersBatchQuery");
-        
+
         query.Variables.Should().BeEquivalentTo([TestVariablesCatalog.SiteVariable, TestVariablesCatalog.TenantIdVariable, TestVariablesCatalog.UserIdsVariable]);
     }
-    
+
     private static async Task VerifyBetsQuery(Query query)
     {
         await query.Verify("usersBatchQuery");
-        
+
         query.Variables.Should().BeEquivalentTo([TestVariablesCatalog.SiteVariable, TestVariablesCatalog.TenantIdVariable, TestVariablesCatalog.UserIdsVariable]);
     }
 }

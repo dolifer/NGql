@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections;
 using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -15,7 +12,7 @@ internal sealed class QueryTextBuilder
 
     // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
     private static readonly string[] PaddingCache = new string[20];
-    
+
     static QueryTextBuilder()
     {
         for (int i = 0; i < PaddingCache.Length; i++)
@@ -32,8 +29,8 @@ internal sealed class QueryTextBuilder
     private static string GetPadding(int indent)
     {
         var paddingLevel = indent / IndentSize;
-        return paddingLevel < PaddingCache.Length 
-            ? PaddingCache[paddingLevel] 
+        return paddingLevel < PaddingCache.Length
+            ? PaddingCache[paddingLevel]
             : new string(' ', indent);
     }
 
@@ -71,15 +68,21 @@ internal sealed class QueryTextBuilder
         _stringBuilder.Append("query ");
 
         if (!string.IsNullOrEmpty(queryDefinition.Name))
+        {
             _stringBuilder.Append(queryDefinition.Name);
+        }
 
-        if (queryDefinition.Variables.Count > 0)
+        if (queryDefinition._variables?.Count > 0)
         {
             _stringBuilder.Append('(');
             bool first = true;
-            foreach (var variable in queryDefinition.Variables)
+            foreach (var variable in queryDefinition._variables)
             {
-                if (!first) _stringBuilder.Append(", ");
+                if (!first)
+                {
+                    _stringBuilder.Append(", ");
+                }
+
                 first = false;
                 variable.Print(_stringBuilder, variable.Name, true);
             }
@@ -94,7 +97,7 @@ internal sealed class QueryTextBuilder
         _stringBuilder.Append("}");
         return _stringBuilder.ToString();
     }
-    
+
     private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
     {
         var padding = GetPadding(indent);
@@ -103,7 +106,7 @@ internal sealed class QueryTextBuilder
         var orderedFields = fields.Values
             .OrderBy(f => f.Alias ?? f.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase);
-        
+
         foreach (var field in orderedFields)
         {
             _stringBuilder.Append(padding);
@@ -116,13 +119,15 @@ internal sealed class QueryTextBuilder
 
             _stringBuilder.Append(field.Name);
 
-            if (field.Arguments is { Count: > 0})
-                BuildFieldArguments(field.Arguments);
+            if (field._arguments is { Count: > 0 })
+            {
+                BuildFieldArguments(field._arguments);
+            }
 
-            if (field.Fields.Count > 0)
+            if (field._fields?.Count > 0)
             {
                 _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field.Fields, indent + IndentSize);
+                BuildFieldDefinitions(field._fields, indent + IndentSize);
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }
@@ -140,7 +145,11 @@ internal sealed class QueryTextBuilder
         bool first = true;
         foreach (var (key, value) in arguments)
         {
-            if (!first) _stringBuilder.Append(", ");
+            if (!first)
+            {
+                _stringBuilder.Append(", ");
+            }
+
             first = false;
 
             _stringBuilder.Append(key);
@@ -179,25 +188,25 @@ internal sealed class QueryTextBuilder
         switch (value)
         {
             case IList listValue:
-            {
-                WriteCollection('[', ']', listValue, builder);
-                break;
-            }
+                {
+                    WriteCollection('[', ']', listValue, builder);
+                    break;
+                }
 
             case IDictionary dictValue:
-            {
-                WriteCollection('{', '}', dictValue, builder);
-                break;
-            }
+                {
+                    WriteCollection('{', '}', dictValue, builder);
+                    break;
+                }
 
             default:
-            {
-                var values = valueType
-                    .GetProperties()
-                    .ToDictionary(x => x.Name, x => x.GetValue(value));
-                WriteCollection('{', '}', values, builder);
-                break;
-            }
+                {
+                    var values = valueType
+                        .GetProperties()
+                        .ToDictionary(x => x.Name, x => x.GetValue(value));
+                    WriteCollection('{', '}', values, builder);
+                    break;
+                }
         }
     }
 
@@ -208,7 +217,11 @@ internal sealed class QueryTextBuilder
         bool first = true;
         foreach (var obj in list)
         {
-            if (!first) builder.Append(", ");
+            if (!first)
+            {
+                builder.Append(", ");
+            }
+
             first = false;
             WriteObject(builder, obj);
         }
@@ -225,7 +238,7 @@ internal sealed class QueryTextBuilder
 
         _stringBuilder.AppendLine("{");
         var padding = GetPadding(indent);
-        
+
         // Sort fields by their string representation or QueryBlock properties
         var orderedFields = queryBlock.FieldsList
             .OrderBy(field => field switch
@@ -268,7 +281,11 @@ internal sealed class QueryTextBuilder
         bool first = true;
         foreach (var (key, value) in arguments)
         {
-            if (!first) _stringBuilder.Append(", ");
+            if (!first)
+            {
+                _stringBuilder.Append(", ");
+            }
+
             first = false;
             if (value is Variable variable)
             {

@@ -18,13 +18,13 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
             .AddField(fieldName);
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
     parent
 }");
     }
-    
+
     [Theory]
     [InlineData("alias:parent")]
     [InlineData("alias::parent")]
@@ -37,13 +37,13 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
             .AddField(fieldName);
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
     alias:parent
 }");
     }
-    
+
     [Fact]
     public void Simple_Nested_Fields_Syntax()
     {
@@ -51,7 +51,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
             .AddField("parent.child");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
     parent{
@@ -59,7 +59,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Simple_Nested_Fields_Alias_Syntax()
     {
@@ -67,7 +67,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("SimpleQuery")
             .AddField("alias:parent.alias:child");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SimpleQuery{
     alias:parent{
@@ -75,7 +75,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Multiple_Nested_Fields_Syntax()
     {
@@ -84,7 +84,7 @@ public class QueryBuilderQueryTests
             .CreateDefaultBuilder("ComplexQuery")
             .AddField("parent.child1.grandchild1")
             .AddField("parent.child2.grandchild2");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexQuery{
     parent{
@@ -97,7 +97,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Multiple_Top_Level_Fields_Syntax()
     {
@@ -106,14 +106,14 @@ public class QueryBuilderQueryTests
             .CreateDefaultBuilder("MultipleTopLevelQuery")
             .AddField("field1")
             .AddField("field2");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MultipleTopLevelQuery{
     field1
     field2
 }");
     }
-    
+
     [Fact]
     public void Nested_And_Top_Level_Fields_Syntax()
     {
@@ -122,7 +122,7 @@ public class QueryBuilderQueryTests
             .CreateDefaultBuilder("MixedQuery")
             .AddField("field1")
             .AddField("parent.child");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query MixedQuery{
     field1
@@ -131,7 +131,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Deeply_Nested_Fields_Syntax()
     {
@@ -139,7 +139,7 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("DeepQuery")
             .AddField("level1.level2.level3.level4");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query DeepQuery{
     level1{
@@ -151,7 +151,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Fields_With_Multiple_Siblings_Syntax()
     {
@@ -161,7 +161,7 @@ public class QueryBuilderQueryTests
             .AddField("parent.child1")
             .AddField("parent.child2")
             .AddField("parent.child3");
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query SiblingsQuery{
     parent{
@@ -171,7 +171,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Complex_Combination_Of_Fields_Syntax()
     {
@@ -179,10 +179,10 @@ public class QueryBuilderQueryTests
         var query = QueryBuilder
             .CreateDefaultBuilder("ComplexCombinationQuery")
             .AddField("field1")
-            .AddField("parent1", subFields:["child1", "child2"])
+            .AddField("parent1", subFields: ["child1", "child2"])
             .AddField("parent1.child2")
-            .AddField("parent2.child", subFields:["gc:grandchild", "grandchild2"]);
-    
+            .AddField("parent2.child", subFields: ["gc:grandchild", "grandchild2"]);
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexCombinationQuery{
     field1
@@ -198,7 +198,7 @@ public class QueryBuilderQueryTests
     }
 }");
     }
-    
+
     [Fact]
     public void Complex_Combination_Of_Fields_Syntax_Include()
     {
@@ -208,11 +208,11 @@ public class QueryBuilderQueryTests
             .AddField("f1alias:field1.child1", arguments: new Dictionary<string, object?>() { { "first", "true" } })
             .AddField("field1.child1.edges.node", subFields: ["child11", "child12"])
             .AddField("field1.child1.edges.node.metrics.values.foo", subFields: ["bar", "baz"]);
-            
+
         var query = QueryBuilder
             .CreateDefaultBuilder("ComplexCombinationQuery")
             .Include(parent1);
-    
+
         // Assert the final GraphQL query
         query.ToString().Should().Be(@"query ComplexCombinationQuery{
     f1alias:field1{
@@ -251,7 +251,7 @@ public class QueryBuilderQueryTests
                         { "enumValue", new EnumValue(HttpStatusCode.OK) }
                     }
                 },
-                { "nested", new 
+                { "nested", new
                     {
                         foo = "fooooo",
                         bar = "baaaaaar",
@@ -259,7 +259,7 @@ public class QueryBuilderQueryTests
                     }
                 }
             })
-            .AddField("path.to.object.edges.node.left", subFields: ["foo:bar","baz:qux"])
+            .AddField("path.to.object.edges.node.left", subFields: ["foo:bar", "baz:qux"])
             .AddField("path.to.object.edges.node.right", subFields: ["foo:bar", "baz:qux"])
             .AddField("Alias:path.to.object", new Dictionary<string, object?>
             {
@@ -273,12 +273,12 @@ public class QueryBuilderQueryTests
 
         child.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
         child.Variables.Should().ContainSingle(v => v.Name == "$bazvar" && v.Type == "Int");
-        
+
         var text = myQuery.Include(child).ToString();
 
         myQuery.Variables.Should().ContainSingle(v => v.Name == "$take" && v.Type == "Int");
         myQuery.Variables.Should().ContainSingle(v => v.Name == "$bazvar" && v.Type == "Int");
-        
+
         text.Should().Be(@"query myQuery($bazvar:Int, $take:Int){
     Alias:path{
         to{

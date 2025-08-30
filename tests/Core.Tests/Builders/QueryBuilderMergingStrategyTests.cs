@@ -54,7 +54,7 @@ public class QueryBuilderMergingStrategyTests
 
         rootBuilder.GetPathTo("emailQuery", "edges").Should().BeEquivalentTo("EmailQuery", "users");
         rootBuilder.GetPathTo("emailQuery", "edges.node").Should().BeEquivalentTo("EmailQuery", "users", "edges");
-        
+
         rootBuilder.GetPathTo("idName", "node").Should().BeEquivalentTo("UserProfileQuery", "users", "edges");
         rootBuilder.GetPathTo("idName", "edges.node.id").Should().BeEquivalentTo("UserProfileQuery", "users", "edges", "Alias");
 
@@ -94,7 +94,7 @@ public class QueryBuilderMergingStrategyTests
                 rootBuilder.DefinitionsCount.Should().Be(2); // Root (1) + separate child (1) = 2 definitions
                 break;
         }
-        
+
         await rootBuilder.Verify($"RootMergeByDefault_{childStrategy}_{expectedBehavior}");
     }
 
@@ -110,7 +110,7 @@ public class QueryBuilderMergingStrategyTests
 
         var childWithArgs = CreateDefaultBuilder("withArgs")
             .AddField("tables.users.settings", new Dictionary<string, object?> { ["filter"] = "active" }, ["status"]);
-        
+
         var childWithArgs2 = CreateDefaultBuilder("withArgs2")
             .AddField("tables.users.settings", new Dictionary<string, object?> { ["filter"] = "active" }, ["status"]);
 
@@ -240,7 +240,7 @@ public class QueryBuilderMergingStrategyTests
         rootBuilder.GetPathTo("withArgs").Should().BeEquivalentTo("user_2");
 
         rootBuilder.DefinitionsCount.Should().Be(3); // all the same path start - user
-        
+
         await rootBuilder.Verify("DotNotationMerging_WithArguments");
     }
 
@@ -267,7 +267,7 @@ public class QueryBuilderMergingStrategyTests
         rootBuilder.GetPathTo("default").Should().BeEquivalentTo("app");
 
         rootBuilder.DefinitionsCount.Should().Be(2);
-        
+
         await rootBuilder.Verify("ComplexDotNotationScenario_MixedStrategies");
     }
 
@@ -323,25 +323,29 @@ public class QueryBuilderMergingStrategyTests
     public async Task ComplexArguments_ShouldCompareRecursively()
     {
         // Arrange
-        var complexArgs1 = new Dictionary<string, object?> {
+        var complexArgs1 = new Dictionary<string, object?>
+        {
             ["filter"] = new { status = "active", metadata = new { priority = 1 } }
         };
-        var complexArgs2 = new Dictionary<string, object?> {
+        var complexArgs2 = new Dictionary<string, object?>
+        {
             ["filter"] = new { status = "active", metadata = new { priority = 1 } }
         };
-        var complexArgs3 = new Dictionary<string, object?> {
+        var complexArgs3 = new Dictionary<string, object?>
+        {
             ["filter"] = new { status = "active", metadata = new { priority = 2 } }
         };
-        var complexArgs4 = new Dictionary<string, object?> {
+        var complexArgs4 = new Dictionary<string, object?>
+        {
             ["filter"] = new { status = "active", metadata = new { priority = 3 } }
         };
 
         var rootBuilder = CreateDefaultBuilder("root", MergingStrategy.MergeByFieldPath)
             .AddField("users.profile", complexArgs1, ["id"]);
-    
+
         var child1 = CreateDefaultBuilder("child1")
             .AddField("users.profile", complexArgs2, ["name"]); // Should merge - same complex args
-    
+
         var child2 = CreateDefaultBuilder("child2")
             .AddField("users.profile", complexArgs3, ["email"]); // Should not merge - different nested value
 
@@ -352,7 +356,7 @@ public class QueryBuilderMergingStrategyTests
         rootBuilder.Include(child1);
         rootBuilder.Include(child2);
         rootBuilder.Include(child2Again);
-    
+
         // Assert
         rootBuilder.GetPathTo("root").Should().BeEquivalentTo("users");
         rootBuilder.GetPathTo("child1").Should().BeEquivalentTo("users");
@@ -370,16 +374,16 @@ public class QueryBuilderMergingStrategyTests
     {
         var args1 = new Dictionary<string, object?> { ["param"] = value1 };
         var args2 = new Dictionary<string, object?> { ["param"] = value2 };
-    
+
         var rootBuilder = CreateDefaultBuilder("root", MergingStrategy.MergeByFieldPath)
             .AddField("data", args1, ["field1"]);
-    
+
         var childBuilder = CreateDefaultBuilder("child")
             .AddField("data", args2, ["field2"]);
-    
+
         // Act
         rootBuilder.Include(childBuilder);
-    
+
         // Assert
         if (shouldMerge)
             rootBuilder.GetPathTo("child").Should().BeEquivalentTo("root");
@@ -431,16 +435,16 @@ public class QueryBuilderMergingStrategyTests
             rootBuilder.AddField("users", ["id"]);
         else
             rootBuilder.AddField("users", new Dictionary<string, object?>(), ["id"]);
-    
+
         var childBuilder = CreateDefaultBuilder("child");
         if (!useNull)
             childBuilder.AddField("users", ["name"]);
         else
             childBuilder.AddField("users", new Dictionary<string, object?>(), ["name"]);
-    
+
         // Act
         rootBuilder.Include(childBuilder);
-    
+
         // Assert
         rootBuilder.GetPathTo("root").Should().BeEquivalentTo("users");
         rootBuilder.GetPathTo("child").Should().BeEquivalentTo("users"); // Should merge - null == empty

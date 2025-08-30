@@ -1,0 +1,14 @@
+﻿query TestQuery{
+    user{
+        profile{
+            Metrics:realtime_metrics{
+                count
+                timestamp
+            }
+            Metrics_1:once_a_day_metrics{
+                date
+                total
+            }
+        }
+    }
+}

@@ -1,0 +1,11 @@
+﻿query ComplexQuery($size:Int){
+    parent{
+        child1{
+            grandchild1{
+                email
+                name
+            }
+            profilePicture(size:$size)
+        }
+    }
+}

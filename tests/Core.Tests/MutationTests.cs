@@ -36,7 +36,7 @@ public class MutationTests
         var mutation = new Mutation("name");
 
         // act
-        mutation.Select(new List<string> {"id", "name"});
+        mutation.Select(new List<string> { "id", "name" });
 
         // assert
         mutation.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });

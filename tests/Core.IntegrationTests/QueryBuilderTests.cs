@@ -30,9 +30,9 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         var query = QueryBuilder
             .CreateDefaultBuilder("getAllUsers")
             .AddField("users.name");
-        
+
         await query.Verify("getUsers");
-        
+
         // act
         var request = new GraphQLRequest
         {
@@ -47,7 +47,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
         users.Should().Contain(u => u.Name == "Laurel Gardner");
         users.Should().Contain(u => u.Name == "Winter Bryant");
     }
-        
+
     [Fact]
     public async Task Can_Get_Nested_Users()
     {
@@ -62,7 +62,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             }, ["name"]);
 
         await query.Verify("getNestedUsers");
-        
+
         // act
         var request = new GraphQLRequest
         {
@@ -88,9 +88,9 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             {
                 { "name", "Yoshi Lambert" }
             }, ["name"]);
-        
+
         await query.Verify("getUser");
-        
+
         // act
         var request = new GraphQLRequest
         {
@@ -115,9 +115,9 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             {
                 { "name", "Ezra Smith" }
             }, ["name"]);
-        
+
         await query.Verify("getNullUser");
-        
+
         // act
         var request = new GraphQLRequest
         {
@@ -147,7 +147,7 @@ public class QueryBuilderTests : IClassFixture<ApiFixture>
             }, ["name"]);
 
         await query.Verify("getVariableUser");
-        
+
         // act
         var request = new GraphQLRequest
         {

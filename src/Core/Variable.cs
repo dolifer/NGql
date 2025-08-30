@@ -1,4 +1,3 @@
-using System;
 using System.Text;
 
 namespace NGql.Core;
@@ -21,13 +20,19 @@ public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable
     public Variable(string name, string type)
     {
         if (string.IsNullOrWhiteSpace(name))
+        {
             throw new ArgumentException("Variable name cannot be null or whitespace.", nameof(name));
+        }
 
         if (!name.StartsWith('$'))
+        {
             throw new ArgumentException("Variable name must start with '$'.", nameof(name));
+        }
 
         if (string.IsNullOrWhiteSpace(type))
+        {
             throw new ArgumentException("Variable type cannot be null or whitespace.", nameof(type));
+        }
 
         Name = name;
         Type = type;
@@ -60,13 +65,13 @@ public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable
 
     public static bool operator ==(Variable left, Variable right) => left.Equals(right);
     public static bool operator !=(Variable left, Variable right) => !left.Equals(right);
-        
+
     public static bool operator <(Variable left, Variable right) => left.CompareTo(right) < 0;
     public static bool operator >(Variable left, Variable right) => left.CompareTo(right) > 0;
-        
+
     public static bool operator <=(Variable left, Variable right) => left.CompareTo(right) <= 0;
     public static bool operator >=(Variable left, Variable right) => left.CompareTo(right) >= 0;
-        
+
     public override bool Equals(object? obj) => CompareTo(obj) == 0;
 
     public bool Equals(Variable other) => CompareTo(other) == 0;

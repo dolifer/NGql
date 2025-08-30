@@ -38,7 +38,7 @@ public class QueryTests
 
         query.FieldsList.Should().BeEmpty();
         query.Arguments.Should().BeEmpty();
-            
+
         return query.Verify("emptyQuery");
     }
 
@@ -50,10 +50,10 @@ public class QueryTests
 
         // assert
         query.Alias.Should().Be("alias");
-            
+
         return query.Verify("emptyQuery");
     }
-        
+
     [Fact]
     public void Select_String_AddsToSelectList()
     {
@@ -65,14 +65,14 @@ public class QueryTests
 
         // assert
         query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
-            
+
         string queryText = query;
         queryText.Should().Be(@"query name{
     id
     name
 }");
     }
-        
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -86,10 +86,10 @@ public class QueryTests
 
         // assert
         query.FieldsList.Should().BeEmpty();
-            
+
         return query.Verify("emptyQuery");
     }
-        
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -103,10 +103,10 @@ public class QueryTests
 
         // assert
         query.FieldsList.Should().BeEmpty();
-            
+
         return query.Verify("emptyQuery");
     }
-        
+
     [Fact]
     public Task Select_Empty_Dictionary_ReturnsEmptyQuery()
     {
@@ -118,7 +118,7 @@ public class QueryTests
 
         // assert
         query.FieldsList.Should().BeEmpty();
-            
+
         return query.Verify("emptyQuery");
     }
 
@@ -129,11 +129,11 @@ public class QueryTests
         var query = new Query("name");
 
         // act
-        query.Select(new List<string> {"id", "name"});
+        query.Select(new List<string> { "id", "name" });
 
         // assert
         query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
-            
+
         return query.Verify("idNameQuery");
     }
 
@@ -146,11 +146,11 @@ public class QueryTests
         // act
         query
             .Select("id")
-            .Select(new List<string> { "name"});
+            .Select(new List<string> { "name" });
 
         // assert
         query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
-            
+
         return query.Verify("idNameQuery");
     }
 
@@ -272,7 +272,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void Include_AddsFieldsAndArgumentsFromDictionary()
     {
@@ -304,19 +304,19 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     class ChildClass
     {
         [DataMember(Name = "age")]
         public int Prop1 { get; set; }
-            
+
         [JsonPropertyName("name")]
         public string Prop2 { get; set; }
-            
+
         [JsonPropertyName("Prop3")]
         public string Prop3 { get; set; }
     }
-        
+
     [Fact]
     public void Include_AddsFieldsAndArgumentsFromObjectUsesAttributes()
     {
@@ -337,7 +337,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void Include_AddsFieldsAndArgumentsFromTypeUsesAttributes()
     {
@@ -359,7 +359,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void Include_AddsFieldsAndArgumentsFromTypeUsesAttributesWithAlias()
     {
@@ -381,7 +381,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -406,7 +406,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void IncludeAtPath_AddsToQueryAtGivenPath()
     {
@@ -434,7 +434,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void IncludeAtPath_AddsToQueryAtGivenPathAndAlias()
     {
@@ -462,7 +462,7 @@ public class QueryTests
     prop3
 }");
     }
-        
+
     [Fact]
     public void IncludeAtPath_AddsToQueryAtGivenPathAndAliases()
     {

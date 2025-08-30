@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using NGql.Core.Builders;
 
@@ -26,13 +24,25 @@ public sealed record QueryDefinition(string Name, string Description = "")
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public SortedDictionary<string, FieldDefinition> Fields
+    {
+        get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
+        set => _fields = value;
+    }
+
+    internal SortedDictionary<string, FieldDefinition>? _fields;
 
     /// <summary>
     ///     The collection of variables related to fields or arguments.
     /// </summary>
     [JsonIgnore]
-    public SortedSet<Variable> Variables { get; internal set; } = new();
+    public SortedSet<Variable> Variables
+    {
+        get => _variables ??= new();
+        internal set => _variables = value;
+    }
+
+    internal SortedSet<Variable>? _variables;
 
     /// <summary>
     /// Metadata associated with the query definition.
@@ -41,10 +51,18 @@ public sealed record QueryDefinition(string Name, string Description = "")
     /// Not used during query text generation but can be useful for documentation or introspection purposes.
     /// </summary>
     [JsonPropertyName("metadata")]
-    public Dictionary<string, object?>? Metadata { get; set; } = [];
+    public Dictionary<string, object?> Metadata
+    {
+        get => _metadata ??= [];
+        set => _metadata = value;
+    }
+
+    internal Dictionary<string, object?>? _metadata;
+
+    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => new QueryTextBuilder().Build(this);
+    public override string ToString() => _builderCache.Value!.Build(this);
 
     public static implicit operator string(QueryDefinition query) => query.ToString();
 
@@ -52,9 +70,4 @@ public sealed record QueryDefinition(string Name, string Description = "")
     /// Merging strategy for this query definition.
     /// </summary>
     public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
-
-    /// <summary>
-    /// Specific merging rules for field paths. Key is field path, value is the target merge path.
-    /// </summary>
-    public Dictionary<string, string> MergingRules { get; set; } = new();
 }

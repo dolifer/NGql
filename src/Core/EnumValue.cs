@@ -1,5 +1,3 @@
-using System;
-
 namespace NGql.Core;
 
 public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatable<EnumValue>
@@ -17,11 +15,13 @@ public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatab
             Enum enumValue => enumValue.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value)),
             _ => throw new ArgumentException($"Invalid enum value type: {value.GetType().Name}", nameof(value))
         };
-        
+
         Value = value.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value));
-        
+
         if (value is null)
+        {
             throw new ArgumentException("Enum value cannot be null or whitespace.", nameof(value));
+        }
     }
 
     public override string ToString() => Value;

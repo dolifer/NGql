@@ -1,7 +1,4 @@
-using System;
 using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 using NGql.Core.Abstractions;
 
@@ -61,7 +58,7 @@ internal static class QueryBlockObjectExtensions
         {
             var dotIndex = pathSpan.IndexOf('.');
             ReadOnlySpan<char> currentSegment;
-            
+
             if (dotIndex == -1)
             {
                 // Last segment

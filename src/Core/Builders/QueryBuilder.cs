@@ -1,9 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
+using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
-using NGql.Core.Features;
 using NGql.Core.Extensions;
+using NGql.Core.Features;
+using NGql.Core.Pooling;
 
 namespace NGql.Core.Builders;
 
@@ -30,8 +29,7 @@ public sealed class QueryBuilder
     private QueryBuilder(QueryDefinition queryDefinition)
     {
         _definition = queryDefinition;
-        // Initialize the QueryMap to track the root query's own path
-        _queryMap.UpdateRootMapping(_definition);
+        // UpdateRootMapping deferred until ToString() - no fields exist yet
     }
 
     /// <summary>
@@ -80,7 +78,20 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, Helpers.NormalizeArguments(arguments), [], Helpers.NormalizeMetadata(metadata));
+    {
+        // FAST PATH: Most common case - no arguments, no metadata
+        if (arguments is null && metadata is null)
+        {
+            return AddFieldFastPath(field);
+        }
+        
+        if (arguments?.Count > 0)
+        {
+            using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
+            return AddFieldCore(field, pooled.Dictionary, null, metadata);
+        }
+        return AddFieldCore(field, null, null, metadata);
+    }
 
     /// <summary>
     ///     Adds a field to the query.
@@ -91,7 +102,7 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string[]? subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, new SortedDictionary<string, object?>(), subFields, Helpers.NormalizeMetadata(metadata));
+        => AddFieldCore(field, null, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -102,32 +113,20 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldDefinitionImpl(field, new SortedDictionary<string, object?>(), subFields, Helpers.NormalizeMetadata(metadata));
+        => AddFieldCore(field, null, subFields, metadata);
 
     /// <summary>
-    ///     Adds a field to the query.
+    ///     Adds a field to the query using a field builder.
     /// </summary>
     /// <param name="field">Field name or path.</param>
     /// <param name="fieldBuilder">The field builder action.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
     public QueryBuilder AddField(string field, Action<FieldBuilder> fieldBuilder)
     {
-        if (string.IsNullOrWhiteSpace(field))
-        {
-            throw new ArgumentException("Field cannot be null or empty", nameof(field));
-        }
-        
-        var builder = FieldBuilder.Create(Definition.Fields, field, "object");
-
-        fieldBuilder.Invoke(builder);
-
-        var updatedField = builder.Build();
-
-        Helpers.ApplyFieldChanges(Definition.Fields, updatedField);
-
-        _queryMap.UpdateRootMapping(_definition);
-        return this;
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+        return AddFieldBuilderCore(field, Constants.DefaultFieldType, null, null, fieldBuilder);
     }
 
     /// <summary>
@@ -140,7 +139,10 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldImpl(field, Helpers.NormalizeArguments(arguments), subFields, Helpers.NormalizeMetadata(metadata));
+    {
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
+        return AddFieldCore(field, pooled.Dictionary, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
+    }
 
     /// <summary>
     ///     Adds a field to the query.
@@ -152,70 +154,190 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldDefinitionImpl(field, Helpers.NormalizeArguments(arguments), subFields, Helpers.NormalizeMetadata(metadata));
-
-    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
-
-    #region Private Implementation Methods
+    {
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
+        return AddFieldCore(field, pooled.Dictionary, subFields, metadata);
+    }
 
     /// <summary>
-    /// Core implementation for adding field definitions with optimized parameter passing.
+    ///     Adds a field with a specific type to the query.
     /// </summary>
     /// <param name="field">Field name or path</param>
-    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
-    /// <param name="subFields">Optional array of sub-field definitions</param>
-    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
-    /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldDefinitionImpl(string field, in SortedDictionary<string, object?> arguments, FieldDefinition[]? subFields, in Dictionary<string, object?> metadata)
+    /// <param name="type">The field type</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    public QueryBuilder AddField(string field, string type)
+        => AddFieldCore(field, null, null, null);
+
+    /// <summary>
+    ///     Adds a field with a specific type to the query.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="type">The field type</param>
+    /// <param name="metadata">The field metadata</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata)
+        => AddFieldCore(field, null, null, metadata);
+
+    /// <summary>
+    ///     Adds a field to the query using a field builder with arguments.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">The arguments for the field</param>
+    /// <param name="metadata">The field metadata</param>
+    /// <param name="fieldBuilder">The field builder action</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
+        return AddFieldBuilderCore(field, Constants.DefaultFieldType, pooled.Dictionary, metadata, fieldBuilder);
+    }
+
+    /// <summary>
+    ///     Adds a field to the query using a field builder with a specific type.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="type">The field type</param>
+    /// <param name="metadata">The field metadata</param>
+    /// <param name="fieldBuilder">The field builder action</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
+    public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
+        => AddFieldBuilderCore(field, type, null, metadata, fieldBuilder);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private QueryBuilder AddFieldFastPath(string field)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
 
-        // Extract variables from arguments for the query definition
-        Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        // ULTRA FAST PATH: Direct field creation for simple cases
+        var fieldSpan = field.AsSpan();
+        if (fieldSpan.IsSimpleField())
+        {
+            // Bypass FieldBuilder.Create for maximum performance
+            if (!Definition.Fields.ContainsKey(field))
+            {
+                Definition.Fields[field] = new FieldDefinition(field, Constants.DefaultFieldType)
+                {
+                    Path = field
+                };
+            }
+        }
+        else
+        {
+            // Fallback to standard processing for complex fields
+            FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+        }
+        
+        // Defer UpdateRootMapping - will be called when query is built/used
+        return this;
+    }
 
-        // Determine field type based on presence of subfields
-        var type = subFields?.Length > 0
-            ? Constants.ObjectFieldType // If subfields are present, treat as an object
-            : Constants.DefaultFieldType; // Otherwise, use default type
+    /// <summary>
+    /// Core implementation for adding fields using FieldBuilder pattern.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="fieldType">The field type</param>
+    /// <param name="arguments">Optional arguments dictionary</param>
+    /// <param name="metadata">Optional metadata dictionary</param>
+    /// <param name="fieldBuilder">The field builder action</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldBuilderCore(string field, string fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            throw new ArgumentException("Field cannot be null or empty", nameof(field));
+        }
+
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+
+        // FAST PATH: Only extract variables if arguments has content
+        if (arguments?.Count > 0)
+        {
+            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        }
+
+        // Use the provided field type
+        var builder = FieldBuilder.Create(Definition.Fields, field, fieldType, arguments, metadata);
+        fieldBuilder(builder);
+
+        _queryMap.UpdateRootMapping(_definition);
+        return this;
+    }
+
+    public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
+
+    /// <summary>
+    /// Core implementation for adding fields with optional arguments.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">Optional arguments dictionary</param>
+    /// <param name="subFields">Optional array of sub-field definitions</param>
+    /// <param name="metadata">Optional metadata dictionary</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
+    {
+        if (arguments == null)
+        {
+            var emptyArgs = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            return AddFieldCore(field, in emptyArgs, subFields, metadata);
+        }
+        return AddFieldCore(field, in arguments, subFields, metadata);
+    }
+
+    /// <summary>
+    /// Core implementation for adding fields with unified parameter handling.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
+    /// <param name="subFields">Optional array of sub-field definitions</param>
+    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldCore(string field, in SortedDictionary<string, object?> arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            throw new ArgumentException("Field cannot be null or empty", nameof(field));
+        }
+
+        // FAST PATH: Check if subFields is null/empty early to avoid unnecessary work
+        var hasSubFields = subFields?.Any() == true;
+        
+        // FAST PATH: Only extract variables if arguments has content
+        if (arguments?.Count > 0)
+        {
+            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        }
+
+        // Determine field type based on presence of subfields and existing field type
+        var fieldSpan = field.AsSpan();
+        var type = DetermineFieldTypeOptimized(fieldSpan, hasSubFields);
 
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
-        // Early return if no subfields to process
-        if (subFields is null || subFields.Length == 0)
+        // FAST PATH: Early return if no subfields to process
+        if (!hasSubFields)
         {
             _queryMap.UpdateRootMapping(_definition);
             return this;
         }
 
         // Add all subfields to the builder
-        foreach (var subField in subFields)
+        foreach (var subField in subFields!)
         {
             builder.AddField(subField);
         }
 
         _queryMap.UpdateRootMapping(_definition);
         return this;
-    }
-
-    /// <summary>
-    /// Implementation for adding fields with string array subfields, converting them to FieldDefinitions.
-    /// </summary>
-    /// <param name="field">Field name or path</param>
-    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
-    /// <param name="subFields">Optional array of subfield names</param>
-    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
-    /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldImpl(string field, in SortedDictionary<string, object?> arguments, string[]? subFields, in Dictionary<string, object?> metadata)
-    {
-        // Convert string subfields to FieldDefinition objects
-        var subFieldDefinitions = subFields?
-            .Select(subField => new FieldDefinition(subField))
-            .ToArray();
-
-        return AddFieldDefinitionImpl(field, in arguments, subFieldDefinitions, in metadata);
     }
 
     /// <summary>
@@ -229,12 +351,9 @@ public sealed class QueryBuilder
         return this;
     }
 
-    #endregion
-
     public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
     {
-        var existingMetadata = Helpers.NormalizeMetadata(_definition.Metadata);
-        var mergedMetadata = Helpers.MergeMetadata(existingMetadata, metadata);
+        var mergedMetadata = Helpers.MergeMetadata(_definition._metadata, metadata);
         _definition.Metadata = mergedMetadata;
 
         return this;
@@ -256,7 +375,77 @@ public sealed class QueryBuilder
     internal int DefinitionsCount => Definition.Fields.Count;
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => Definition.ToString();
+    public override string ToString()
+    {
+        _queryMap.UpdateRootMapping(_definition);
+        return Definition.ToString();
+    }
 
     public static implicit operator string(QueryBuilder query) => query.ToString();
+
+
+
+    /// <summary>
+    /// Optimized version using spans to reduce allocations
+    /// </summary>
+    private string DetermineFieldTypeOptimized(ReadOnlySpan<char> fieldSpan, bool hasSubFields)
+    {
+        // ULTRA FAST PATH: No subfields means default type
+        if (!hasSubFields)
+        {
+            return Constants.DefaultFieldType;
+        }
+
+        // ULTRA FAST PATH: Classify field characteristics once
+        var (hasSpaces, _, _) = fieldSpan.ClassifyFieldFast();
+        
+        // FAST PATH: No space means no explicit type, skip parsing
+        if (!hasSpaces)
+        {
+            return Constants.ObjectFieldType;
+        }
+
+        // OPTIMIZED PATH: Parse type from field path to check for explicit type
+        Helpers.ParseFieldTypeFromPath(fieldSpan, Constants.DefaultFieldTypeSpan, out var parsedType);
+        var hasExplicitType = !parsedType.EqualsIgnoreCase(Constants.DefaultFieldTypeSpan);
+
+        // FAST PATH: Use cached field lookup for better performance
+        var existingField = FindExistingFieldCached(fieldSpan);
+
+        // Priority 1: Preserve existing explicit types (non-default, non-object)
+        if (existingField?._type != null &&
+            !string.Equals(existingField._type, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(existingField._type, Constants.ObjectFieldType, StringComparison.OrdinalIgnoreCase))
+        {
+            return existingField._type;
+        }
+
+        // Priority 2: Use newly specified explicit type with interning
+        if (hasExplicitType)
+        {
+            return Caching.TypeCache.InternType(parsedType);
+        }
+
+        // Priority 3: Preserve existing object type
+        if (existingField?._type == Constants.ObjectFieldType)
+        {
+            return Constants.ObjectFieldType;
+        }
+
+        // Priority 4: Default to object type for subfields
+        return Constants.ObjectFieldType;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private FieldDefinition? FindExistingFieldCached(ReadOnlySpan<char> fieldSpan)
+    {
+        // ULTRA FAST PATH: Simple field lookup
+        if (fieldSpan.IsSimpleField())
+        {
+            return Definition.Fields.GetValueOrDefault(fieldSpan.ToString());
+        }
+
+        // FAST PATH: Use optimized path traversal
+        return Helpers.FindExistingFieldByPath(Definition.Fields, fieldSpan);
+    }
 }

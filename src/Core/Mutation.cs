@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using NGql.Core.Abstractions;
+﻿using NGql.Core.Abstractions;
 
 namespace NGql.Core;
 

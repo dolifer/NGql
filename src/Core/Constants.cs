@@ -24,4 +24,24 @@ public static class Constants
     /// The marker for nullable types.
     /// </summary>
     public const string NullableTypeMarker = "?";
+
+    /// <summary>
+    /// The marker for array types as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> ArrayTypeMarkerSpan => ArrayTypeMarker.AsSpan();
+
+    /// <summary>
+    /// The default field type as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> DefaultFieldTypeSpan => DefaultFieldType.AsSpan();
+
+    /// <summary>
+    /// The object field type as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> ObjectFieldTypeSpan => ObjectFieldType.AsSpan();
+
+    /// <summary>
+    /// The marker for nullable types as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> NullableTypeMarkerSpan => NullableTypeMarker.AsSpan();
 }

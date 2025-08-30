@@ -1,7 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Features;
 
@@ -60,7 +58,7 @@ public sealed class QueryMap
         if (definition.Fields.Count > 0)
         {
             // Keep existing root mapping if it exists and points to a valid field
-            if (_mappings.TryGetValue(definition.Name, out var existingPath) && 
+            if (_mappings.TryGetValue(definition.Name, out var existingPath) &&
                 definition.Fields.ContainsKey(existingPath))
             {
                 return; // Keep the existing valid mapping
@@ -68,7 +66,7 @@ public sealed class QueryMap
 
             // If we don't have a valid mapping, use the first field
             var firstField = definition.Fields.Values.First();
-            var fieldKey = !string.IsNullOrEmpty(firstField.Alias) ? firstField.Alias : firstField.Name;
+            var fieldKey = firstField.GetEffectiveName();
             _mappings[definition.Name] = fieldKey;
         }
     }
@@ -82,79 +80,62 @@ public sealed class QueryMap
     /// <returns>An array of path segments to reach the specified node.</returns>
     public string[] GetPathTo(string queryName, string? nodePath, QueryDefinition queryDefinition)
     {
-        // Get the root path for the query from QueryMap
         var rootPath = GetMappedPath(queryName);
-        
-        // If the query doesn't exist in our map, return empty array
         if (string.IsNullOrEmpty(rootPath))
         {
-            return [];
+            return Array.Empty<string>();
         }
 
-        // If no node path specified, return just the root
         if (string.IsNullOrEmpty(nodePath))
         {
             return [rootPath];
         }
-        
-        // Find the root field - first try by the mapped path (which might be an alias),
-        // then try to find by matching alias or name
-        FieldDefinition? rootField = null;
-        
-        // Try direct lookup first (in case rootPath is the actual field name)
-        if (queryDefinition.Fields.TryGetValue(rootPath, out rootField))
+
+        var rootField = FindRootField(queryDefinition, rootPath);
+        if (rootField == null)
         {
-            // Found it directly
+            return [rootPath];
         }
-        else
-        {
-            // rootPath might be an alias, so search for a field with that alias
-            rootField = queryDefinition.Fields.Values.FirstOrDefault(f => 
-                string.Equals(f.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(f.Name, rootPath, StringComparison.OrdinalIgnoreCase));
-        }
-        
-        if (rootField != null)
-        {
-            // Use Span to avoid string allocation during path splitting
-            var nodePathSpan = nodePath.AsSpan();
-            ReadOnlySpan<char> targetNodeSpan;
-            
-            // Find the last segment (target node) using Span operations
-            var lastDotIndex = nodePathSpan.LastIndexOf('.');
-            if (lastDotIndex == -1)
-            {
-                targetNodeSpan = nodePathSpan;
-            }
-            else
-            {
-                targetNodeSpan = nodePathSpan[(lastDotIndex + 1)..];
-            }
-            
-            // Convert to string only when needed for the search
-            var targetNode = targetNodeSpan.ToString();
-            
-            // Use the alias if available, otherwise use the field name for the initial path
-            var initialPath = !string.IsNullOrEmpty(rootField.Alias) ? rootField.Alias : rootField.Name;
-            
-            // Search for the target node and return the path to its parent
-            var path = FindPathToNode(rootField, targetNode, [initialPath]);
-            if (path is { Length: > 1 })
-            {
-                // Return path excluding the target node itself (path to parent)
-                return path.Take(path.Length - 1).ToArray();
-            }
-        }
-        
-        // Fallback: return the alias if available, otherwise the mapped path
-        if (rootField != null && !string.IsNullOrEmpty(rootField.Alias))
-        {
-            return [rootField.Alias];
-        }
-        
-        return [rootPath];
+
+        return BuildPathToNode(rootField, nodePath);
     }
-    
+
+    private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)
+    {
+        if (queryDefinition.Fields.TryGetValue(rootPath, out var field))
+        {
+            return field;
+        }
+
+        return queryDefinition.Fields.Values.FirstOrDefault(f =>
+            string.Equals(f.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(f.Name, rootPath, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string[] BuildPathToNode(FieldDefinition rootField, string nodePath)
+    {
+        var targetNode = GetTargetNodeName(nodePath);
+        var initialPath = rootField.GetEffectiveName();
+
+        var path = FindPathToNode(rootField, targetNode, [initialPath]);
+        if (path is { Length: > 1 })
+        {
+            return path.Take(path.Length - 1).ToArray();
+        }
+
+        return [rootField.GetEffectiveName()];
+    }
+
+    private static string GetTargetNodeName(string nodePath)
+    {
+        var nodePathSpan = nodePath.AsSpan();
+        var lastDotIndex = nodePathSpan.LastIndexOf('.');
+
+        return lastDotIndex == -1
+            ? nodePathSpan.ToString()
+            : nodePathSpan[(lastDotIndex + 1)..].ToString();
+    }
+
     /// <summary>
     /// Recursively searches for a target node and returns the full path to it.
     /// </summary>
@@ -167,12 +148,12 @@ public sealed class QueryMap
         // Check if any direct child matches the target node
         foreach (var childField in field.Fields.Values)
         {
-            var fieldIdentifier = !string.IsNullOrEmpty(childField.Alias) ? childField.Alias : childField.Name;
-            
+            var fieldIdentifier = childField.GetEffectiveName();
+
             // Check if the target matches either the field name or the alias
             var isMatch = childField.Name.Equals(targetNode, StringComparison.OrdinalIgnoreCase) ||
                          (!string.IsNullOrEmpty(childField.Alias) && childField.Alias.Equals(targetNode, StringComparison.OrdinalIgnoreCase));
-            
+
             if (isMatch)
             {
                 // Found the target node, return the path including the target

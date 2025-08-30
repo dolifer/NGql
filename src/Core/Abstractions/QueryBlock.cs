@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections;
 using NGql.Core.Builders;
 using NGql.Core.Extensions;
 
@@ -120,7 +117,7 @@ public sealed class QueryBlock
 
         _fieldsList = new List<object>();
         _variables = variables is null ? [] : [.. variables.DistinctBy(x => x.Name)];
-        _arguments = new SortedDictionary<string, object>();
+        _arguments = new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -155,7 +152,7 @@ public sealed class QueryBlock
             var insertIndex = _fieldsList.OfType<string>()
                 .TakeWhile(existing => string.Compare(existing, field, StringComparison.OrdinalIgnoreCase) < 0)
                 .Count();
-           
+
             _fieldsList.Insert(insertIndex, field);
             return;
         }
@@ -171,7 +168,7 @@ public sealed class QueryBlock
                     _ => x.ToString()
                 })
                 .ToList();
-            
+
             foreach (var item in sortedItems)
             {
                 HandleAddField(item);
@@ -192,7 +189,7 @@ public sealed class QueryBlock
     {
         Helpers.ExtractVariablesFromValue(value, _variables);
         var sortedValue = Helpers.SortArgumentValue(value);
-        
-        _arguments[key] = sortedValue;
+
+        _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 }

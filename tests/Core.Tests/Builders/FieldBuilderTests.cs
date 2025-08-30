@@ -152,22 +152,24 @@ public class FieldBuilderTests
     public void AddField_Sets_Specified_Type_When_Type_Is_Provided(string typeValue)
     {
         // Arrange
+        var subFields = new[] { "a", "b", "c" };
         var fieldBuilder = FieldBuilder.Create([], "user", "User");
 
         // Act
         var result = fieldBuilder
-            .AddField("field1", typeValue) // Explicitly setting type
-            .AddField($"{typeValue} field2") // Explicitly setting type
+            .AddField("field1", typeValue, subFields: subFields) // Explicitly setting type
+            .AddField("field2", typeValue, subFields: []) // Explicitly setting type, no subfields
+            .AddField($"{typeValue} field3", subFields: subFields) // Type is set from the name
+            .AddField($"{typeValue} field4", subFields: []) // Type is set from the name, no subfields
             .Build();
 
         // Assert
-        result.Fields["field1"].Should().NotBeNull();
-        result.Fields["field1"].Name.Should().Be("field1");
-        result.Fields["field1"].Type.Should().Be(typeValue); // Explicit type verification
-        
-        result.Fields["field2"].Should().NotBeNull();
-        result.Fields["field2"].Name.Should().Be("field2");
-        result.Fields["field2"].Type.Should().Be(typeValue); // Explicit type verification
+        foreach (var field in new[] { "field1", "field2", "field3", "field4" })
+        {
+            result.Fields[field].Should().NotBeNull();
+            result.Fields[field].Name.Should().Be(field);
+            result.Fields[field].Type.Should().Be(typeValue); // Explicit type verification
+        }
     }
 
     [Fact]
@@ -514,10 +516,10 @@ public class FieldBuilderTests
     {
         // This test verifies the error case, though in practice the private constructor
         // should prevent this scenario. The test demonstrates expected behavior.
-        
+
         // Arrange
         var fieldBuilder = FieldBuilder.Create([], "test");
-        
+
         // Act & Assert - Build should work fine with properly created builder
         var result = fieldBuilder.Build();
         result.Should().NotBeNull();
@@ -638,7 +640,7 @@ public class FieldBuilderTests
         result.Metadata.Should().NotBeNull().And.HaveCount(3);
         result.Metadata!["version"].Should().Be("1.0");
         result.Metadata!["author"].Should().Be("Jane Doe");
-        
+
         var configMetadata = result.Metadata!["config"] as Dictionary<string, object?>;
         configMetadata.Should().NotBeNull().And.HaveCount(3);
         configMetadata!["enabled"].Should().Be(true); // Preserved from initial
@@ -772,22 +774,22 @@ public class FieldBuilderTests
         // Assert
         result.Should().NotBeNull();
         result.Metadata.Should().NotBeNull().And.HaveCount(2);
-        
+
         // Check that keys exist (case insensitive)
         var hasDescription = result.Metadata!.Keys.Any(k => string.Equals(k, "description", StringComparison.OrdinalIgnoreCase));
         var hasVersion = result.Metadata!.Keys.Any(k => string.Equals(k, "version", StringComparison.OrdinalIgnoreCase));
-        
+
         hasDescription.Should().BeTrue();
         hasVersion.Should().BeTrue();
-        
+
         // Values should be updated
-        var descriptionValue = result.Metadata!.Where(kvp => 
+        var descriptionValue = result.Metadata!.Where(kvp =>
             string.Equals(kvp.Key, "description", StringComparison.OrdinalIgnoreCase))
             .Select(kvp => kvp.Value).FirstOrDefault();
-        var versionValue = result.Metadata!.Where(kvp => 
+        var versionValue = result.Metadata!.Where(kvp =>
             string.Equals(kvp.Key, "version", StringComparison.OrdinalIgnoreCase))
             .Select(kvp => kvp.Value).FirstOrDefault();
-            
+
         descriptionValue.Should().Be("Updated description");
         versionValue.Should().Be("2.0");
     }
@@ -813,5 +815,173 @@ public class FieldBuilderTests
         result.Metadata!["key1"].Should().Be("value1");
         result.Metadata!["key2"].Should().Be("value2");
         result.Metadata!["key3"].Should().Be("value3");
+    }
+
+    [Fact]
+    public void AddField_With_Inline_Array_Type_And_SubFields_Should_Preserve_Array_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - This should preserve the [] array type even with subFields
+        var result = fieldBuilder
+            .AddField("[] items", ["id", "name"])
+            .Build();
+
+        // Assert
+        var itemsField = result.Fields["items"];
+        itemsField.Type.Should().Be("[]"); // Should be array type, not ObjectFieldType
+    }
+
+    [Fact]
+    public void AddField_With_Inline_Array_Type_And_Arguments_Should_Preserve_Array_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var args = new SortedDictionary<string, object?> { { "first", 10 } };
+
+        // Act - This should preserve the [] array type even with arguments
+        var result = fieldBuilder
+            .AddField("[] items", args)
+            .Build();
+
+        // Assert
+        var itemsField = result.Fields["items"];
+        itemsField.Type.Should().Be("[]"); // Should be array type, not DefaultFieldType
+    }
+
+    [Fact]
+    public void AddField_With_Inline_Type_And_Explicit_Type_Should_Use_Inline_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - Inline type should override explicit type parameter
+        var result = fieldBuilder
+            .AddField("String name", "Int") // Inline "String" should win over "Int"
+            .Build();
+
+        // Assert
+        var nameField = result.Fields["name"];
+        nameField.Type.Should().Be("String"); // Should be inline type, not explicit type
+    }
+
+    [Fact]
+    public void AddField_With_Array_Type_And_Action_Should_Preserve_Array_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - Array type should be preserved even with Action
+        var result = fieldBuilder
+            .AddField("[] items", builder =>
+            {
+                builder.AddField("id")
+                       .AddField("name");
+            })
+            .Build();
+
+        // Assert
+        var itemsField = result.Fields["items"];
+        itemsField.Type.Should().Be("[]"); // Should preserve array type
+        itemsField.Fields.Should().ContainKeys("id", "name"); // Should have nested fields from action
+    }
+
+    [Fact]
+    public void AddField_With_Custom_Array_Type_And_Action_Should_Preserve_Custom_Array_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - Custom array type should be preserved even with Action
+        var result = fieldBuilder
+            .AddField("User[] users", builder =>
+            {
+                builder.AddField("id", "Int")
+                       .AddField("name", "String")
+                       .AddField("email", "String");
+            })
+            .Build();
+
+        // Assert
+        var usersField = result.Fields["users"];
+        usersField.Type.Should().Be("User[]"); // Should preserve custom array type
+        usersField.Fields.Should().ContainKeys("id", "name", "email"); // Should have nested fields from action
+        usersField.Fields["id"].Type.Should().Be("Int");
+        usersField.Fields["name"].Type.Should().Be("String");
+        usersField.Fields["email"].Type.Should().Be("String");
+    }
+
+    [Fact]
+    public void AddField_Type_Overwrite_Bug_Test()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - This could potentially cause a type overwrite bug
+        var result = fieldBuilder
+            .AddField("User[] items")  // First: Create array field
+            .AddField("String items")  // Second: Try to overwrite with different type
+            .Build();
+
+        // Assert - Array type should be preserved, not overwritten
+        var itemsField = result.Fields["items"];
+        itemsField.Type.Should().Be("User[]"); // Should preserve original array type, not overwrite with "String"
+    }
+
+    [Fact]
+    public void AddField_Array_State_Lost_Bug_Test()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - This could potentially cause array state to be lost
+        var result = fieldBuilder
+            .AddField("[] items")      // First: Create generic array field
+            .AddField("items.id")      // Second: Add nested field (could lose array state)
+            .AddField("String items")  // Third: Try to set explicit type
+            .Build();
+
+        // Assert - Array type should be preserved
+        var itemsField = result.Fields["items"];
+        itemsField.Type.Should().Be("[]"); // Should preserve array marker, not convert to "String"
+        itemsField.IsArray.Should().BeTrue(); // Array state should not be lost
+        itemsField.Fields.Should().ContainKey("id"); // Should still have nested fields
+    }
+
+    [Fact]
+    public void AddField_With_SubFields_Should_Not_Overwrite_Explicit_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - Add field with explicit type and subfields
+        var result = fieldBuilder
+            .AddField("String user", subFields: ["nested", "field"])
+            .Build();
+
+        // Assert - Explicit type should be preserved despite subfields presence
+        var userField = result.Fields["user"];
+        userField.Type.Should().Be("String"); // Should NOT be overwritten to "object"
+        userField.Fields.Should().ContainKeys("nested", "field"); // The subfields should be directly under user
+    }
+
+    [Fact]
+    public void AddField_SubFields_Added_Later_Should_Not_Change_Explicit_Type()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+
+        // Act - First set explicit type, then add subfields later
+        var result = fieldBuilder
+            .AddField("CustomType user")
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .Build();
+
+        // Assert - Original explicit type should be preserved
+        var userField = result.Fields["user"];
+        userField.Type.Should().Be("CustomType"); // Should NOT drift to "object"
+        userField.Fields.Should().ContainKey("profile");
     }
 }
