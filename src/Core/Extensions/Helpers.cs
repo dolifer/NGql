@@ -8,133 +8,6 @@ namespace NGql.Core.Extensions;
 
 internal static class Helpers
 {
-    /// <summary>
-    /// Parses field name and alias from a span for better performance
-    /// </summary>
-    internal static (string name, string? alias) GetFieldNameAndAliasSpan(ReadOnlySpan<char> fieldName)
-    {
-        // Match the original behavior exactly: split on ':' and only handle exactly 2 parts
-        var fieldString = fieldName.ToString();
-        var fieldNameParts = fieldString.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : fieldString;
-        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
-
-        return (namePart, alias);
-    }
-
-    /// <summary>
-    /// Builds path string from parent path and current segments using spans
-    /// </summary>
-    internal static string BuildPathString(ReadOnlySpan<char> parentPath, ReadOnlySpan<char> currentSegments)
-    {
-        if (parentPath.IsEmpty)
-            return currentSegments.ToString();
-        
-        if (currentSegments.IsEmpty)
-            return parentPath.ToString();
-            
-        // Use stack allocation for small paths
-        var totalLength = parentPath.Length + 1 + currentSegments.Length;
-        Span<char> buffer = totalLength <= 256 ? stackalloc char[totalLength] : new char[totalLength];
-        
-        var builder = new SpanPathBuilder(buffer);
-        builder.Append(parentPath);
-        builder.Append(currentSegments);
-        
-        return builder.ToString();
-    }
-
-    /// <summary>
-    /// Parses field type and name from a span using ref struct to avoid allocations
-    /// </summary>
-    internal static SpanFieldInfo ParseFieldTypeAndNameSpan(ReadOnlySpan<char> field)
-    {
-        var spaceIndex = field.IndexOf(' ');
-        if (spaceIndex == -1)
-        {
-            return new SpanFieldInfo(Constants.DefaultFieldTypeSpan, field);
-        }
-
-        return new SpanFieldInfo(field[..spaceIndex], field[(spaceIndex + 1)..]);
-    }
-
-    /// <summary>
-    /// Legacy method for compatibility - converts spans to strings
-    /// </summary>
-    internal static (string fieldType, string fieldName) ParseFieldTypeAndNameSpan_Legacy(ReadOnlySpan<char> field)
-    {
-        var spaceIndex = field.IndexOf(' ');
-        if (spaceIndex == -1)
-        {
-            return (Constants.DefaultFieldType, field.ToString());
-        }
-
-        var fieldType = field[..spaceIndex].ToString();
-        var fieldName = field[(spaceIndex + 1)..].ToString();
-        
-        return (fieldType, fieldName);
-    }
-
-    /// <summary>
-    /// Ref struct for span-based field name and alias parsing to avoid allocations
-    /// </summary>
-    internal ref struct FieldNameAliasPair
-    {
-        public ReadOnlySpan<char> Name;
-        public ReadOnlySpan<char> Alias;
-        public bool HasAlias;
-
-        public FieldNameAliasPair(ReadOnlySpan<char> name, ReadOnlySpan<char> alias, bool hasAlias)
-        {
-            Name = name;
-            Alias = alias;
-            HasAlias = hasAlias;
-        }
-    }
-
-    /// <summary>
-    /// Parses field name and alias from a span returning spans for zero allocation
-    /// </summary>
-    internal static FieldNameAliasPair GetFieldNameAndAliasSpanOptimized(ReadOnlySpan<char> fieldName)
-    {
-        // Match original behavior: use string split to handle edge cases correctly
-        var fieldString = fieldName.ToString();
-        var fieldNameParts = fieldString.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        
-        if (fieldNameParts.Length == 2)
-        {
-            var alias = fieldNameParts[0].AsSpan();
-            var name = fieldNameParts[1].AsSpan();
-            return new FieldNameAliasPair(name, alias, true);
-        }
-        
-        return new FieldNameAliasPair(fieldName, ReadOnlySpan<char>.Empty, false);
-    }
-
-    /// <summary>
-    /// Creates a new SortedDictionary with case-insensitive string keys for field definitions.
-    /// </summary>
-    internal static SortedDictionary<string, FieldDefinition> CreateFieldDictionary()
-        => new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Creates a new SortedDictionary with case-insensitive string keys for field definitions, initialized with existing data.
-    /// </summary>
-    internal static SortedDictionary<string, FieldDefinition> CreateFieldDictionary(IDictionary<string, FieldDefinition> source)
-        => new(source, StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Creates a new SortedDictionary with case-insensitive string keys for arguments.
-    /// </summary>
-    internal static SortedDictionary<string, object?> CreateArgumentDictionary()
-        => new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Creates a new SortedDictionary with case-insensitive string keys for arguments, initialized with existing data.
-    /// </summary>
-    internal static SortedDictionary<string, object?> CreateArgumentDictionary(IDictionary<string, object?> source)
-        => new(source, StringComparer.OrdinalIgnoreCase);
-
     internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
         if (value == null)
@@ -428,52 +301,6 @@ internal static class Helpers
         return value1.Equals(value2);
     }
 
-    internal static (string Name, string? Alias) GetFieldNameAndAlias(string field)
-    {
-        var fieldNameParts = field.Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        var namePart = fieldNameParts.Length == 2 ? fieldNameParts[1] : field;
-        var alias = fieldNameParts.Length == 2 ? fieldNameParts[0] : null;
-
-        return (namePart, alias);
-    }
-
-    /// <summary>
-    /// Efficiently splits a path string into a list using Span operations to avoid string allocations.
-    /// </summary>
-    /// <param name="pathSpan">Path to split as ReadOnlySpan</param>
-    /// <returns>List of path segments</returns>
-    internal static List<string> SplitPathToList(ReadOnlySpan<char> pathSpan)
-    {
-        var result = new List<string>();
-
-        while (!pathSpan.IsEmpty)
-        {
-            var dotIndex = pathSpan.IndexOf('.');
-            ReadOnlySpan<char> segment;
-
-            if (dotIndex == -1)
-            {
-                // Last segment
-                segment = pathSpan;
-                pathSpan = ReadOnlySpan<char>.Empty;
-            }
-            else
-            {
-                // Extract current segment and advance
-                segment = pathSpan[..dotIndex];
-                pathSpan = pathSpan[(dotIndex + 1)..];
-            }
-
-            // Skip empty segments
-            if (!segment.IsEmpty && !segment.IsWhiteSpace())
-            {
-                result.Add(segment.ToString());
-            }
-        }
-
-        return result;
-    }
-
     /// <summary>
     /// Parses field type from path if provided in format "Type fieldPath".
     /// </summary>
@@ -527,7 +354,6 @@ internal static class Helpers
     /// <summary>
     /// Creates a new FieldDefinition with sorted arguments for consistent behavior.
     /// Arguments are passed by reference to avoid unnecessary copying of potentially large dictionaries.
-    /// </summary>
     /// <param name="name">Field name</param>
     /// <param name="type">Field type</param>
     /// <param name="alias">Optional field alias</param>
@@ -535,9 +361,6 @@ internal static class Helpers
     /// <param name="path">Field path for caching</param>
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
-    /// <summary>
-    /// <summary>
-    /// Creates a field definition with span-based parameters to minimize string allocations.
     /// </summary>
     internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
     {
@@ -655,17 +478,5 @@ internal static class Helpers
         }
 
         return currentField;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static string NormalizeFieldName(string fieldName)
-    {
-        return fieldName.ToLowerInvariant();
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static string NormalizeFieldName(ReadOnlySpan<char> fieldName)
-    {
-        return fieldName.ToString().ToLowerInvariant();
     }
 }

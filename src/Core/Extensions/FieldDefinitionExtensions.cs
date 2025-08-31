@@ -1,5 +1,6 @@
 using NGql.Core.Abstractions;
 using NGql.Core.Exceptions;
+using NGql.Core.Pooling;
 
 namespace NGql.Core.Extensions;
 
@@ -167,26 +168,29 @@ internal static class FieldDefinitionExtensions
         }
 
         // SLOW PATH: Need to merge arguments
-        var mergedArguments = Helpers.CreateArgumentDictionary(existingField._arguments);
+        using var pooled = ArgumentsPool.GetPooled(existingField._arguments);
+        var tempArguments = pooled.Dictionary;
         foreach (var (key, newValue) in newArguments)
         {
-            if (!mergedArguments.TryGetValue(key, out var existingValue))
+            if (!tempArguments.TryGetValue(key, out var existingValue))
             {
-                mergedArguments[key] = newValue;
+                tempArguments[key] = newValue;
                 continue;
             }
 
             if (existingValue is IDictionary<string, object> existingDict && newValue is IDictionary<string, object> newDict)
             {
                 // Merge nested dictionaries
-                mergedArguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
+                tempArguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
                 continue;
             }
 
             // For non-dictionary values, the new value overrides existing
-            mergedArguments[key] = newValue;
+            tempArguments[key] = newValue;
         }
 
+        // Create a new dictionary with the merged values (can't return the pooled dictionary)
+        var mergedArguments = new SortedDictionary<string, object?>(tempArguments, StringComparer.OrdinalIgnoreCase);
         return existingField with { Arguments = mergedArguments };
     }
 }

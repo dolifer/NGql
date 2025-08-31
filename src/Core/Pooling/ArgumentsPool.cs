@@ -37,6 +37,17 @@ internal static class ArgumentsPool
             dict[kvp.Key] = kvp.Value;
         return new PooledArguments(dict);
     }
+
+    public static PooledArguments GetPooled(SortedDictionary<string, object?>? source)
+    {
+        var dict = Get();
+        if (source != null)
+        {
+            foreach (var kvp in source)
+                dict[kvp.Key] = kvp.Value;
+        }
+        return new PooledArguments(dict);
+    }
 }
 
 /// <summary>

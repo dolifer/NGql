@@ -21,7 +21,6 @@ public sealed record FieldDefinition
     public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments, SortedDictionary<string, FieldDefinition>? fields)
     {
         Name = name;
-        NormalizedName = Helpers.NormalizeFieldName(name);
         Root = Helpers.GetRootFieldName(name);  // Store root at creation time
         Type = type;
         Alias = alias;
@@ -60,12 +59,6 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonPropertyName("name")]
     public string Name { get; init; }
-
-    /// <summary>
-    /// The normalized name of the field for internal lookups (lowercase).
-    /// </summary>
-    [JsonIgnore]
-    internal string NormalizedName { get; init; }
 
     /// <summary>
     /// Gets the root field name extracted from the field path.

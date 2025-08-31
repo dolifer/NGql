@@ -560,14 +560,30 @@ public sealed class FieldBuilder
 
         // Parse and remove type information from the segment
         var cleanedPath = Helpers.ParseFieldTypeFromPath(trimmedPart, Constants.DefaultFieldType, out var parsedType);
-        var (name, alias) = Helpers.GetFieldNameAndAliasSpan(cleanedPath);
-
+        
+        // Parse field name and alias from cleanedPath
+        // Match original behavior: split on ':' and only handle exactly 2 non-empty parts
+        var parts = cleanedPath.ToString().Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        
+        ReadOnlySpan<char> name, alias;
+        if (parts.Length == 2)
+        {
+            alias = parts[0].AsSpan();
+            name = parts[1].AsSpan();
+        }
+        else
+        {
+            name = cleanedPath.Trim();
+            alias = ReadOnlySpan<char>.Empty;
+        }
+        
+        // Only include parsed type if it's not the default
+        var typeToInclude = parsedType.SequenceEqual(Constants.DefaultFieldTypeSpan) ? ReadOnlySpan<char>.Empty : parsedType;
+        var segment = new SpanSegment(name, alias, isLastFragment, typeToInclude);
+        
         fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
 
-        // Only return parsed type if it's not the default (meaning type was actually specified)
-        var typeToReturn = !parsedType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase) ? parsedType : ReadOnlySpan<char>.Empty;
-
-        return new SpanSegment(name.AsSpan(), (alias ?? "").AsSpan(), isLastFragment, typeToReturn);
+        return segment;
     }
 
     private static FieldDefinition ProcessFieldSegment(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
