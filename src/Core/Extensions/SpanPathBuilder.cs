@@ -1,20 +1,12 @@
-using System;
-
 namespace NGql.Core.Extensions;
 
 /// <summary>
 /// Ref struct for building paths using spans without allocations
 /// </summary>
-internal ref struct SpanPathBuilder
+internal ref struct SpanPathBuilder(Span<char> buffer)
 {
-    private Span<char> _buffer;
-    private int _length;
-
-    public SpanPathBuilder(Span<char> buffer)
-    {
-        _buffer = buffer;
-        _length = 0;
-    }
+    private Span<char> _buffer = buffer;
+    private int _length = 0;
 
     public void Append(ReadOnlySpan<char> segment)
     {

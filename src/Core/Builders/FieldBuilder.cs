@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -27,7 +26,8 @@ public sealed class FieldBuilder
 
         // FAST PATH: Check if field name is simple
         var fieldName = fieldDefinition.Name;
-        if (fieldName.IndexOf('.') == -1 && fieldName.IndexOf(' ') == -1 && fieldName.IndexOf(':') == -1)
+        var isSimpleFieldName = fieldName.AsSpan().IsSimpleField();
+        if (isSimpleFieldName)
         {
             GetOrAddSimpleField(_fieldDefinition.Fields, fieldName, fieldDefinition.Type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         }
@@ -319,7 +319,7 @@ public sealed class FieldBuilder
             foreach (var subField in subFields)
             {
                 // Use full field processing to handle dotted paths, types, aliases, etc.
-                GetOrAddField(field.Fields, subField, Constants.DefaultFieldTypeSpan, null, field.Path, null);
+                GetOrAddField(field.Fields, subField, Constants.DefaultFieldTypeSpan, null, field.Path);
             }
         }
 
@@ -344,7 +344,7 @@ public sealed class FieldBuilder
     /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName)
     {
-        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType, null);
+        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType);
     }
 
     /// <summary>
@@ -364,7 +364,8 @@ public sealed class FieldBuilder
 
         // FAST PATH: Check if field name is simple
         FieldDefinition rootField;
-        if (fieldName.IndexOf('.') == -1 && fieldName.IndexOf(' ') == -1 && fieldName.IndexOf(':') == -1)
+        var isSimpleFieldName = fieldName.AsSpan().IsSimpleField();
+        if (isSimpleFieldName)
         {
             rootField = GetOrAddSimpleField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
         }
@@ -398,21 +399,20 @@ public sealed class FieldBuilder
     {
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
 
-        // FAST PATH: Simple field name (single IndexOf check)
-        var dotIndex = fieldPath.IndexOf('.');
-        if (dotIndex == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        // FAST PATH: Simple field name
+        if (fieldPath.IsSimpleField())
         {
             return fieldDefinitions.GetOrAddSimpleField(fieldPath, fieldType.ToString(), arguments, parentPath, metadata);
         }
 
-        // MEDIUM PATH: Only dots (no spaces/colons)
-        if (fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        // MEDIUM PATH: Dotted field
+        if (fieldPath.IsDottedField())
         {
-            return GetOrAddDottedField(fieldDefinitions, fieldPath, fieldType.ToString(), arguments, parentPath, metadata);
+            return GetOrAddDottedField(fieldDefinitions, fieldPath, fieldType, arguments, parentPath, metadata);
         }
 
         // SLOW PATH: Complex field processing
-        return GetOrAddComplexField(fieldDefinitions, fieldPath, fieldType.ToString(), arguments, parentPath, metadata);
+        return GetOrAddComplexField(fieldDefinitions, fieldPath, fieldType, arguments, parentPath, metadata);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -437,12 +437,53 @@ public sealed class FieldBuilder
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         // FAIL-FAST: Empty path check
         if (fieldPath.IsEmpty)
         {
             throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
+        }
+
+        var hasNoArguments = arguments == null;
+        var hasNoMetadata = metadata == null;
+
+        // FAST PATH: No arguments/metadata - use optimized span-based processing
+        if (hasNoArguments && hasNoMetadata)
+        {
+            var fastCurrentFields = fieldDefinitions;
+            FieldDefinition? fastResult = null;
+            var pathStart = 0;
+
+            while (pathStart < fieldPath.Length)
+            {
+                var dotIndex = fieldPath.Slice(pathStart).IndexOf('.');
+                var isLastSegment = dotIndex == -1;
+                var segmentEnd = isLastSegment ? fieldPath.Length : pathStart + dotIndex;
+                var segment = fieldPath.Slice(pathStart, segmentEnd - pathStart);
+
+                if (!fastCurrentFields.TryGetValue(segment, out var field))
+                {
+                    // IMPORTANT: Intermediate segments must be object type, only last segment uses fieldType
+                    var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
+                    var segmentName = segment.ToString();
+                    var segmentPath = fieldPath.Slice(0, segmentEnd);
+                    
+                    field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, null, segmentPath, null);
+                    fastCurrentFields[segmentName] = field;
+                }
+                else if (!isLastSegment && field.ShouldConvertToObjectType())
+                {
+                    // Convert existing field to object type if it has subfields
+                    field = fastCurrentFields[segment.ToString()] = field with { Type = Constants.ObjectFieldType };
+                }
+
+                fastResult = field;
+                fastCurrentFields = field.Fields;
+                pathStart = isLastSegment ? fieldPath.Length : segmentEnd + 1;
+            }
+
+            return fastResult ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
         }
 
         var currentFields = fieldDefinitions;
@@ -476,10 +517,10 @@ public sealed class FieldBuilder
             if (!currentFields.TryGetValue(segment, out var field))
             {
                 var segmentArgs = isLastSegment ? arguments : null;
-                var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldType;
+                var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
                 var segmentMetadata = isLastSegment ? metadata : null;
                 // Optimize path building for hot path - use span directly
-                field = Helpers.CreateFieldDefinition(segment, segmentType.AsSpan(), ReadOnlySpan<char>.Empty, segmentArgs, pathBuilder.AsSpan(), segmentMetadata);
+                field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, pathBuilder.AsSpan(), segmentMetadata);
                 currentFields.SetValue(segment, field);
             }
             else
@@ -507,7 +548,7 @@ public sealed class FieldBuilder
         return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
     }
 
-    private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         // FAIL-FAST: Empty path check
         if (fieldPath.IsEmpty)
@@ -525,7 +566,7 @@ public sealed class FieldBuilder
             pathBuilder.Append(parentPathSpan);
         }
 
-        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType.AsSpan(), out var parsedFieldType);
+        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
         FieldDefinition? result = null;
 

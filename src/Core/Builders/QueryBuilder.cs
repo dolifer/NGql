@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -81,12 +80,32 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
+        // FAST PATH: Most common case - no arguments, no metadata
+        if (arguments is null && metadata is null)
+        {
+            return AddFieldFastPath(field);
+        }
+        
         if (arguments?.Count > 0)
         {
             using var pooled = ArgumentsPool.GetPooled(arguments);
             return AddFieldCore(field, pooled.Dictionary, null, metadata);
         }
         return AddFieldCore(field, null, null, metadata);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private QueryBuilder AddFieldFastPath(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            throw new ArgumentException("Field cannot be null or empty", nameof(field));
+        }
+
+        // Skip DetermineFieldType call - we know it's DefaultFieldType for no subfields
+        FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+        _queryMap.UpdateRootMapping(_definition);
+        return this;
     }
 
     /// <summary>
@@ -331,7 +350,8 @@ public sealed class QueryBuilder
         }
 
         // FAST PATH: No space means no explicit type, skip parsing
-        if (field.IndexOf(' ') == -1)
+        var hasNoSpaces = !field.AsSpan().HasSpaces();
+        if (hasNoSpaces)
         {
             return Constants.ObjectFieldType;
         }

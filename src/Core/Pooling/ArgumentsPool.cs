@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using NGql.Core.Abstractions;
 
 namespace NGql.Core.Pooling;
 
