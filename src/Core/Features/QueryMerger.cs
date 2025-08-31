@@ -2,6 +2,7 @@ using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 using NGql.Core.Exceptions;
 using NGql.Core.Extensions;
+using NGql.Core.Pooling;
 
 namespace NGql.Core.Features;
 
@@ -194,7 +195,8 @@ internal static class QueryMerger
 
     private static string GenerateUniqueKey(string baseKey, IEnumerable<string> existingKeys)
     {
-        var existingKeySet = new HashSet<string>(existingKeys, StringComparer.OrdinalIgnoreCase);
+        using var pooledSet = HashSetPool.GetPooled(existingKeys);
+        var existingKeySet = pooledSet.Set;
 
         if (!existingKeySet.Contains(baseKey))
         {

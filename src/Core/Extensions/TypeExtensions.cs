@@ -106,7 +106,7 @@ public static class TypeExtensions
         }
 
         // Handle nullable notation
-        if (typeSpan.EndsWith(Constants.NullableTypeMarker.AsSpan()) && typeSpan.Length > 1)
+        if (typeSpan.EndsWith(Constants.NullableTypeMarkerSpan) && typeSpan.Length > 1)
         {
             var baseType = typeSpan[..^1].ToString();
             return stripNullableMarker ? baseType : type;

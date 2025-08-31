@@ -23,46 +23,45 @@ internal static class Helpers
     }
 
     /// <summary>
-    /// Splits a path span into a list for better performance
+    /// Builds path string from parent path and current segments using spans
     /// </summary>
-    internal static List<string> SplitPathToListSpan(ReadOnlySpan<char> path)
+    internal static string BuildPathString(ReadOnlySpan<char> parentPath, ReadOnlySpan<char> currentSegments)
     {
-        if (path.IsEmpty)
-            return new List<string>();
-
-        // Pre-size list by counting dots + 1 to avoid reallocations
-        var dotCount = 0;
-        for (var i = 0; i < path.Length; i++)
-        {
-            if (path[i] == '.') dotCount++;
-        }
-        var result = new List<string>(dotCount + 1);
+        if (parentPath.IsEmpty)
+            return currentSegments.ToString();
         
-        var start = 0;
-        for (var i = 0; i < path.Length; i++)
-        {
-            if (path[i] == '.')
-            {
-                if (i > start)
-                {
-                    result.Add(path[start..i].ToString());
-                }
-                start = i + 1;
-            }
-        }
+        if (currentSegments.IsEmpty)
+            return parentPath.ToString();
+            
+        // Use stack allocation for small paths
+        var totalLength = parentPath.Length + 1 + currentSegments.Length;
+        Span<char> buffer = totalLength <= 256 ? stackalloc char[totalLength] : new char[totalLength];
         
-        if (start < path.Length)
-        {
-            result.Add(path[start..].ToString());
-        }
+        var builder = new SpanPathBuilder(buffer);
+        builder.Append(parentPath);
+        builder.Append(currentSegments);
         
-        return result;
+        return builder.ToString();
     }
 
     /// <summary>
-    /// Parses field type and name from a span for better performance
+    /// Parses field type and name from a span using ref struct to avoid allocations
     /// </summary>
-    internal static (string fieldType, string fieldName) ParseFieldTypeAndNameSpan(ReadOnlySpan<char> field)
+    internal static SpanFieldInfo ParseFieldTypeAndNameSpan(ReadOnlySpan<char> field)
+    {
+        var spaceIndex = field.IndexOf(' ');
+        if (spaceIndex == -1)
+        {
+            return new SpanFieldInfo(Constants.DefaultFieldTypeSpan, field);
+        }
+
+        return new SpanFieldInfo(field[..spaceIndex], field[(spaceIndex + 1)..]);
+    }
+
+    /// <summary>
+    /// Legacy method for compatibility - converts spans to strings
+    /// </summary>
+    internal static (string fieldType, string fieldName) ParseFieldTypeAndNameSpan_Legacy(ReadOnlySpan<char> field)
     {
         var spaceIndex = field.IndexOf(' ');
         if (spaceIndex == -1)
@@ -357,8 +356,12 @@ internal static class Helpers
     /// <param name="args1">First argument dictionary</param>
     /// <param name="args2">Second argument dictionary</param>
     /// <returns>True if arguments are equal, false otherwise</returns>
-    internal static bool AreArgumentsEqual(SortedDictionary<string, object?> args1, SortedDictionary<string, object?> args2)
+    internal static bool AreArgumentsEqual(SortedDictionary<string, object?>? args1, SortedDictionary<string, object?>? args2)
     {
+        // Handle null cases
+        if (args1 == null && args2 == null) return true;
+        if (args1 == null || args2 == null) return false;
+        
         // For merging purposes, we need exact argument equality
         // Empty/null arguments should only match other empty/null arguments
         if (args1.Count != args2.Count)
@@ -478,7 +481,7 @@ internal static class Helpers
     /// <param name="defaultType">Default type to use if none specified</param>
     /// <param name="type">Parsed type output</param>
     /// <returns>Field path with type removed and trimmed</returns>
-    internal static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, string defaultType, out string type)
+    internal static ReadOnlySpan<char> ParseFieldTypeFromPath(ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> defaultType, out ReadOnlySpan<char> type)
     {
         // FAST PATH: No space means no type annotation
         var spaceIndex = fieldPath.IndexOf(' ');
@@ -498,7 +501,7 @@ internal static class Helpers
             potentialType.IndexOf('.') == -1 &&
             (HasLetterOrDigit(potentialType) || potentialType.SequenceEqual("[]".AsSpan())))
         {
-            type = potentialType.ToString();
+            type = potentialType;
             fieldPath = fieldPath[(spaceIndex + 1)..];
         }
         else
@@ -532,14 +535,23 @@ internal static class Helpers
     /// <param name="path">Field path for caching</param>
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
-    internal static FieldDefinition CreateFieldDefinition(string name, string type, string? alias, in SortedDictionary<string, object?> arguments, string path, Dictionary<string, object?>? metadata = null)
+    /// <summary>
+    /// <summary>
+    /// Creates a field definition with span-based parameters to minimize string allocations.
+    /// </summary>
+    internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
     {
-        // FAST PATH: Skip dictionary operations when arguments are empty
-        if (arguments.Count == 0)
+        var nameStr = name.ToString();
+        var typeStr = type.ToString();
+        var aliasStr = alias.IsEmpty ? null : alias.ToString();
+        var pathStr = path.ToString();
+        
+        // FAST PATH: Skip dictionary operations when arguments are empty or null
+        if (arguments?.Count == 0 || arguments == null)
         {
-            return new FieldDefinition(name, type, alias, Constants.EmptyArguments, null)
+            return new FieldDefinition(nameStr, typeStr, aliasStr, null, null)
             {
-                Path = path,
+                Path = pathStr,
                 Metadata = metadata
             };
         }
@@ -551,9 +563,9 @@ internal static class Helpers
             sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
         }
 
-        return new FieldDefinition(name, type, alias, sortedArguments, null)
+        return new FieldDefinition(nameStr, typeStr, aliasStr, sortedArguments, null)
         {
-            Path = path,
+            Path = pathStr,
             Metadata = metadata
         };
     }

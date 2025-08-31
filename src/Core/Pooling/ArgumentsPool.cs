@@ -40,66 +40,38 @@ internal static class ArgumentsPool
 }
 
 /// <summary>
-/// Pool for SortedDictionary fields to reduce allocations
+/// Pool for HashSet<string> to reduce allocations in key generation
 /// </summary>
-internal static class FieldsPool
+internal static class HashSetPool
 {
-    private static readonly ConcurrentQueue<SortedDictionary<string, FieldDefinition>> _pool = new();
+    private static readonly ConcurrentQueue<HashSet<string>> _pool = new();
     private const int MaxPoolSize = 16;
     private static int _currentCount = 0;
 
-    public static SortedDictionary<string, FieldDefinition> Get()
+    public static HashSet<string> Get()
     {
-        if (_pool.TryDequeue(out var dict))
+        if (_pool.TryDequeue(out var set))
         {
             Interlocked.Decrement(ref _currentCount);
-            return dict;
+            return set;
         }
-        return new SortedDictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase);
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    public static void Return(SortedDictionary<string, FieldDefinition> dict)
+    public static void Return(HashSet<string> set)
     {
-        if (dict == null || _currentCount >= MaxPoolSize) return;
-        dict.Clear();
-        _pool.Enqueue(dict);
+        if (set == null || _currentCount >= MaxPoolSize) return;
+        set.Clear();
+        _pool.Enqueue(set);
         Interlocked.Increment(ref _currentCount);
     }
 
-    public static PooledFields GetPooled(SortedDictionary<string, FieldDefinition> source)
+    public static PooledHashSet GetPooled(IEnumerable<string> source)
     {
-        var dict = Get();
-        foreach (var kvp in source)
-            dict[kvp.Key] = kvp.Value;
-        return new PooledFields(dict);
-    }
-}
-
-/// <summary>
-/// Pool for Dictionary metadata to reduce allocations
-/// </summary>
-internal static class MetadataPool
-{
-    private static readonly ConcurrentQueue<Dictionary<string, object?>> _pool = new();
-    private const int MaxPoolSize = 16;
-    private static int _currentCount = 0;
-
-    public static Dictionary<string, object?> Get()
-    {
-        if (_pool.TryDequeue(out var dict))
-        {
-            Interlocked.Decrement(ref _currentCount);
-            return dict;
-        }
-        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-    }
-
-    public static void Return(Dictionary<string, object?> dict)
-    {
-        if (dict == null || _currentCount >= MaxPoolSize) return;
-        dict.Clear();
-        _pool.Enqueue(dict);
-        Interlocked.Increment(ref _currentCount);
+        var set = Get();
+        foreach (var item in source)
+            set.Add(item);
+        return new PooledHashSet(set);
     }
 }
 
@@ -111,9 +83,9 @@ internal ref struct PooledArguments
     public void Dispose() => ArgumentsPool.Return(Dictionary);
 }
 
-internal ref struct PooledFields
+internal ref struct PooledHashSet
 {
-    public readonly SortedDictionary<string, FieldDefinition> Dictionary;
-    public PooledFields(SortedDictionary<string, FieldDefinition> dictionary) => Dictionary = dictionary;
-    public void Dispose() => FieldsPool.Return(Dictionary);
+    public readonly HashSet<string> Set;
+    public PooledHashSet(HashSet<string> set) => Set = set;
+    public void Dispose() => HashSetPool.Return(Set);
 }

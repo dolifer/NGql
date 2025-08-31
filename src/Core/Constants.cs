@@ -26,12 +26,22 @@ public static class Constants
     public const string NullableTypeMarker = "?";
 
     /// <summary>
-    /// Empty arguments dictionary for performance optimization.
+    /// The marker for array types as span.
     /// </summary>
-    internal static readonly SortedDictionary<string, object?> EmptyArguments = new(StringComparer.OrdinalIgnoreCase);
+    internal static ReadOnlySpan<char> ArrayTypeMarkerSpan => ArrayTypeMarker.AsSpan();
 
     /// <summary>
-    /// Empty metadata dictionary for performance optimization.
+    /// The default field type as span.
     /// </summary>
-    public static readonly Dictionary<string, object?> EmptyMetadata = [];
+    internal static ReadOnlySpan<char> DefaultFieldTypeSpan => DefaultFieldType.AsSpan();
+
+    /// <summary>
+    /// The object field type as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> ObjectFieldTypeSpan => ObjectFieldType.AsSpan();
+
+    /// <summary>
+    /// The marker for nullable types as span.
+    /// </summary>
+    internal static ReadOnlySpan<char> NullableTypeMarkerSpan => NullableTypeMarker.AsSpan();
 }

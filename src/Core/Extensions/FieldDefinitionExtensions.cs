@@ -29,8 +29,8 @@ internal static class FieldDefinitionExtensions
         // 2. Arguments at each segment of path must match exactly
 
         // First, check if arguments at the root level are compatible
-        var existingArgs = existingField._arguments ?? Constants.EmptyArguments;
-        var incomingArgs = incomingField._arguments ?? Constants.EmptyArguments;
+        var existingArgs = existingField._arguments ?? null;
+        var incomingArgs = incomingField._arguments ?? null;
 
         if (!Helpers.AreArgumentsEqual(existingArgs, incomingArgs))
         {
@@ -59,8 +59,8 @@ internal static class FieldDefinitionExtensions
             if (existingField.Fields.TryGetValue(incomingKey, out var existingNestedField))
             {
                 // If the nested field exists in both, their arguments must match exactly
-                var existingNestedArgs = existingNestedField._arguments ?? Constants.EmptyArguments;
-                var incomingNestedArgs = incomingNestedField._arguments ?? Constants.EmptyArguments;
+                var existingNestedArgs = existingNestedField._arguments ?? null;
+                var incomingNestedArgs = incomingNestedField._arguments ?? null;
 
                 if (!Helpers.AreArgumentsEqual(existingNestedArgs, incomingNestedArgs))
                 {
@@ -141,7 +141,7 @@ internal static class FieldDefinitionExtensions
             existing.Alias,
             existing.Arguments,
             mergedFields
-        ).MergeFieldArguments(incoming.Arguments ?? Constants.EmptyArguments);
+        ).MergeFieldArguments(incoming.Arguments ?? null);
     }
 
     /// <summary>
@@ -152,10 +152,10 @@ internal static class FieldDefinitionExtensions
     private static bool HasAnyArguments(FieldDefinition field)
         => field.Arguments is { Count: > 0 } || field.Fields.Values.Any(HasAnyArguments);
 
-    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?> newArguments)
+    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?>? newArguments)
     {
         // FAST PATH: If no new arguments to merge, return as-is
-        if (newArguments.Count == 0)
+        if (newArguments is not { Count: > 0 })
         {
             return existingField;
         }
