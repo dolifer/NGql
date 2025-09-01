@@ -17,19 +17,19 @@ public static class TypeExtensions
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
         // If it's already an object type, no need to convert
-        if (fieldDefinition.Type == Constants.ObjectFieldType)
+        if (fieldDefinition._type == Constants.ObjectFieldType)
         {
             return false;
         }
 
         // If it's the default string type, it should be converted
-        if (fieldDefinition.Type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition.Type))
+        if (fieldDefinition._type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition._type))
         {
             return true;
         }
 
         // Special case: Array markers should be preserved ([] special case)
-        if (fieldDefinition.Type == Constants.ArrayTypeMarker)
+        if (fieldDefinition._type == Constants.ArrayTypeMarker)
         {
             return false;
         }
@@ -37,14 +37,14 @@ public static class TypeExtensions
         // Special types like arrays or custom complex types should maintain their type
         // even when nested fields are added
         if (fieldDefinition.IsArray || fieldDefinition.IsNullable ||
-            fieldDefinition.Type.Contains('[') || fieldDefinition.Type.Contains(']') ||
-            fieldDefinition.Type.EndsWith('?'))
+            fieldDefinition._type.Contains('[') || fieldDefinition._type.Contains(']') ||
+            fieldDefinition._type.EndsWith('?'))
         {
             return false;
         }
 
         // Check for common primitive types that should be converted to object when they have fields
-        var lowerType = fieldDefinition.Type.ToLowerInvariant();
+        var lowerType = fieldDefinition._type.ToLowerInvariant();
         var isPrimitiveType = lowerType == "int" ||
                              lowerType == "integer" ||
                              lowerType == "string" ||

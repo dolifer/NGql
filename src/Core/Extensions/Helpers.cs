@@ -6,6 +6,13 @@ namespace NGql.Core.Extensions;
 
 internal static class Helpers
 {
+    private static readonly JsonSerializerOptions _jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
+    };
+
     internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
         if (value == null)
@@ -76,34 +83,35 @@ internal static class Helpers
         }
     }
 
-    internal static SortedDictionary<string, object> MergeDictionaries(
-        IDictionary<string, object> existing,
-        IDictionary<string, object> update)
+    /// <summary>
+    /// Generic dictionary merging with recursive support for nested dictionaries.
+    /// </summary>
+    private static TDict MergeDictionariesCore<TDict, TValue>(
+        IDictionary<string, TValue>? existing,
+        IDictionary<string, TValue> update,
+        Func<TDict> createResult,
+        Func<IDictionary<string, TValue>, IDictionary<string, TValue>, TValue> mergeNested)
+        where TDict : IDictionary<string, TValue>
     {
-        var result = new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        var result = createResult();
 
-        // First, add all existing entries
-        foreach (var (key, value) in existing)
+        // Add existing entries if present
+        if (existing != null)
         {
-            result[key] = value;
+            foreach (var (key, value) in existing)
+            {
+                result[key] = value;
+            }
         }
 
-        // Then merge or add update entries
+        // Merge or add update entries
         foreach (var (key, updateValue) in update)
         {
-            if (result.TryGetValue(key, out var existingValue))
+            if (result.TryGetValue(key, out var existingValue) &&
+                existingValue is IDictionary<string, TValue> existingDict &&
+                updateValue is IDictionary<string, TValue> updateDict)
             {
-                if (existingValue is IDictionary<string, object> existingDict &&
-                    updateValue is IDictionary<string, object> updateDict)
-                {
-                    // Recursively merge nested dictionaries
-                    result[key] = MergeDictionaries(existingDict, updateDict);
-                }
-                else
-                {
-                    // For non-dictionary values, update value overrides existing
-                    result[key] = updateValue;
-                }
+                result[key] = mergeNested(existingDict, updateDict);
             }
             else
             {
@@ -112,6 +120,17 @@ internal static class Helpers
         }
 
         return result;
+    }
+
+    internal static SortedDictionary<string, object> MergeDictionaries(
+        IDictionary<string, object> existing,
+        IDictionary<string, object> update)
+    {
+        return MergeDictionariesCore<SortedDictionary<string, object>, object>(
+            existing, 
+            update,
+            () => new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase),
+            (e, u) => MergeDictionaries(e, u));
     }
 
     /// <summary>
@@ -141,39 +160,12 @@ internal static class Helpers
             return existing;
         }
 
-        // SLOW PATH: Need to merge dictionaries
-        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-        // First, add all existing entries
-        foreach (var (key, value) in existing)
-        {
-            result[key] = value;
-        }
-
-        // Then merge or add update entries
-        foreach (var (key, updateValue) in update)
-        {
-            if (result.TryGetValue(key, out var existingValue))
-            {
-                if (existingValue is Dictionary<string, object?> existingDict &&
-                    updateValue is Dictionary<string, object> updateDict)
-                {
-                    // Recursively merge nested dictionaries
-                    result[key] = MergeMetadata(existingDict, updateDict);
-                }
-                else
-                {
-                    // For non-dictionary values, update value overrides existing
-                    result[key] = updateValue;
-                }
-            }
-            else
-            {
-                result[key] = updateValue;
-            }
-        }
-
-        return result;
+        // Use generic merge logic
+        return MergeDictionariesCore<Dictionary<string, object?>, object?>(
+            existing,
+            update.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value),
+            () => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
+            (e, u) => MergeMetadata((Dictionary<string, object?>)e, u.ToDictionary(kvp => kvp.Key, kvp => kvp.Value!)));
     }
 
     internal static object? SortArgumentValue(object? value)
@@ -284,15 +276,8 @@ internal static class Helpers
         // For complex objects, serialize and compare with consistent ordering
         if (value1 is not string && value1.GetType().IsClass)
         {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
-            };
-
-            var json1 = JsonSerializer.Serialize(value1, options);
-            var json2 = JsonSerializer.Serialize(value2, options);
+            var json1 = JsonSerializer.Serialize(value1, _jsonOptions);
+            var json2 = JsonSerializer.Serialize(value2, _jsonOptions);
             return json1 == json2;
         }
 
@@ -366,14 +351,14 @@ internal static class Helpers
         var typeStr = type.ToString();
         var aliasStr = alias.IsEmpty ? null : alias.ToString();
         var pathStr = path.ToString();
-        
+
         // FAST PATH: Skip dictionary operations when arguments are empty or null
         if (arguments?.Count == 0 || arguments == null)
         {
-            return new FieldDefinition(nameStr, typeStr, aliasStr, null, null)
+            return new FieldDefinition(nameStr, typeStr, aliasStr, null)
             {
                 Path = pathStr,
-                Metadata = metadata
+                _metadata = metadata
             };
         }
 
@@ -384,10 +369,10 @@ internal static class Helpers
             sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
         }
 
-        return new FieldDefinition(nameStr, typeStr, aliasStr, sortedArguments, null)
+        return new FieldDefinition(nameStr, typeStr, aliasStr, sortedArguments)
         {
             Path = pathStr,
-            Metadata = metadata
+            _metadata = metadata
         };
     }
 
@@ -401,31 +386,9 @@ internal static class Helpers
     {
         // Try to find field with same name and alias
         var existingField = fields.Values.FirstOrDefault(f =>
-            f.Name == fieldDefinition.Name && f.Alias == fieldDefinition.Alias);
+            f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias);
 
         return existingField ?? fields.GetValueOrDefault(fieldDefinition.Path);
-    }
-
-    /// <summary>
-    /// Extracts the root field name from a field path, handling aliases and dotted paths.
-    /// </summary>
-    /// <param name="fieldPath">The field path to parse</param>
-    /// <returns>The root field name</returns>
-    internal static string GetRootFieldName(string fieldPath)
-    {
-        if (string.IsNullOrWhiteSpace(fieldPath))
-        {
-            return string.Empty;
-        }
-
-        var parts = fieldPath.Split('.');
-        if (parts.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var rootPart = parts[0].Split(':');
-        return rootPart.Length > 0 ? rootPart[^1].Trim() : string.Empty;
     }
 
     /// <summary>
@@ -434,9 +397,9 @@ internal static class Helpers
     /// <param name="fields">The root fields collection</param>
     /// <param name="fieldPath">The field path to search for</param>
     /// <returns>The existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, string fieldPath)
+    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
-        if (string.IsNullOrWhiteSpace(fieldPath))
+        if (fieldPath.IsEmpty || fieldPath.IsWhiteSpace())
         {
             return null;
         }
@@ -444,27 +407,45 @@ internal static class Helpers
         // FAST PATH: Simple field name without dots, spaces, or colons
         if (fieldPath.IndexOf('.') == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
         {
-            return fields.TryGetValue(fieldPath, out var simpleField) ? simpleField : null;
+            return fields.GetValueOrDefault(fieldPath.ToString());
         }
 
-        var pathSegments = fieldPath.Split('.');
         var currentFields = fields;
         FieldDefinition? currentField = null;
+        var remainingPath = fieldPath;
 
-        foreach (var segment in pathSegments)
+        while (!remainingPath.IsEmpty)
         {
-            var fieldName = segment.Split(':').Last().Trim();
+            var dotIndex = remainingPath.IndexOf('.');
+            var segment = dotIndex == -1 ? remainingPath : remainingPath[..dotIndex];
+            
+            var colonIndex = segment.LastIndexOf(':');
+            var fieldName = colonIndex == -1 ? segment : segment[(colonIndex + 1)..];
+            fieldName = fieldName.Trim();
+
+            var fieldNameStr = fieldName.ToString();
 
             // Try exact match first
-            if (currentFields.ContainsKey(fieldName))
+            if (currentFields.ContainsKey(fieldNameStr))
             {
-                currentField = currentFields[fieldName];
+                currentField = currentFields[fieldNameStr];
             }
             // Try to find field with type annotation (e.g., "[] posts" when looking for "posts")
             else
             {
-                currentField = currentFields.Values.FirstOrDefault(f =>
-                    f.Name.Split(' ').Last().Trim() == fieldName);
+                currentField = null;
+                foreach (var field in currentFields.Values)
+                {
+                    var nameSpan = field.Name.AsSpan();
+                    var spaceIndex = nameSpan.LastIndexOf(' ');
+                    var actualName = spaceIndex == -1 ? nameSpan : nameSpan[(spaceIndex + 1)..];
+                    
+                    if (actualName.Trim().SequenceEqual(fieldName))
+                    {
+                        currentField = field;
+                        break;
+                    }
+                }
 
                 if (currentField == null)
                 {
@@ -473,8 +454,12 @@ internal static class Helpers
             }
 
             currentFields = currentField.Fields;
+            remainingPath = dotIndex == -1 ? ReadOnlySpan<char>.Empty : remainingPath[(dotIndex + 1)..];
         }
 
         return currentField;
     }
+
+    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, string fieldPath)
+        => FindExistingFieldByPath(fields, fieldPath.AsSpan());
 }

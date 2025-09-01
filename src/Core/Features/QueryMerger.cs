@@ -39,6 +39,9 @@ internal static class QueryMerger
     /// <param name="incomingQuery">Query definition to merge</param>
     public static void MergeQuery(QueryDefinition targetDefinition, QueryMap queryMap, in QueryDefinition incomingQuery)
     {
+        // FAST PATH: Skip merge entirely if incoming query has no fields
+        if (incomingQuery._fields?.Count == 0 || incomingQuery._fields == null) return;
+
         // FAST PATH: Merge variables efficiently
         var targetVars = targetDefinition._variables;
         var incomingVars = incomingQuery._variables;
@@ -65,6 +68,29 @@ internal static class QueryMerger
 
         // Perform the field merge
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);
+
+        // FAST PATH: Skip field updates if no changes were made
+        if (mergeResult.UpdatedFields.Count == targetDefinition.Fields.Count && 
+            mergeResult.UpdatedFields.Keys.SequenceEqual(targetDefinition.Fields.Keys))
+        {
+            // Check if values are actually the same (reference equality for performance)
+            bool hasChanges = false;
+            foreach (var (key, newField) in mergeResult.UpdatedFields)
+            {
+                if (!ReferenceEquals(targetDefinition.Fields[key], newField))
+                {
+                    hasChanges = true;
+                    break;
+                }
+            }
+            
+            if (!hasChanges)
+            {
+                // No actual changes - just update query map and return
+                queryMap.UpdateMappings(mergeResult.QueryMap);
+                return;
+            }
+        }
 
         // Apply the merge results to fields
         targetDefinition.Fields.Clear();

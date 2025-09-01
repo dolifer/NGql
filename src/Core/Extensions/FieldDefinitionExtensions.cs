@@ -15,7 +15,7 @@ internal static class FieldDefinitionExtensions
     /// <param name="field">The field definition</param>
     /// <returns>The alias if available, otherwise the field name</returns>
     internal static string GetEffectiveName(this FieldDefinition field)
-        => !string.IsNullOrEmpty(field.Alias) ? field.Alias : field.Name;
+        => !string.IsNullOrEmpty(field._alias) ? field._alias : field.Name;
 
     /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
@@ -112,10 +112,10 @@ internal static class FieldDefinitionExtensions
     internal static FieldDefinition MergeFields(FieldDefinition existing, FieldDefinition incoming)
     {
         // Check for type conflicts
-        if (!string.IsNullOrEmpty(existing.Type) && !string.IsNullOrEmpty(incoming.Type) && 
-            !string.Equals(existing.Type, incoming.Type, StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrEmpty(existing._type) && !string.IsNullOrEmpty(incoming._type) && 
+            !string.Equals(existing._type, incoming._type, StringComparison.OrdinalIgnoreCase))
         {
-            throw new QueryMergeException($"Type conflict: existing field has type '{existing.Type}', incoming field has type '{incoming.Type}'");
+            throw new QueryMergeException($"Type conflict: existing field has type '{existing._type}', incoming field has type '{incoming._type}'");
         }
 
         // Create merged field definition
@@ -138,8 +138,8 @@ internal static class FieldDefinitionExtensions
 
         return new FieldDefinition(
             existing.Name,
-            existing.Type ?? incoming.Type ?? Constants.DefaultFieldType,
-            existing.Alias,
+            existing._type ?? incoming._type ?? Constants.DefaultFieldType,
+            existing._alias,
             existing.Arguments,
             mergedFields
         ).MergeFieldArguments(incoming.Arguments ?? null);

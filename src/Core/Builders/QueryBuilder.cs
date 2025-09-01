@@ -369,11 +369,11 @@ public sealed class QueryBuilder
         var existingField = Helpers.FindExistingFieldByPath(Definition.Fields, field);
 
         // Priority 1: Preserve existing explicit types (non-default, non-object)
-        if (existingField?.Type != null &&
-            !string.Equals(existingField.Type, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(existingField.Type, Constants.ObjectFieldType, StringComparison.OrdinalIgnoreCase))
+        if (existingField?._type != null &&
+            !string.Equals(existingField._type, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(existingField._type, Constants.ObjectFieldType, StringComparison.OrdinalIgnoreCase))
         {
-            return existingField.Type;
+            return existingField._type;
         }
 
         // Priority 2: Use newly specified explicit type
@@ -383,7 +383,7 @@ public sealed class QueryBuilder
         }
 
         // Priority 3: Preserve existing object type
-        if (existingField?.Type == Constants.ObjectFieldType)
+        if (existingField?._type == Constants.ObjectFieldType)
         {
             return Constants.ObjectFieldType;
         }

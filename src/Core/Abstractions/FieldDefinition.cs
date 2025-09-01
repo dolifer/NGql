@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using NGql.Core.Extensions;
 
 namespace NGql.Core.Abstractions;
 
@@ -9,21 +8,15 @@ namespace NGql.Core.Abstractions;
 public sealed record FieldDefinition
 {
     public FieldDefinition(string name, string? type = null, string? alias = null)
-        : this(name, type ?? Constants.DefaultFieldType, alias, null, null)
+        : this(name, type ?? Constants.DefaultFieldType, alias, null)
     {
     }
 
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?> sortedArguments)
-        : this(name, type, alias, sortedArguments, null)
-    {
-    }
-
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments, SortedDictionary<string, FieldDefinition>? fields)
+    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, SortedDictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
-        Root = Helpers.GetRootFieldName(name);  // Store root at creation time
-        Type = type;
-        Alias = alias;
+        _alias = alias;
+        _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
         _fields = fields?.Count > 0 ? fields : null;
     }
@@ -32,13 +25,13 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => Type != null && (Type == Constants.ArrayTypeMarker || Type.Contains('['));
+    public bool IsArray => _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => Type != null && (Type == Constants.NullableTypeMarker || Type.EndsWith('?'));
+    public bool IsNullable => _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
@@ -61,24 +54,30 @@ public sealed record FieldDefinition
     public string Name { get; init; }
 
     /// <summary>
-    /// Gets the root field name extracted from the field path.
-    /// </summary>
-    [JsonIgnore]
-    internal string Root { get; init; }
-
-    /// <summary>
     /// The type of the field. Defaults to <see cref="Constants.DefaultFieldType"/> if not specified.
     /// This is used to define the data type of the field, such as "String", "Int", "Boolean", etc.
     /// </summary>
     [JsonPropertyName("type")]
-    public string? Type { get; init; }
+    public string? Type
+    {
+        get => _type;
+        init => _type = value;
+    }
+
+    internal string? _type;
 
     /// <summary>
     /// The alias of the field, if any. This is used to provide a more readable or meaningful name for the field in queries.
     /// If not specified, the field will use its original name.
     /// </summary>
     [JsonPropertyName("alias")]
-    public string? Alias { get; init; }
+    public string? Alias
+    {
+        get => _alias;
+        init => _alias = value;
+    }
+
+    internal string? _alias;
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]

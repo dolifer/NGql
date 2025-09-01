@@ -29,11 +29,11 @@ public sealed class FieldBuilder
         var isSimpleFieldName = fieldName.AsSpan().IsSimpleField();
         if (isSimpleFieldName)
         {
-            GetOrAddSimpleField(_fieldDefinition.Fields, fieldName, fieldDefinition.Type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+            GetOrAddSimpleField(_fieldDefinition.Fields, fieldName, fieldDefinition._type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         }
         else
         {
-            GetOrAddField(_fieldDefinition.Fields, fieldName, fieldDefinition.Type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+            GetOrAddField(_fieldDefinition.Fields, fieldName, fieldDefinition._type, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         }
         return this;
     }
@@ -646,39 +646,48 @@ public sealed class FieldBuilder
         }
 
         var fieldArgs = segment.IsLastFragment ? arguments : null;
-        var intermediateType = segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan) ? Constants.ArrayTypeMarker : Constants.ObjectFieldType;
-        var computedFieldType = segment.IsLastFragment ? (segment.HasParsedType ? segment.ParsedType.ToString() : parsedFieldType.ToString()) : intermediateType;
         var fieldMetadata = segment.IsLastFragment ? metadata : null;
 
         // Optimize path building for hot path - use span directly
-        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldType.AsSpan(), segment.Alias, fieldArgs, fullPath, fieldMetadata);
+        ReadOnlySpan<char> computedFieldTypeSpan;
+        if (segment.IsLastFragment)
+        {
+            computedFieldTypeSpan = segment.HasParsedType ? segment.ParsedType : parsedFieldType;
+        }
+        else
+        {
+            computedFieldTypeSpan = segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan) ? Constants.ArrayTypeMarkerSpan : Constants.ObjectFieldTypeSpan;
+        }
+
+        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldTypeSpan, segment.Alias, fieldArgs, fullPath, fieldMetadata);
         currentFields[segment.Name.ToString()] = field;
         return field;
     }
 
     private static FieldDefinition UpdateExistingField(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
-        if (segment.HasAlias && field.Alias == null)
+        if (segment.HasAlias && field._alias == null)
         {
-            field = currentFields[segment.Name.ToString()] = field with { Alias = segment.Alias.ToString() };
+            field._alias = segment.Alias.IsEmpty ? null : segment.Alias.ToString();
         }
 
         if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
         {
-            field = currentFields[segment.Name.ToString()] = field with { Type = Constants.ObjectFieldType };
+            field._type = Constants.ObjectFieldType;
         }
 
         if (segment.IsLastFragment)
         {
             if (arguments?.Count > 0)
             {
-                field = currentFields[segment.Name.ToString()] = field.MergeFieldArguments(arguments);
+                var fieldKey = segment.Name.ToString();
+                field = currentFields[fieldKey] = field.MergeFieldArguments(arguments);
             }
 
             if (!parsedFieldType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase) &&
-                !field.Type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
+                !field._type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
             {
-                field = currentFields[segment.Name.ToString()] = field with { Type = parsedFieldType.ToString() };
+                field._type = parsedFieldType.ToString();
             }
         }
 
@@ -704,13 +713,11 @@ public sealed class FieldBuilder
 
     private static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        var arguments = fieldDefinition._arguments ?? null;
-
         // Try to find existing field to merge with
         var existingField = Helpers.FindExistingField(fields, fieldDefinition);
         if (existingField != null)
         {
-            var mergedField = existingField.MergeFieldArguments(arguments);
+            var mergedField = existingField.MergeFieldArguments(fieldDefinition._arguments);
             fields[existingField.Name] = mergedField;
             return mergedField;
         }
@@ -718,9 +725,9 @@ public sealed class FieldBuilder
         // Create new field
         var newField = Helpers.CreateFieldDefinition(
             fieldDefinition.Name.AsSpan(),
-            (fieldDefinition.Type ?? Constants.DefaultFieldType),
-            (fieldDefinition.Alias ?? "").AsSpan(),
-            arguments,
+            (fieldDefinition._type ?? Constants.DefaultFieldType),
+            (fieldDefinition._alias ?? "").AsSpan(),
+            fieldDefinition._arguments,
             fieldDefinition.Path.AsSpan(),
             fieldDefinition.Metadata);
         fields[fieldDefinition.Name] = newField;
