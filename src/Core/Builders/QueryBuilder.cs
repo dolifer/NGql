@@ -29,8 +29,7 @@ public sealed class QueryBuilder
     private QueryBuilder(QueryDefinition queryDefinition)
     {
         _definition = queryDefinition;
-        // Initialize the QueryMap to track the root query's own path
-        _queryMap.UpdateRootMapping(_definition);
+        // UpdateRootMapping deferred until ToString() - no fields exist yet
     }
 
     /// <summary>
@@ -104,7 +103,7 @@ public sealed class QueryBuilder
 
         // Skip DetermineFieldType call - we know it's DefaultFieldType for no subfields
         FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
-        _queryMap.UpdateRootMapping(_definition);
+        // Defer UpdateRootMapping - will be called when query is built/used
         return this;
     }
 
@@ -118,6 +117,7 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string[]? subFields, Dictionary<string, object?>? metadata = null)
         => AddFieldCore(field, null, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
+
 
     /// <summary>
     ///     Adds a field to the query.
@@ -334,7 +334,11 @@ public sealed class QueryBuilder
     internal int DefinitionsCount => Definition.Fields.Count;
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => Definition.ToString();
+    public override string ToString()
+    {
+        _queryMap.UpdateRootMapping(_definition);
+        return Definition.ToString();
+    }
 
     public static implicit operator string(QueryBuilder query) => query.ToString();
 

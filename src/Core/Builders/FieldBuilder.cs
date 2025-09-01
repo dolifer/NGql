@@ -461,12 +461,12 @@ public sealed class FieldBuilder
                 var isLastSegment = dotIndex == -1;
                 var segmentEnd = isLastSegment ? fieldPath.Length : pathStart + dotIndex;
                 var segment = fieldPath.Slice(pathStart, segmentEnd - pathStart);
+                var segmentName = segment.ToString();
 
-                if (!fastCurrentFields.TryGetValue(segment, out var field))
+                if (!fastCurrentFields.TryGetValue(segmentName, out var field))
                 {
                     // IMPORTANT: Intermediate segments must be object type, only last segment uses fieldType
                     var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-                    var segmentName = segment.ToString();
                     var segmentPath = fieldPath.Slice(0, segmentEnd);
                     
                     field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, null, segmentPath, null);
@@ -475,7 +475,7 @@ public sealed class FieldBuilder
                 else if (!isLastSegment && field.ShouldConvertToObjectType())
                 {
                     // Convert existing field to object type if it has subfields
-                    field = fastCurrentFields[segment.ToString()] = field with { Type = Constants.ObjectFieldType };
+                    field = fastCurrentFields[segmentName] = field with { Type = Constants.ObjectFieldType };
                 }
 
                 fastResult = field;
