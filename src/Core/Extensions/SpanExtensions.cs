@@ -1,8 +1,10 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
 
+[SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class SpanExtensions
 {
     /// <summary>

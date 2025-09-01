@@ -50,7 +50,7 @@ internal static class ArgumentsPool
 }
 
 /// <summary>
-/// Pool for HashSet<string> to reduce allocations in key generation
+/// Pool for HashSet&lt;string&gt; to reduce allocations in key generation
 /// </summary>
 internal static class HashSetPool
 {

@@ -93,20 +93,6 @@ public sealed class QueryBuilder
         return AddFieldCore(field, null, null, metadata);
     }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private QueryBuilder AddFieldFastPath(string field)
-    {
-        if (string.IsNullOrWhiteSpace(field))
-        {
-            throw new ArgumentException("Field cannot be null or empty", nameof(field));
-        }
-
-        // Skip DetermineFieldType call - we know it's DefaultFieldType for no subfields
-        FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
-        // Defer UpdateRootMapping - will be called when query is built/used
-        return this;
-    }
-
     /// <summary>
     ///     Adds a field to the query.
     /// </summary>
@@ -117,7 +103,6 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string[]? subFields, Dictionary<string, object?>? metadata = null)
         => AddFieldCore(field, null, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
-
 
     /// <summary>
     ///     Adds a field to the query.
@@ -131,44 +116,17 @@ public sealed class QueryBuilder
         => AddFieldCore(field, null, subFields, metadata);
 
     /// <summary>
-    ///     Adds a field to the query.
+    ///     Adds a field to the query using a field builder.
     /// </summary>
     /// <param name="field">Field name or path.</param>
     /// <param name="fieldBuilder">The field builder action.</param>
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
-    /// <summary>
-    /// Core implementation for adding fields using FieldBuilder pattern.
-    /// </summary>
-    /// <param name="field">Field name or path</param>
-    /// <param name="fieldType">The field type</param>
-    /// <param name="arguments">Optional arguments dictionary</param>
-    /// <param name="metadata">Optional metadata dictionary</param>
-    /// <param name="fieldBuilder">The field builder action</param>
-    /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldBuilderCore(string field, string fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
-    {
-        if (string.IsNullOrWhiteSpace(field))
-        {
-            throw new ArgumentException("Field cannot be null or empty", nameof(field));
-        }
-
-        ArgumentNullException.ThrowIfNull(fieldBuilder);
-
-        var builder = FieldBuilder.Create(Definition.Fields, field, fieldType, arguments, metadata);
-        fieldBuilder(builder);
-        var fieldDefinition = builder.Build();
-
-        _definition.Fields[fieldDefinition.Name] = fieldDefinition;
-        _queryMap.UpdateRootMapping(_definition);
-
-        return this;
-    }
-
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
     public QueryBuilder AddField(string field, Action<FieldBuilder> fieldBuilder)
     {
-        var fieldType = DetermineFieldType(field, hasSubFields: true);
-        return AddFieldBuilderCore(field, fieldType, null, null, fieldBuilder);
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+        return AddFieldBuilderCore(field, Constants.DefaultFieldType, null, null, fieldBuilder);
     }
 
     /// <summary>
@@ -202,56 +160,121 @@ public sealed class QueryBuilder
     }
 
     /// <summary>
-    /// Adds a field to the query with type only.
+    ///     Adds a field with a specific type to the query.
     /// </summary>
     /// <param name="field">Field name or path</param>
     /// <param name="type">The field type</param>
-    /// <returns>Instance of <see cref="QueryBuilder"/></returns>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string type)
         => AddFieldCore(field, null, null, null);
 
     /// <summary>
-    /// Adds a field to the query with type and metadata.
+    ///     Adds a field with a specific type to the query.
     /// </summary>
     /// <param name="field">Field name or path</param>
     /// <param name="type">The field type</param>
     /// <param name="metadata">The field metadata</param>
-    /// <returns>Instance of <see cref="QueryBuilder"/></returns>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata)
         => AddFieldCore(field, null, null, metadata);
 
     /// <summary>
-    /// Adds a field to the query with arguments and metadata using Action.
+    ///     Adds a field to the query using a field builder with arguments.
     /// </summary>
     /// <param name="field">Field name or path</param>
     /// <param name="arguments">The arguments for the field</param>
     /// <param name="metadata">The field metadata</param>
     /// <param name="fieldBuilder">The field builder action</param>
-    /// <returns>Instance of <see cref="QueryBuilder"/></returns>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
     {
-        using var pooled = arguments?.Count > 0 ? ArgumentsPool.GetPooled(arguments) : default;
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+        using var pooled = ArgumentsPool.GetPooled(arguments);
         return AddFieldBuilderCore(field, Constants.DefaultFieldType, pooled.Dictionary, metadata, fieldBuilder);
     }
 
     /// <summary>
-    /// Adds a field to the query with type, metadata and Action.
+    ///     Adds a field to the query using a field builder with a specific type.
     /// </summary>
     /// <param name="field">Field name or path</param>
     /// <param name="type">The field type</param>
     /// <param name="metadata">The field metadata</param>
     /// <param name="fieldBuilder">The field builder action</param>
-    /// <returns>Instance of <see cref="QueryBuilder"/></returns>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
     public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
         => AddFieldBuilderCore(field, type, null, metadata, fieldBuilder);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private QueryBuilder AddFieldFastPath(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            throw new ArgumentException("Field cannot be null or empty", nameof(field));
+        }
+
+        // Skip DetermineFieldType call - we know it's DefaultFieldType for no subfields
+        FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+        // Defer UpdateRootMapping - will be called when query is built/used
+        return this;
+    }
+
+    /// <summary>
+    /// Core implementation for adding fields using FieldBuilder pattern.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="fieldType">The field type</param>
+    /// <param name="arguments">Optional arguments dictionary</param>
+    /// <param name="metadata">Optional metadata dictionary</param>
+    /// <param name="fieldBuilder">The field builder action</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldBuilderCore(string field, string fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
+    {
+        if (string.IsNullOrWhiteSpace(field))
+        {
+            throw new ArgumentException("Field cannot be null or empty", nameof(field));
+        }
+
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+
+        // FAST PATH: Only extract variables if arguments has content
+        if (arguments?.Count > 0)
+        {
+            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+        }
+
+        // Use the provided field type
+        var builder = FieldBuilder.Create(Definition.Fields, field, fieldType, arguments, metadata);
+        fieldBuilder(builder);
+
+        _queryMap.UpdateRootMapping(_definition);
+        return this;
+    }
+
     public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
+
+    /// <summary>
+    /// Core implementation for adding fields with optional arguments.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">Optional arguments dictionary</param>
+    /// <param name="subFields">Optional array of sub-field definitions</param>
+    /// <param name="metadata">Optional metadata dictionary</param>
+    /// <returns>Current QueryBuilder instance for method chaining</returns>
+    private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
+    {
+        if (arguments == null)
+        {
+            var emptyArgs = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            return AddFieldCore(field, in emptyArgs, subFields, metadata);
+        }
+        return AddFieldCore(field, in arguments, subFields, metadata);
+    }
 
     /// <summary>
     /// Core implementation for adding fields with unified parameter handling.

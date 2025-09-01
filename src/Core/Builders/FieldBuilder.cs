@@ -416,7 +416,7 @@ public sealed class FieldBuilder
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition GetOrAddSimpleField(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddSimpleField(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string? fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldDefinitions.TryGetValue(fieldName, out var existingField))
         {
@@ -439,7 +439,6 @@ public sealed class FieldBuilder
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        // FAIL-FAST: Empty path check
         if (fieldPath.IsEmpty)
         {
             throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
@@ -448,47 +447,50 @@ public sealed class FieldBuilder
         var hasNoArguments = arguments == null;
         var hasNoMetadata = metadata == null;
 
-        // FAST PATH: No arguments/metadata - use optimized span-based processing
+        // FAST PATH: No arguments/metadata - use optimized processing
         if (hasNoArguments && hasNoMetadata)
         {
-            var fastCurrentFields = fieldDefinitions;
-            FieldDefinition? fastResult = null;
-            var pathStart = 0;
-
-            while (pathStart < fieldPath.Length)
-            {
-                var dotIndex = fieldPath.Slice(pathStart).IndexOf('.');
-                var isLastSegment = dotIndex == -1;
-                var segmentEnd = isLastSegment ? fieldPath.Length : pathStart + dotIndex;
-                var segment = fieldPath.Slice(pathStart, segmentEnd - pathStart);
-                var segmentName = segment.ToString();
-
-                if (!fastCurrentFields.TryGetValue(segmentName, out var field))
-                {
-                    // IMPORTANT: Intermediate segments must be object type, only last segment uses fieldType
-                    var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-                    var segmentPath = fieldPath.Slice(0, segmentEnd);
-                    
-                    field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, null, segmentPath, null);
-                    fastCurrentFields[segmentName] = field;
-                }
-                else if (!isLastSegment && field.ShouldConvertToObjectType())
-                {
-                    // Convert existing field to object type if it has subfields
-                    field = fastCurrentFields[segmentName] = field with { Type = Constants.ObjectFieldType };
-                }
-
-                fastResult = field;
-                fastCurrentFields = field.Fields;
-                pathStart = isLastSegment ? fieldPath.Length : segmentEnd + 1;
-            }
-
-            return fastResult ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+            return ProcessDottedFieldFastPath(fieldDefinitions, fieldPath, fieldType);
         }
 
+        // SLOW PATH: With arguments/metadata
+        return ProcessDottedFieldWithMetadata(fieldDefinitions, fieldPath, fieldType, arguments, parentPath, metadata);
+    }
+
+    private static FieldDefinition ProcessDottedFieldFastPath(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    {
+        var currentFields = fieldDefinitions;
+        FieldDefinition? result = null;
+        var pathStart = 0;
+
+        while (pathStart < fieldPath.Length)
+        {
+            ExtractDottedSegment(fieldPath, pathStart, out var segment, out var isLastSegment, out var nextStart);
+            var segmentName = segment.ToString();
+
+            if (!currentFields.TryGetValue(segmentName, out var field))
+            {
+                field = CreateDottedFieldSegment(segment, fieldPath, pathStart + segment.Length, isLastSegment, fieldType);
+                currentFields[segmentName] = field;
+            }
+            else if (!isLastSegment && field.ShouldConvertToObjectType())
+            {
+                field = currentFields[segmentName] = field with { Type = Constants.ObjectFieldType };
+            }
+
+            result = field;
+            currentFields = field.Fields;
+            pathStart = nextStart;
+        }
+
+        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+    }
+
+    private static FieldDefinition ProcessDottedFieldWithMetadata(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
         var currentFields = fieldDefinitions;
         var parentPathSpan = parentPath.AsSpan();
-        Span<char> pathBuffer = stackalloc char[512]; // Stack allocation for path building
+        Span<char> pathBuffer = stackalloc char[512];
         var pathBuilder = new SpanPathBuilder(pathBuffer);
 
         if (!parentPathSpan.IsEmpty)
@@ -500,52 +502,74 @@ public sealed class FieldBuilder
 
         while (fieldPath.Length > 0)
         {
-            var dotIndex = fieldPath.IndexOf('.');
-            var isLastSegment = dotIndex == -1;
-            var segment = isLastSegment ? fieldPath : fieldPath[..dotIndex];
-
-            // FAIL-FAST: Skip empty segments immediately using span check
+            ExtractDottedSegmentWithPath(fieldPath, out var segment, out var isLastSegment, out var remainingPath);
+            
             if (segment.IsWhiteSpace())
             {
-                fieldPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
+                fieldPath = remainingPath;
                 continue;
             }
 
-            // Add segment to path builder
             pathBuilder.Append(segment);
-
-            if (!currentFields.TryGetValue(segment, out var field))
-            {
-                var segmentArgs = isLastSegment ? arguments : null;
-                var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-                var segmentMetadata = isLastSegment ? metadata : null;
-                // Optimize path building for hot path - use span directly
-                field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, pathBuilder.AsSpan(), segmentMetadata);
-                currentFields.SetValue(segment, field);
-            }
-            else
-            {
-                // FAIL-FAST: Skip argument merging if no arguments to merge
-                if (isLastSegment && arguments?.Count > 0)
-                {
-                    field = field.MergeFieldArguments(arguments);
-                    currentFields.SetValue(segment, field);
-                }
-
-                // FAIL-FAST: Skip type conversion check if not needed
-                if (!isLastSegment && field.ShouldConvertToObjectType())
-                {
-                    field = field with { Type = Constants.ObjectFieldType };
-                    currentFields.SetValue(segment, field);
-                }
-            }
-
-            result = field;
-            currentFields = field.Fields;
-            fieldPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
+            result = ProcessDottedSegment(currentFields, segment, isLastSegment, fieldType, arguments, metadata, pathBuilder.AsSpan());
+            currentFields = result.Fields;
+            fieldPath = remainingPath;
         }
 
         return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+    }
+
+    private static void ExtractDottedSegment(ReadOnlySpan<char> fieldPath, int pathStart, out ReadOnlySpan<char> segment, out bool isLastSegment, out int nextStart)
+    {
+        var dotIndex = fieldPath.Slice(pathStart).IndexOf('.');
+        isLastSegment = dotIndex == -1;
+        var segmentEnd = isLastSegment ? fieldPath.Length : pathStart + dotIndex;
+        segment = fieldPath.Slice(pathStart, segmentEnd - pathStart);
+        nextStart = isLastSegment ? fieldPath.Length : segmentEnd + 1;
+    }
+
+    private static void ExtractDottedSegmentWithPath(ReadOnlySpan<char> fieldPath, out ReadOnlySpan<char> segment, out bool isLastSegment, out ReadOnlySpan<char> remainingPath)
+    {
+        var dotIndex = fieldPath.IndexOf('.');
+        isLastSegment = dotIndex == -1;
+        segment = isLastSegment ? fieldPath : fieldPath[..dotIndex];
+        remainingPath = isLastSegment ? ReadOnlySpan<char>.Empty : fieldPath[(dotIndex + 1)..];
+    }
+
+    private static FieldDefinition CreateDottedFieldSegment(ReadOnlySpan<char> segment, ReadOnlySpan<char> fullPath, int segmentEnd, bool isLastSegment, ReadOnlySpan<char> fieldType)
+    {
+        var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
+        var segmentPath = fullPath.Slice(0, segmentEnd);
+        
+        return Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, null, segmentPath, null);
+    }
+
+    private static FieldDefinition ProcessDottedSegment(SortedDictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
+    {
+        if (!currentFields.TryGetValue(segment, out var field))
+        {
+            var segmentArgs = isLastSegment ? arguments : null;
+            var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
+            var segmentMetadata = isLastSegment ? metadata : null;
+            
+            field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
+            currentFields.SetValue(segment, field);
+            return field;
+        }
+        
+        if (isLastSegment && arguments?.Count > 0 && field != null)
+        {
+            field = field.MergeFieldArguments(arguments);
+            currentFields.SetValue(segment, field);
+        }
+
+        if (!isLastSegment && field?.ShouldConvertToObjectType() == true)
+        {
+            field = field with { Type = Constants.ObjectFieldType };
+            currentFields.SetValue(segment, field);
+        }
+
+        return field ?? throw new InvalidOperationException("Field cannot be null");
     }
 
     private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)

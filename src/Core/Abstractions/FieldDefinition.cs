@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
 
 namespace NGql.Core.Abstractions;
@@ -5,8 +6,18 @@ namespace NGql.Core.Abstractions;
 /// <summary>
 ///     Represents a field definition.
 /// </summary>
+[SuppressMessage("Minor Code Smell", "S2292:Trivial properties should be auto-implemented")]
 public sealed record FieldDefinition
 {
+    // Fields
+    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal string? _type;
+    internal string? _alias;
+    internal SortedDictionary<string, object?>? _arguments;
+    internal Dictionary<string, object?>? _metadata;
+    internal string Path { get; init; } = string.Empty;
+
+    // Constructors
     public FieldDefinition(string name, string? type = null, string? alias = null)
         : this(name, type ?? Constants.DefaultFieldType, alias, null)
     {
@@ -21,32 +32,7 @@ public sealed record FieldDefinition
         _fields = fields?.Count > 0 ? fields : null;
     }
 
-    /// <summary>
-    /// Gets a value indicating whether this field type is an array.
-    /// </summary>
-    [JsonIgnore]
-    public bool IsArray => _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
-
-    /// <summary>
-    /// Gets a value indicating whether this field type is nullable.
-    /// </summary>
-    [JsonIgnore]
-    public bool IsNullable => _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
-
-    /// <summary>
-    ///     The collection of fields related to <see cref="FieldDefinition"/>.
-    /// </summary>
-    [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields
-    {
-        get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
-        set => _fields = value;
-    }
-
-    internal SortedDictionary<string, FieldDefinition>? _fields;
-
-    internal string Path { get; set; } = string.Empty;
-
+    // Properties
     /// <summary>
     /// The name of the field.
     /// </summary>
@@ -64,8 +50,6 @@ public sealed record FieldDefinition
         init => _type = value;
     }
 
-    internal string? _type;
-
     /// <summary>
     /// The alias of the field, if any. This is used to provide a more readable or meaningful name for the field in queries.
     /// If not specified, the field will use its original name.
@@ -77,17 +61,23 @@ public sealed record FieldDefinition
         init => _alias = value;
     }
 
-    internal string? _alias;
+    /// <summary>
+    ///     The collection of fields related to <see cref="FieldDefinition"/>.
+    /// </summary>
+    [JsonPropertyName("fields")]
+    public SortedDictionary<string, FieldDefinition> Fields
+    {
+        get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
+        internal set => _fields = value;
+    }
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]
     public SortedDictionary<string, object?> Arguments
     {
         get => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
-        set => _arguments = value;
+        internal set => _arguments = value;
     }
-
-    internal SortedDictionary<string, object?>? _arguments;
 
     /// <summary>
     /// Metadata associated with the field definition.
@@ -102,8 +92,19 @@ public sealed record FieldDefinition
         set => _metadata = value;
     }
 
-    internal Dictionary<string, object?>? _metadata;
+    /// <summary>
+    /// Gets a value indicating whether this field type is an array.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsArray => _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
 
+    /// <summary>
+    /// Gets a value indicating whether this field type is nullable.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsNullable => _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
+
+    // Methods
     public override string ToString()
     {
         if (string.IsNullOrWhiteSpace(Type))

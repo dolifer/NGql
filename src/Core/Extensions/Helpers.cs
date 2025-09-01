@@ -1,9 +1,11 @@
 using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
 
+[SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class Helpers
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()

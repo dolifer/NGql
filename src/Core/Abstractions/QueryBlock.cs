@@ -190,6 +190,6 @@ public sealed class QueryBlock
         Helpers.ExtractVariablesFromValue(value, _variables);
         var sortedValue = Helpers.SortArgumentValue(value);
 
-        _arguments[key] = sortedValue;
+        _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 }
