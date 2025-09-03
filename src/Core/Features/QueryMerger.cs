@@ -2,7 +2,6 @@ using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 using NGql.Core.Exceptions;
 using NGql.Core.Extensions;
-using NGql.Core.Pooling;
 
 namespace NGql.Core.Features;
 
@@ -45,7 +44,7 @@ internal static class QueryMerger
         // FAST PATH: Merge variables efficiently
         var targetVars = targetDefinition._variables;
         var incomingVars = incomingQuery._variables;
-        
+
         if (targetVars is null && incomingVars is null)
         {
             // Both null - no variables to merge
@@ -70,7 +69,7 @@ internal static class QueryMerger
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);
 
         // FAST PATH: Skip field updates if no changes were made
-        if (mergeResult.UpdatedFields.Count == targetDefinition.Fields.Count && 
+        if (mergeResult.UpdatedFields.Count == targetDefinition.Fields.Count &&
             mergeResult.UpdatedFields.Keys.SequenceEqual(targetDefinition.Fields.Keys))
         {
             // Check if values are actually the same (reference equality for performance)
@@ -83,7 +82,7 @@ internal static class QueryMerger
                     break;
                 }
             }
-            
+
             if (!hasChanges)
             {
                 // No actual changes - just update query map and return
@@ -166,7 +165,7 @@ internal static class QueryMerger
     }
 
     private static MergeResult ProcessFieldMerge(
-        SortedDictionary<string, FieldDefinition> existingFields, 
+        SortedDictionary<string, FieldDefinition> existingFields,
         QueryDefinition incomingQuery,
         Action<SortedDictionary<string, FieldDefinition>, string, FieldDefinition, Dictionary<string, string>> fieldProcessor)
     {
@@ -189,7 +188,7 @@ internal static class QueryMerger
         string queryName)
     {
         var mappingTarget = incomingField.GetEffectiveName();
-        var uniqueKey = GenerateUniqueKey(mappingTarget, updatedFields.Keys);
+        var uniqueKey = KeyGenerator.GenerateUniqueKey(mappingTarget, updatedFields.Keys);
 
         var fieldToAdd = !string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase)
             ? incomingField with { Alias = uniqueKey }
@@ -217,27 +216,5 @@ internal static class QueryMerger
         }
 
         return null;
-    }
-
-    private static string GenerateUniqueKey(string baseKey, IEnumerable<string> existingKeys)
-    {
-        using var pooledSet = HashSetPool.GetPooled(existingKeys);
-        var existingKeySet = pooledSet.Set;
-
-        if (!existingKeySet.Contains(baseKey))
-        {
-            return baseKey;
-        }
-
-        var counter = 1;
-        string uniqueKey;
-        do
-        {
-            uniqueKey = $"{baseKey}_{counter}";
-            counter++;
-        }
-        while (existingKeySet.Contains(uniqueKey));
-
-        return uniqueKey;
     }
 }

@@ -12,7 +12,7 @@ public class GitHubIssuesTests
     {
         // Arrange
         var id = "some-package-id-42";
-        var date = DateTime.Parse("2025-07-29T00:00:00Z").ToString(ValueFormatter.DateFormat, CultureInfo.InvariantCulture);
+        var date = DateTime.Parse("2025-07-29T00:00:00Z", CultureInfo.InvariantCulture).ToString(ValueFormatter.DateFormat, CultureInfo.InvariantCulture);
         string queryText = new Query("BookingQuery")
             .Select(new Query("getBookingSessions")
                 .Where("packageId", id)

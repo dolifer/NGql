@@ -1,6 +1,7 @@
 using NGql.Core.Abstractions;
 using NGql.Core.Exceptions;
 using NGql.Core.Pooling;
+using NGql.Core.Features;
 
 namespace NGql.Core.Extensions;
 
@@ -112,7 +113,7 @@ internal static class FieldDefinitionExtensions
     internal static FieldDefinition MergeFields(FieldDefinition existing, FieldDefinition incoming)
     {
         // Check for type conflicts
-        if (!string.IsNullOrEmpty(existing._type) && !string.IsNullOrEmpty(incoming._type) && 
+        if (!string.IsNullOrEmpty(existing._type) && !string.IsNullOrEmpty(incoming._type) &&
             !string.Equals(existing._type, incoming._type, StringComparison.OrdinalIgnoreCase))
         {
             throw new QueryMergeException($"Type conflict: existing field has type '{existing._type}', incoming field has type '{incoming._type}'");
@@ -132,7 +133,26 @@ internal static class FieldDefinitionExtensions
             }
             else
             {
-                mergedFields[key] = incomingNestedField;
+                // Check for alias conflicts at nested level
+                var effectiveName = incomingNestedField.GetEffectiveName();
+
+                // Check if any existing field has the same effective name
+                var conflictingField = mergedFields.Values.FirstOrDefault(f =>
+                    string.Equals(f.GetEffectiveName(), effectiveName, StringComparison.OrdinalIgnoreCase));
+
+                if (conflictingField != null)
+                {
+                    // Generate unique alias to resolve conflict
+                    var existingEffectiveNames = mergedFields.Values.Select(f => f.GetEffectiveName());
+                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(effectiveName, existingEffectiveNames);
+
+                    var fieldToAdd = incomingNestedField with { Alias = uniqueAlias };
+                    mergedFields[key] = fieldToAdd;
+                }
+                else
+                {
+                    mergedFields[key] = incomingNestedField;
+                }
             }
         }
 
