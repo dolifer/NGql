@@ -39,13 +39,38 @@ public sealed class FieldBuilder
     }
 
     /// <summary>
-    /// Adds a field with optional type to the builder.
+    /// Applies a field configuration to the builder.
     /// </summary>
     /// <param name="fieldName">The name of the field.</param>
-    /// <param name="type">The type of the field (defaults to String).</param>
+    /// <param name="configuration">The field configuration to apply.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
-    public FieldBuilder AddField(string fieldName, string type = Constants.DefaultFieldType)
-        => AddFieldCore(fieldName, type, null, null, null, null);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal FieldBuilder ApplyFieldConfiguration(string fieldName, FieldConfiguration configuration)
+    {
+        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, (configuration.Type ?? Constants.DefaultFieldType).AsSpan(), configuration.Arguments, _fieldDefinition.Path, configuration.Metadata);
+
+        // FAIL-FAST: Skip subFields processing if array is null or empty
+        if (configuration.SubFields?.Length > 0)
+        {
+            foreach (var subField in configuration.SubFields)
+            {
+                // Use full field processing to handle dotted paths, types, aliases, etc.
+                GetOrAddField(field.Fields, subField, Constants.DefaultFieldTypeSpan, null, field.Path);
+            }
+        }
+
+        if (configuration.Action == null)
+        {
+            return this;
+        }
+
+        var fieldBuilder = new FieldBuilder(field);
+        configuration.Action(fieldBuilder);
+
+        _fieldDefinition.Fields[field.Name] = fieldBuilder._fieldDefinition;
+
+        return this;
+    }
 
     /// <summary>
     /// Adds a field with type and metadata to the builder.
@@ -55,7 +80,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? metadata)
-        => AddFieldCore(fieldName, type, null, null, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, metadata: metadata));
 
     /// <summary>
     /// Adds a field with subfields, arguments, and metadata to the builder.
@@ -66,7 +91,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
-        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, arguments, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.ObjectFieldType, subFields: subFields, arguments: arguments, metadata: metadata));
 
     /// <summary>
     /// Adds a field with type, arguments, and metadata to the builder.
@@ -77,7 +102,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata = null)
-        => AddFieldCore(fieldName, type, null, arguments, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, arguments: arguments, metadata: metadata));
 
     /// <summary>
     /// Adds a field with type, subfields, and metadata to the builder.
@@ -88,7 +113,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldCore(fieldName, type, subFields, null, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, metadata: metadata));
 
     /// <summary>
     /// Adds a field with arguments to the builder.
@@ -97,7 +122,7 @@ public sealed class FieldBuilder
     /// <param name="arguments">The arguments for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, arguments, null, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, arguments: arguments));
 
     /// <summary>
     /// Adds a field with arguments and metadata to the builder.
@@ -107,7 +132,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, arguments, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, arguments: arguments, metadata: metadata));
 
     /// <summary>
     /// Adds a field with type, subfields, and arguments to the builder.
@@ -118,7 +143,7 @@ public sealed class FieldBuilder
     /// <param name="arguments">The arguments for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments)
-        => AddFieldCore(fieldName, type, subFields, arguments, null, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, arguments: arguments));
 
     /// <summary>
     /// Adds a field with type, subfields, arguments, and metadata to the builder.
@@ -130,7 +155,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
-        => AddFieldCore(fieldName, type, subFields, arguments, metadata, null);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, arguments: arguments, metadata: metadata));
 
     /// <summary>
     /// Adds a field with a nested builder action to the builder.
@@ -139,7 +164,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, null, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, action: action));
 
     /// <summary>
     /// Adds a field with metadata and a nested builder action to the builder.
@@ -149,7 +174,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, null, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with type and a nested builder action to the builder.
@@ -159,7 +184,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, null, null, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, action: action));
 
     /// <summary>
     /// Adds a field with type, metadata, and a nested builder action to the builder.
@@ -170,7 +195,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, null, null, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with arguments and a nested builder action to the builder.
@@ -180,7 +205,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, arguments, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, arguments: arguments, action: action));
 
     /// <summary>
     /// Adds a field with arguments, metadata, and a nested builder action to the builder.
@@ -191,7 +216,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.DefaultFieldType, null, arguments, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.DefaultFieldType, arguments: arguments, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with type, arguments, and a nested builder action to the builder.
@@ -202,7 +227,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, null, arguments, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, arguments: arguments, action: action));
 
     /// <summary>
     /// Adds a field with type, arguments, metadata, and a nested builder action to the builder.
@@ -214,7 +239,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, null, arguments, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, arguments: arguments, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with subfields and a nested builder action to the builder.
@@ -224,7 +249,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string[] subFields, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, null, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.ObjectFieldType, subFields: subFields, action: action));
 
     /// <summary>
     /// Adds a field with subfields, metadata, and a nested builder action to the builder.
@@ -235,7 +260,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string[] subFields, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, null, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.ObjectFieldType, subFields: subFields, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with type, subfields, and a nested builder action to the builder.
@@ -246,7 +271,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, subFields, null, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, action: action));
 
     /// <summary>
     /// Adds a field with type, subfields, metadata, and a nested builder action to the builder.
@@ -258,7 +283,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, subFields, null, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with subfields, arguments, and a nested builder action to the builder.
@@ -269,7 +294,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, arguments, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.ObjectFieldType, subFields: subFields, arguments: arguments, action: action));
 
     /// <summary>
     /// Adds a field with subfields, arguments, metadata, and a nested builder action to the builder.
@@ -281,7 +306,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, Constants.ObjectFieldType, subFields, arguments, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: Constants.ObjectFieldType, subFields: subFields, arguments: arguments, metadata: metadata, action: action));
 
     /// <summary>
     /// Adds a field with type, subfields, arguments, and a nested builder action to the builder.
@@ -293,7 +318,7 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, subFields, arguments, null, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, arguments: arguments, action: action));
 
     /// <summary>
     /// Adds a field with type, subfields, arguments, metadata, and a nested builder action to the builder.
@@ -306,35 +331,16 @@ public sealed class FieldBuilder
     /// <param name="action">The action to configure nested fields.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder AddField(string fieldName, string type, string[] subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, type, subFields, arguments, metadata, action);
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type, subFields: subFields, arguments: arguments, metadata: metadata, action: action));
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private FieldBuilder AddFieldCore(string fieldName, string type, string[]? subFields, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder>? action)
-    {
-        var field = GetOrAddField(_fieldDefinition.Fields, fieldName, type.AsSpan(), arguments, _fieldDefinition.Path, metadata);
-
-        // FAIL-FAST: Skip subFields processing if array is null or empty
-        if (subFields?.Length > 0)
-        {
-            foreach (var subField in subFields)
-            {
-                // Use full field processing to handle dotted paths, types, aliases, etc.
-                GetOrAddField(field.Fields, subField, Constants.DefaultFieldTypeSpan, null, field.Path);
-            }
-        }
-
-        if (action == null)
-        {
-            return this;
-        }
-
-        var fieldBuilder = new FieldBuilder(field);
-        action(fieldBuilder);
-
-        _fieldDefinition.Fields[field.Name] = fieldBuilder._fieldDefinition;
-
-        return this;
-    }
+    /// <summary>
+    /// Adds a field with optional type to the builder.
+    /// </summary>
+    /// <param name="fieldName">The name of the field.</param>
+    /// <param name="type">The type of the field (defaults to String).</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, string type = Constants.DefaultFieldType)
+        => ApplyFieldConfiguration(fieldName, FieldConfiguration.From(type: type));
 
     /// <summary>
     /// Creates a new FieldBuilder instance for the specified field.
