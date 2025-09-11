@@ -8,7 +8,7 @@ namespace NGql.Core.Extensions;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class Helpers
 {
-    private static readonly JsonSerializerOptions _jsonOptions = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
@@ -278,8 +278,8 @@ internal static class Helpers
         // For complex objects, serialize and compare with consistent ordering
         if (value1 is not string && value1.GetType().IsClass)
         {
-            var json1 = JsonSerializer.Serialize(value1, _jsonOptions);
-            var json2 = JsonSerializer.Serialize(value2, _jsonOptions);
+            var json1 = JsonSerializer.Serialize(value1, JsonOptions);
+            var json2 = JsonSerializer.Serialize(value2, JsonOptions);
             return json1 == json2;
         }
 
@@ -311,7 +311,7 @@ internal static class Helpers
         if (potentialType.Length > 0 &&
             (char.IsLetter(potentialType[0]) || potentialType[0] == '[') &&
             potentialType.IndexOf('.') == -1 &&
-            (HasLetterOrDigit(potentialType) || potentialType.SequenceEqual("[]".AsSpan())))
+            (potentialType.HasLetterOrDigit() || potentialType.SequenceEqual("[]".AsSpan())))
         {
             type = potentialType;
             fieldPath = fieldPath[(spaceIndex + 1)..];
@@ -322,18 +322,6 @@ internal static class Helpers
         }
 
         return fieldPath.TrimEnd(['.', ' ']);
-    }
-
-    private static bool HasLetterOrDigit(ReadOnlySpan<char> span)
-    {
-        foreach (var c in span)
-        {
-            if (char.IsLetterOrDigit(c))
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>

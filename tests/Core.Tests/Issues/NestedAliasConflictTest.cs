@@ -1,5 +1,4 @@
 using System.Threading.Tasks;
-using FluentAssertions;
 using NGql.Core.Tests.Extensions;
 using Xunit;
 using static NGql.Core.Builders.QueryBuilder;

@@ -79,4 +79,17 @@ internal static class SpanExtensions
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsComplexField(this ReadOnlySpan<char> span) => span.HasSpaces() || span.HasColons();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool HasLetterOrDigit(this ReadOnlySpan<char> span)
+    {
+        foreach (var c in span)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -1,0 +1,13 @@
+﻿query ComplexQuery{
+    parent{
+        child1{
+            grandchild1{
+                email
+                name
+            }
+        }
+        child2{
+            grandchild2
+        }
+    }
+}

@@ -1,0 +1,8 @@
+﻿query AliasQuery{
+    userAlias:user{
+        profileAlias:profile{
+            bio
+            name
+        }
+    }
+}
