@@ -17,6 +17,9 @@ public sealed record FieldDefinition
     internal Dictionary<string, object?>? _metadata;
     internal string Path { get; init; } = string.Empty;
 
+    private bool? _isArray;
+    private bool? _isNullable;
+
     // Constructors
     public FieldDefinition(string name, string? type = null, string? alias = null)
         : this(name, type ?? Constants.DefaultFieldType, alias, null)
@@ -76,7 +79,7 @@ public sealed record FieldDefinition
     public SortedDictionary<string, object?> Arguments
     {
         get => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
-        internal set => _arguments = value;
+        internal init => _arguments = value;
     }
 
     /// <summary>
@@ -96,13 +99,13 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
+    public bool IsArray => _isArray ??= _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
+    public bool IsNullable => _isNullable ??= _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
 
     // Methods
     public override string ToString()

@@ -1,6 +1,6 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
-using System.Text.Json;
+using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
@@ -8,13 +8,6 @@ namespace NGql.Core.Extensions;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class Helpers
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
-    };
-
     internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
         if (value == null)
@@ -124,6 +117,48 @@ internal static class Helpers
         return result;
     }
 
+    /// <summary>
+    /// Merges two dictionaries with support for nullable values and recursive merging of nested dictionaries.
+    /// This is the primary efficient implementation that avoids extra allocations.
+    /// </summary>
+    /// <param name="existing">The existing dictionary</param>
+    /// <param name="update">The dictionary to merge in</param>
+    /// <returns>A merged SortedDictionary with nullable values</returns>
+    internal static SortedDictionary<string, object?> MergeNullableDictionaries(
+        IDictionary<string, object?> existing,
+        IDictionary<string, object?> update)
+    {
+        var result = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        
+        // Copy existing entries
+        foreach (var kvp in existing)
+        {
+            result[kvp.Key] = kvp.Value;
+        }
+
+        // Merge update entries with recursive handling for nested dictionaries
+        foreach (var (key, newValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue) &&
+                existingValue is IDictionary<string, object?> existingDict && 
+                newValue is IDictionary<string, object?> newDict)
+            {
+                // Recursively merge nested dictionaries
+                result[key] = MergeNullableDictionaries(existingDict, newDict);
+            }
+            else
+            {
+                // Override with new value for non-dictionary values or new keys
+                result[key] = newValue;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Merges two non-nullable dictionaries by delegating to the core generic implementation.
+    /// </summary>
     internal static SortedDictionary<string, object> MergeDictionaries(
         IDictionary<string, object> existing,
         IDictionary<string, object> update)
@@ -136,7 +171,7 @@ internal static class Helpers
     }
 
     /// <summary>
-    /// Merges metadata dictionaries, handling nullable values appropriately.
+    /// Merges metadata dictionaries, handling nullable values appropriately with deep/recursive merging for nested dictionaries.
     /// </summary>
     /// <param name="existing">The existing metadata dictionary</param>
     /// <param name="update">The metadata dictionary to merge in</param>
@@ -145,10 +180,10 @@ internal static class Helpers
         Dictionary<string, object?>? existing,
         Dictionary<string, object> update)
     {
-        // FAST PATH: If no existing metadata, just convert update to nullable
+        // ULTRA FAST PATH: If no existing metadata, just convert update to nullable with pre-sized dictionary
         if (existing is null || existing.Count == 0)
         {
-            var converted = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            var converted = new Dictionary<string, object?>(update.Count, StringComparer.OrdinalIgnoreCase);
             foreach (var (key, value) in update)
             {
                 converted[key] = value;
@@ -156,18 +191,166 @@ internal static class Helpers
             return converted;
         }
 
-        // FAST PATH: If no update metadata, return existing
+        // ULTRA FAST PATH: If no update metadata, return existing as-is
         if (update.Count == 0)
         {
             return existing;
         }
 
-        // Use generic merge logic
-        return MergeDictionariesCore<Dictionary<string, object?>, object?>(
-            existing,
-            update.ToDictionary(kvp => kvp.Key, kvp => (object?)kvp.Value),
-            () => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
-            (e, u) => MergeMetadata((Dictionary<string, object?>)e, u.ToDictionary(kvp => kvp.Key, kvp => kvp.Value!)));
+        // FAST PATH: Pre-size result dictionary to avoid resizing
+        var result = new Dictionary<string, object?>(existing.Count + update.Count, StringComparer.OrdinalIgnoreCase);
+        
+        // Copy existing entries
+        foreach (var (key, value) in existing)
+        {
+            result[key] = value;
+        }
+
+        // Merge update entries with deep merging for nested dictionaries
+        foreach (var (key, newValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue) && 
+                existingValue is Dictionary<string, object?> existingDict && 
+                newValue is Dictionary<string, object> newDict)
+            {
+                // Deep merge nested dictionaries
+                result[key] = MergeMetadataDictionaries(existingDict, newDict);
+            }
+            else
+            {
+                // For non-dictionary values or when key doesn't exist, override with new value
+                result[key] = newValue;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Merges metadata dictionaries where both existing and update can have nullable values.
+    /// </summary>
+    /// <param name="existing">The existing metadata dictionary</param>
+    /// <param name="update">The metadata dictionary to merge in</param>
+    /// <returns>A merged Dictionary with nullable values suitable for metadata</returns>
+    internal static Dictionary<string, object?> MergeNullableMetadata(
+        Dictionary<string, object?>? existing,
+        Dictionary<string, object?>? update)
+    {
+        // ULTRA FAST PATH: If no update metadata, return existing or empty
+        if (update is null || update.Count == 0)
+        {
+            return existing ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        // ULTRA FAST PATH: If no existing metadata, return copy of update
+        if (existing is null || existing.Count == 0)
+        {
+            return new Dictionary<string, object?>(update, StringComparer.OrdinalIgnoreCase);
+        }
+
+        // MERGE PATH: Both dictionaries have content
+        var result = new Dictionary<string, object?>(existing.Count + update.Count, StringComparer.OrdinalIgnoreCase);
+        
+        // Copy existing entries
+        foreach (var (key, value) in existing)
+        {
+            result[key] = value;
+        }
+
+        // Merge update entries with deep merging for nested dictionaries
+        foreach (var (key, newValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue) && 
+                existingValue is Dictionary<string, object?> existingDict && 
+                newValue is Dictionary<string, object?> newDict)
+            {
+                // Deep merge nested dictionaries - both nullable
+                result[key] = MergeNullableMetadataDictionaries(existingDict, newDict);
+            }
+            else
+            {
+                // For non-dictionary values or when key doesn't exist, override with new value
+                result[key] = newValue;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Deep merges two metadata dictionaries recursively.
+    /// </summary>
+    /// <param name="existing">The existing dictionary</param>
+    /// <param name="update">The dictionary to merge in</param>
+    /// <returns>A merged dictionary with deep merging of nested dictionaries</returns>
+    private static Dictionary<string, object?> MergeMetadataDictionaries(
+        Dictionary<string, object?> existing,
+        Dictionary<string, object> update)
+    {
+        var result = new Dictionary<string, object?>(existing.Count + update.Count, StringComparer.OrdinalIgnoreCase);
+        
+        // Copy existing entries
+        foreach (var (key, value) in existing)
+        {
+            result[key] = value;
+        }
+
+        // Merge update entries with recursive merging for nested dictionaries
+        foreach (var (key, newValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue) && 
+                existingValue is Dictionary<string, object?> existingNestedDict && 
+                newValue is Dictionary<string, object> newNestedDict)
+            {
+                // Recursively merge nested dictionaries
+                result[key] = MergeMetadataDictionaries(existingNestedDict, newNestedDict);
+            }
+            else
+            {
+                // Override with new value for non-dictionary values or when key doesn't exist
+                result[key] = newValue;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Deep merges two nullable metadata dictionaries recursively.
+    /// </summary>
+    /// <param name="existing">The existing dictionary</param>
+    /// <param name="update">The dictionary to merge in</param>
+    /// <returns>A merged dictionary with deep merging of nested dictionaries</returns>
+    private static Dictionary<string, object?> MergeNullableMetadataDictionaries(
+        Dictionary<string, object?> existing,
+        Dictionary<string, object?> update)
+    {
+        var result = new Dictionary<string, object?>(existing.Count + update.Count, StringComparer.OrdinalIgnoreCase);
+        
+        // Copy existing entries
+        foreach (var (key, value) in existing)
+        {
+            result[key] = value;
+        }
+
+        // Merge update entries with recursive merging for nested dictionaries
+        foreach (var (key, newValue) in update)
+        {
+            if (result.TryGetValue(key, out var existingValue) && 
+                existingValue is Dictionary<string, object?> existingNestedDict && 
+                newValue is Dictionary<string, object?> newNestedDict)
+            {
+                // Recursively merge nested dictionaries - both nullable
+                result[key] = MergeNullableMetadataDictionaries(existingNestedDict, newNestedDict);
+            }
+            else
+            {
+                // Override with new value for non-dictionary values or when key doesn't exist
+                result[key] = newValue;
+            }
+        }
+
+        return result;
     }
 
     internal static object? SortArgumentValue(object? value)
@@ -221,18 +404,21 @@ internal static class Helpers
     /// <param name="args1">First argument dictionary</param>
     /// <param name="args2">Second argument dictionary</param>
     /// <returns>True if arguments are equal, false otherwise</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static bool AreArgumentsEqual(SortedDictionary<string, object?>? args1, SortedDictionary<string, object?>? args2)
     {
-        // Handle null cases
+        // ULTRA FAST PATH: Reference equality
+        if (ReferenceEquals(args1, args2)) return true;
+        
+        // FAST PATH: Handle null cases
         if (args1 == null && args2 == null) return true;
         if (args1 == null || args2 == null) return false;
         
-        // For merging purposes, we need exact argument equality
-        // Empty/null arguments should only match other empty/null arguments
-        if (args1.Count != args2.Count)
-        {
-            return false;
-        }
+        // FAST PATH: Count mismatch
+        if (args1.Count != args2.Count) return false;
+        
+        // ULTRA FAST PATH: Both empty
+        if (args1.Count == 0) return true;
 
         // Both must have the same number of arguments (including 0)
         foreach (var (key, value1) in args1)
@@ -252,38 +438,120 @@ internal static class Helpers
     }
 
     /// <summary>
-    /// Compares two values for equality, handling complex objects via JSON serialization.
+    /// Compares two values for equality, using optimized comparison strategies.
     /// </summary>
     /// <param name="value1">First value</param>
     /// <param name="value2">Second value</param>
     /// <returns>True if values are equal, false otherwise</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool AreValuesEqual(object? value1, object? value2)
     {
-        if (ReferenceEquals(value1, value2))
+        // ULTRA FAST PATH: Reference equality (includes both null)
+        if (ReferenceEquals(value1, value2)) return true;
+
+        // FAST PATH: One is null, other isn't
+        if (value1 == null || value2 == null) return false;
+
+        // FAST PATH: Type mismatch
+        var type1 = value1.GetType();
+        var type2 = value2.GetType();
+        if (type1 != type2) return false;
+
+        // ULTRA FAST PATH: Value types and strings (most common case)
+        if (type1.IsValueType || value1 is string)
         {
-            return true;
+            return value1.Equals(value2);
         }
 
-        if (value1 == null || value2 == null)
+        // FAST PATH: Dictionaries
+        if (value1 is IDictionary<string, object?> dict1 && value2 is IDictionary<string, object?> dict2)
         {
-            return false;
+            return AreDictionariesEqual(dict1, dict2);
         }
 
-        // Handle different types strictly - they should not be equal
-        if (value1.GetType() != value2.GetType())
+        // FAST PATH: Collections
+        if (value1 is IList list1 && value2 is IList list2)
         {
-            return false;
+            return AreListsEqual(list1, list2);
         }
 
-        // For complex objects, serialize and compare with consistent ordering
-        if (value1 is not string && value1.GetType().IsClass)
+        // For complex objects, use structural comparison
+        if (type1.IsClass)
         {
-            var json1 = JsonSerializer.Serialize(value1, JsonOptions);
-            var json2 = JsonSerializer.Serialize(value2, JsonOptions);
-            return json1 == json2;
+            return AreObjectsStructurallyEqual(value1, value2);
         }
 
         return value1.Equals(value2);
+    }
+
+    /// <summary>
+    /// Optimized dictionary equality comparison
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool AreDictionariesEqual(IDictionary<string, object?> dict1, IDictionary<string, object?> dict2)
+    {
+        // FAST PATH: Count mismatch
+        var count = dict1.Count;
+        if (count != dict2.Count) return false;
+        
+        // ULTRA FAST PATH: Both empty
+        if (count == 0) return true;
+
+        foreach (var kvp in dict1)
+        {
+            if (!dict2.TryGetValue(kvp.Key, out var value2) || !AreValuesEqual(kvp.Value, value2))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Optimized list equality comparison
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool AreListsEqual(IList list1, IList list2)
+    {
+        // FAST PATH: Count mismatch
+        var count = list1.Count;
+        if (count != list2.Count) return false;
+        
+        // ULTRA FAST PATH: Both empty
+        if (count == 0) return true;
+
+        for (int i = 0; i < count; i++)
+        {
+            if (!AreValuesEqual(list1[i], list2[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Structural equality comparison for complex objects using reflection
+    /// </summary>
+    private static bool AreObjectsStructurallyEqual(object obj1, object obj2)
+    {
+        var type = obj1.GetType();
+        var properties = type.GetProperties();
+
+        foreach (var property in properties)
+        {
+            var value1 = property.GetValue(obj1);
+            var value2 = property.GetValue(obj2);
+
+            if (!AreValuesEqual(value1, value2))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -300,7 +568,7 @@ internal static class Helpers
         if (spaceIndex <= 0)
         {
             type = defaultType;
-            return fieldPath.TrimEnd(['.', ' ']);
+            return fieldPath.TrimEndDotsAndSpaces();
         }
 
         var potentialType = fieldPath[..spaceIndex];
@@ -321,7 +589,7 @@ internal static class Helpers
             type = defaultType;
         }
 
-        return fieldPath.TrimEnd(['.', ' ']);
+        return fieldPath.TrimEndDotsAndSpaces();
     }
 
     /// <summary>
@@ -337,8 +605,9 @@ internal static class Helpers
     /// </summary>
     internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
     {
+        // Use type interning for memory efficiency
         var nameStr = name.ToString();
-        var typeStr = type.ToString();
+        var typeStr = NGql.Core.Caching.TypeCache.GetInternedType(type);
         var aliasStr = alias.IsEmpty ? null : alias.ToString();
         var pathStr = path.ToString();
 
@@ -394,7 +663,7 @@ internal static class Helpers
             return null;
         }
 
-        // FAST PATH: Simple field name without dots, spaces, or colons
+        // ULTRA FAST PATH: Simple field name without dots, spaces, or colons
         if (fieldPath.IndexOf('.') == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
         {
             return fields.GetValueOrDefault(fieldPath.ToString());
@@ -414,11 +683,11 @@ internal static class Helpers
             fieldName = fieldName.Trim();
 
             var fieldNameStr = fieldName.ToString();
-
+            
             // Try exact match first
-            if (currentFields.ContainsKey(fieldNameStr))
+            if (currentFields.TryGetValue(fieldNameStr, out currentField))
             {
-                currentField = currentFields[fieldNameStr];
+                // Found it
             }
             // Try to find field with type annotation (e.g., "[] posts" when looking for "posts")
             else
@@ -449,7 +718,4 @@ internal static class Helpers
 
         return currentField;
     }
-
-    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, string fieldPath)
-        => FindExistingFieldByPath(fields, fieldPath.AsSpan());
 }

@@ -15,7 +15,7 @@ internal static class KeyGenerator
     /// <returns>A unique key that doesn't exist in the collection</returns>
     internal static string GenerateUniqueKey(string baseKey, IEnumerable<string> existingKeys)
     {
-        using var pooledSet = HashSetPool.GetPooled(existingKeys);
+        using var pooledSet = LockFreeHashSetPool.GetPooled(existingKeys);
         var existingKeySet = pooledSet.Set;
 
         if (!existingKeySet.Contains(baseKey))

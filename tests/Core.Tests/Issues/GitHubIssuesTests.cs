@@ -1,10 +1,14 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using FluentAssertions;
 using Xunit;
+// ReSharper disable RedundantExplicitParamsArrayCreation
 
 namespace NGql.Core.Tests.Issues;
 
+[SuppressMessage("Minor Code Smell", "S3878:Arrays should not be created for params parameters")]
+[SuppressMessage("Minor Code Smell", "S3220:Method calls should not resolve ambiguously to overloads with \"params\"")]
 public class GitHubIssuesTests
 {
     [Fact]

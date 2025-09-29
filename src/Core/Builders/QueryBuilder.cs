@@ -87,7 +87,7 @@ public sealed class QueryBuilder
         
         if (arguments?.Count > 0)
         {
-            using var pooled = ArgumentsPool.GetPooled(arguments);
+            using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
             return AddFieldCore(field, pooled.Dictionary, null, metadata);
         }
         return AddFieldCore(field, null, null, metadata);
@@ -140,7 +140,7 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        using var pooled = ArgumentsPool.GetPooled(arguments);
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
         return AddFieldCore(field, pooled.Dictionary, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
     }
 
@@ -155,7 +155,7 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        using var pooled = ArgumentsPool.GetPooled(arguments);
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
         return AddFieldCore(field, pooled.Dictionary, subFields, metadata);
     }
 
@@ -193,7 +193,7 @@ public sealed class QueryBuilder
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
     {
         ArgumentNullException.ThrowIfNull(fieldBuilder);
-        using var pooled = ArgumentsPool.GetPooled(arguments);
+        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
         return AddFieldBuilderCore(field, Constants.DefaultFieldType, pooled.Dictionary, metadata, fieldBuilder);
     }
 
@@ -218,8 +218,25 @@ public sealed class QueryBuilder
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
         }
 
-        // Skip DetermineFieldType call - we know it's DefaultFieldType for no subfields
-        FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+        // ULTRA FAST PATH: Direct field creation for simple cases
+        var fieldSpan = field.AsSpan();
+        if (fieldSpan.IsSimpleField())
+        {
+            // Bypass FieldBuilder.Create for maximum performance
+            if (!Definition.Fields.ContainsKey(field))
+            {
+                Definition.Fields[field] = new FieldDefinition(field, Constants.DefaultFieldType)
+                {
+                    Path = field
+                };
+            }
+        }
+        else
+        {
+            // Fallback to standard processing for complex fields
+            FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+        }
+        
         // Defer UpdateRootMapping - will be called when query is built/used
         return this;
     }
@@ -301,7 +318,8 @@ public sealed class QueryBuilder
         }
 
         // Determine field type based on presence of subfields and existing field type
-        var type = DetermineFieldType(field, hasSubFields);
+        var fieldSpan = field.AsSpan();
+        var type = DetermineFieldTypeOptimized(fieldSpan, hasSubFields);
 
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
@@ -365,31 +383,34 @@ public sealed class QueryBuilder
 
     public static implicit operator string(QueryBuilder query) => query.ToString();
 
+
+
     /// <summary>
-    /// Determines the appropriate field type based on existing fields, explicit types, and subfield presence.
+    /// Optimized version using spans to reduce allocations
     /// </summary>
-    private string DetermineFieldType(string field, bool hasSubFields)
+    private string DetermineFieldTypeOptimized(ReadOnlySpan<char> fieldSpan, bool hasSubFields)
     {
-        // FAST PATH: No subfields means default type
+        // ULTRA FAST PATH: No subfields means default type
         if (!hasSubFields)
         {
             return Constants.DefaultFieldType;
         }
 
+        // ULTRA FAST PATH: Classify field characteristics once
+        var (hasSpaces, _, _) = fieldSpan.ClassifyFieldFast();
+        
         // FAST PATH: No space means no explicit type, skip parsing
-        var hasNoSpaces = !field.AsSpan().HasSpaces();
-        if (hasNoSpaces)
+        if (!hasSpaces)
         {
             return Constants.ObjectFieldType;
         }
 
-        // Parse type from field path to check for explicit type
-        var fieldSpan = field.AsSpan();
+        // OPTIMIZED PATH: Parse type from field path to check for explicit type
         Helpers.ParseFieldTypeFromPath(fieldSpan, Constants.DefaultFieldTypeSpan, out var parsedType);
-        var hasExplicitType = !parsedType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase);
+        var hasExplicitType = !parsedType.EqualsIgnoreCase(Constants.DefaultFieldTypeSpan);
 
-        // Find existing field - check the actual target field, not just root
-        var existingField = Helpers.FindExistingFieldByPath(Definition.Fields, field);
+        // FAST PATH: Use cached field lookup for better performance
+        var existingField = FindExistingFieldCached(fieldSpan);
 
         // Priority 1: Preserve existing explicit types (non-default, non-object)
         if (existingField?._type != null &&
@@ -399,10 +420,10 @@ public sealed class QueryBuilder
             return existingField._type;
         }
 
-        // Priority 2: Use newly specified explicit type
+        // Priority 2: Use newly specified explicit type with interning
         if (hasExplicitType)
         {
-            return parsedType.ToString();
+            return Caching.TypeCache.InternType(parsedType);
         }
 
         // Priority 3: Preserve existing object type
@@ -413,5 +434,18 @@ public sealed class QueryBuilder
 
         // Priority 4: Default to object type for subfields
         return Constants.ObjectFieldType;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private FieldDefinition? FindExistingFieldCached(ReadOnlySpan<char> fieldSpan)
+    {
+        // ULTRA FAST PATH: Simple field lookup
+        if (fieldSpan.IsSimpleField())
+        {
+            return Definition.Fields.GetValueOrDefault(fieldSpan.ToString());
+        }
+
+        // FAST PATH: Use optimized path traversal
+        return Helpers.FindExistingFieldByPath(Definition.Fields, fieldSpan);
     }
 }
