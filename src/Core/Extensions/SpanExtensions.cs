@@ -193,4 +193,15 @@ internal static class SpanExtensions
         }
         return span[..(end + 1)];
     }
+
+    /// <summary>
+    /// Extract field name from segment by taking everything after the last colon
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ReadOnlySpan<char> ExtractFieldName(this ReadOnlySpan<char> segment)
+    {
+        var colonIndex = segment.LastIndexOf(':');
+        var fieldName = colonIndex == -1 ? segment : segment[(colonIndex + 1)..];
+        return fieldName.Trim();
+    }
 }

@@ -189,13 +189,13 @@ internal sealed class QueryTextBuilder
         {
             case IList listValue:
                 {
-                    WriteCollection('[', ']', listValue, builder);
+                    Helpers.WriteCollection('[', ']', listValue, builder, WriteObject);
                     break;
                 }
 
             case IDictionary dictValue:
                 {
-                    WriteCollection('{', '}', dictValue, builder);
+                    Helpers.WriteCollection('{', '}', dictValue, builder, WriteObject);
                     break;
                 }
 
@@ -204,29 +204,10 @@ internal sealed class QueryTextBuilder
                     var values = valueType
                         .GetProperties()
                         .ToDictionary(x => x.Name, x => x.GetValue(value));
-                    WriteCollection('{', '}', values, builder);
+                    Helpers.WriteCollection('{', '}', values, builder, WriteObject);
                     break;
                 }
         }
-    }
-
-    private static void WriteCollection(char prefix, char suffix, IEnumerable list, StringBuilder builder)
-    {
-        builder.Append(prefix);
-
-        bool first = true;
-        foreach (var obj in list)
-        {
-            if (!first)
-            {
-                builder.Append(", ");
-            }
-
-            first = false;
-            WriteObject(builder, obj);
-        }
-
-        builder.Append(suffix);
     }
 
     private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
