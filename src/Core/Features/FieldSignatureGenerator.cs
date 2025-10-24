@@ -1,5 +1,7 @@
+using System.Collections;
 using System.Text;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Features;
 
@@ -44,7 +46,7 @@ public static class FieldSignatureGenerator
     /// <param name="parentPath">Parent path as ReadOnlySpan to avoid string allocations</param>
     private static void AppendFieldSignature(StringBuilder builder, FieldDefinition field, ReadOnlySpan<char> parentPath)
     {
-        // Build current path efficiently using Span operations
+        // Build the current path efficiently using Span operations
         Span<char> currentPathBuffer = stackalloc char[256]; // Stack allocation for path building
         int pathLength = 0;
 
@@ -150,56 +152,45 @@ public static class FieldSignatureGenerator
     /// <param name="value">Argument value to append</param>
     private static void AppendArgumentValue(StringBuilder builder, object? value)
     {
+        if (value is null)
+        {
+            builder.Append("null");
+            return;
+        }
+
+        if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
+        {
+            builder.Append(formattedValue);
+            return;
+        }
+
+        AppendComplexValue(builder, value);
+    }
+
+    private static void AppendComplexValue(StringBuilder builder, object value)
+    {
         switch (value)
         {
-            case null:
-                builder.Append("null");
-                break;
-            case string str:
-                builder.Append('"').Append(str).Append('"');
-                break;
-            case int intValue:
-                builder.Append(intValue);
-                break;
-            case long longValue:
-                builder.Append(longValue);
-                break;
-            case bool boolValue:
-                builder.Append(boolValue ? "true" : "false");
-                break;
-            case double doubleValue:
-                builder.Append(doubleValue);
-                break;
-            case float floatValue:
-                builder.Append(floatValue);
-                break;
             case IDictionary<string, object?> dict:
-                builder.Append('{');
-                foreach (var kvp in dict.OrderBy(d => d.Key))
-                {
-                    builder.Append(kvp.Key).Append(':');
-                    AppendArgumentValue(builder, kvp.Value);
-                    builder.Append(',');
-                }
-                builder.Append('}');
+                AppendDictionary(builder, dict);
                 break;
-            case System.Collections.IEnumerable enumerable when value is not string:
-                builder.Append('[');
-                foreach (var item in enumerable)
-                {
-                    AppendArgumentValue(builder, item);
-                    builder.Append(',');
-                }
-                builder.Append(']');
+            case IEnumerable enumerable when value is not string:
+                AppendEnumerable(builder, enumerable);
                 break;
             default:
-                // Fallback to ToString() for other types
-                var stringValue = value.ToString();
-                if (stringValue != null)
-                {
-                    builder.Append(stringValue);
-                }
+                builder.Append(value);
                 break;
         }
     }
+
+    private static void AppendDictionary(StringBuilder builder, IDictionary<string, object?> dict)
+        => Helpers.WriteCollection('{', '}', dict.OrderBy(d => d.Key), builder, (sb, item) =>
+        {
+            var kvp = (KeyValuePair<string, object?>)item!;
+            sb.Append(kvp.Key).Append(':');
+            AppendArgumentValue(sb, kvp.Value);
+        });
+
+    private static void AppendEnumerable(StringBuilder builder, IEnumerable enumerable)
+        => Helpers.WriteCollection('[', ']', enumerable, builder, (sb, item) => AppendArgumentValue(sb, item));
 }

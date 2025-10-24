@@ -1,0 +1,17 @@
+﻿query ComplexOverlapping{
+    user{
+        posts{
+            content
+            title
+        }
+        profile{
+            avatar{
+                size
+                url
+            }
+            bio
+            email
+            name
+        }
+    }
+}

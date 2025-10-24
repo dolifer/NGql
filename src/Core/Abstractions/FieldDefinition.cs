@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
+using NGql.Core.Extensions;
 
 namespace NGql.Core.Abstractions;
 
@@ -69,18 +70,12 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonPropertyName("fields")]
     public SortedDictionary<string, FieldDefinition> Fields
-    {
-        get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
-        internal set => _fields = value;
-    }
+        => _fields ??= new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]
     public SortedDictionary<string, object?> Arguments
-    {
-        get => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
-        internal init => _arguments = value;
-    }
+        => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Metadata associated with the field definition.
@@ -99,13 +94,13 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => _isArray ??= _type != null && (_type == Constants.ArrayTypeMarker || _type.Contains('['));
+    public bool IsArray => _isArray ??= _type.IsArrayType();
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => _isNullable ??= _type != null && (_type == Constants.NullableTypeMarker || _type.EndsWith('?'));
+    public bool IsNullable => _isNullable ??= _type.IsNullableType();
 
     // Methods
     public override string ToString()

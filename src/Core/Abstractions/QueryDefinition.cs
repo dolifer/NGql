@@ -8,16 +8,22 @@ namespace NGql.Core.Abstractions;
 /// </summary>
 public sealed record QueryDefinition(string Name, string Description = "")
 {
+    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal SortedSet<Variable>? _variables;
+    internal Dictionary<string, object?>? _metadata;
+
+    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
+
     /// <summary>
     /// The name of the query.
     /// </summary>
-    [property: JsonPropertyName("name")]
+    [JsonPropertyName("name")]
     public string Name { get; init; } = Name;
 
     /// <summary>
     /// The description of the query.
     /// </summary>
-    [property: JsonPropertyName("description")]
+    [JsonPropertyName("description")]
     public string Description { get; init; } = Description;
 
     /// <summary>
@@ -30,8 +36,6 @@ public sealed record QueryDefinition(string Name, string Description = "")
         set => _fields = value;
     }
 
-    internal SortedDictionary<string, FieldDefinition>? _fields;
-
     /// <summary>
     ///     The collection of variables related to fields or arguments.
     /// </summary>
@@ -41,8 +45,6 @@ public sealed record QueryDefinition(string Name, string Description = "")
         get => _variables ??= new();
         internal set => _variables = value;
     }
-
-    internal SortedSet<Variable>? _variables;
 
     /// <summary>
     /// Metadata associated with the query definition.
@@ -57,17 +59,14 @@ public sealed record QueryDefinition(string Name, string Description = "")
         set => _metadata = value;
     }
 
-    internal Dictionary<string, object?>? _metadata;
-
-    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
+    /// <summary>
+    /// Merging strategy for this query definition.
+    /// </summary>
+    [JsonPropertyName("mergingStrategy")]
+    public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => _builderCache.Value!.Build(this);
 
     public static implicit operator string(QueryDefinition query) => query.ToString();
-
-    /// <summary>
-    /// Merging strategy for this query definition.
-    /// </summary>
-    public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
 }

@@ -181,7 +181,7 @@ internal static class FieldDefinitionExtensions
         // FAST PATH: If an existing field has no arguments, just set the new arguments
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {
-            return existingField with { Arguments = newArguments };
+            return existingField with { _arguments = newArguments };
         }
 
         // MERGE PATH: Create a completely new case-insensitive dictionary to ensure proper behavior
@@ -210,6 +210,6 @@ internal static class FieldDefinitionExtensions
             mergedArguments[key] = newValue;
         }
 
-        return existingField with { Arguments = mergedArguments };
+        return existingField with { _arguments = mergedArguments };
     }
 }

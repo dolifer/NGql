@@ -17,6 +17,16 @@ public class TypeDriftEdgeCasesTests
 
         var userField = query.Definition.Fields["user"];
         userField.Type.Should().Be("CustomType"); // Last explicit type wins
+
+        // Assert: PreservationBuilder preserves the CustomType
+        var preserved = PreservationBuilder
+            .Create(query)
+            .Preserve("user")
+            .Build();
+
+        var preservedUserField = preserved.Definition.Fields["user"];
+        preservedUserField.Type.Should().Be("CustomType", "type should be preserved during field preservation");
+        preservedUserField.Fields.Should().ContainKey("name", "nested fields should also be preserved");
     }
 
     [Fact]
@@ -31,6 +41,17 @@ public class TypeDriftEdgeCasesTests
         var profileField = userField.Fields["profile"];
         profileField.Type.Should().Be("object"); // String type should be converted to object when subfields are added
         profileField.Fields.Should().ContainKey("name");
+
+        // Assert: PreservationBuilder preserves the converted object type
+        var preserved = PreservationBuilder
+            .Create(query)
+            .Preserve("user.profile")
+            .Build();
+
+        var preservedUserField = preserved.Definition.Fields["user"];
+        var preservedProfileField = preservedUserField.Fields["profile"];
+        preservedProfileField.Type.Should().Be("object", "primitive type converted to object should be preserved");
+        preservedProfileField.Fields.Should().ContainKey("name");
     }
 
     [Fact]
@@ -46,6 +67,17 @@ public class TypeDriftEdgeCasesTests
 
         var itemsField = query.Definition.Fields["items"];
         itemsField.Type.Should().Be("[]"); // Should preserve array type
+
+        // Assert: PreservationBuilder preserves the array type marker
+        var preserved = PreservationBuilder
+            .Create(query)
+            .Preserve("items")
+            .Build();
+
+        var preservedItemsField = preserved.Definition.Fields["items"];
+        preservedItemsField.Type.Should().Be("[]", "array type marker [] should be preserved");
+        preservedItemsField.Fields.Should().HaveCount(2)
+            .And.ContainKeys("id", "name");
     }
 
     [Fact]
@@ -95,6 +127,21 @@ public class TypeDriftEdgeCasesTests
         userField.Type.Should().Be("User");
         profileField.Type.Should().Be("Profile");
         nameField.Type.Should().Be("Name"); // Custom type should be preserved even with subfields
+
+        // Assert: PreservationBuilder preserves all custom types in nested hierarchy
+        var preserved = PreservationBuilder
+            .Create(query)
+            .Preserve("user.profile.name")
+            .Build();
+
+        var preservedUserField = preserved.Definition.Fields["user"];
+        var preservedProfileField = preservedUserField.Fields["profile"];
+        var preservedNameField = preservedProfileField.Fields["name"];
+
+        preservedUserField.Type.Should().Be("User", "custom type User should be preserved at root level");
+        preservedProfileField.Type.Should().Be("Profile", "custom type Profile should be preserved at intermediate level");
+        preservedNameField.Type.Should().Be("Name", "custom type Name should be preserved at leaf level with subfields");
+        preservedNameField.Fields.Should().HaveCount(2).And.ContainKeys("first", "last");
     }
 
     [Fact]
@@ -121,5 +168,15 @@ public class TypeDriftEdgeCasesTests
 
         var userField = query.Definition.Fields["user"];
         userField.Type.Should().Be("User"); // Custom type should be preserved
+
+        // Assert: PreservationBuilder preserves custom type even with null arguments
+        var preserved = PreservationBuilder
+            .Create(query)
+            .Preserve("user")
+            .Build();
+
+        var preservedUserField = preserved.Definition.Fields["user"];
+        preservedUserField.Type.Should().Be("User", "custom type should be preserved even when original had null arguments");
+        preservedUserField.Fields.Should().ContainKey("name");
     }
 }

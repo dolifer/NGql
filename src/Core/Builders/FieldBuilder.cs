@@ -262,10 +262,10 @@ public sealed class FieldBuilder
 
     /// <summary>
     /// Adds a field with predefined subfields and a nested builder action for additional dynamic configuration.
-    /// The field will have object type and includes both the specified subfields and any fields configured via the action.
+    /// The field will have an object type and includes both the specified subfields and any fields configured via the action.
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown when fieldName, subFields, or action is null.</exception>
@@ -274,10 +274,10 @@ public sealed class FieldBuilder
 
     /// <summary>
     /// Adds a field with predefined subfields, metadata, and a nested builder action for additional dynamic configuration.
-    /// The field will have object type.
+    /// The field will have an object type.
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="metadata">Optional metadata dictionary to associate with the parent field for custom processing.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
@@ -290,7 +290,7 @@ public sealed class FieldBuilder
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
     /// <param name="type">The GraphQL type of the parent field (typically an object type or array type).</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown when fieldName, type, subFields, or action is null.</exception>
@@ -302,7 +302,7 @@ public sealed class FieldBuilder
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
     /// <param name="type">The GraphQL type of the parent field (typically an object type or array type).</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="metadata">Optional metadata dictionary to associate with the parent field for custom processing.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
@@ -312,10 +312,10 @@ public sealed class FieldBuilder
 
     /// <summary>
     /// Adds a field with predefined subfields, GraphQL arguments, and a nested builder action for additional dynamic configuration.
-    /// The field will have object type.
+    /// The field will have an object type.
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="arguments">GraphQL arguments for the parent field such as filters, pagination, or custom parameters.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
@@ -325,10 +325,10 @@ public sealed class FieldBuilder
 
     /// <summary>
     /// Adds a field with predefined subfields, GraphQL arguments, metadata, and a nested builder action for additional dynamic configuration.
-    /// The field will have object type. This is the most comprehensive subFields + action overload.
+    /// The field will have an object type. This is the most comprehensive subFields + action overload.
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="arguments">GraphQL arguments for the parent field such as filters, pagination, or custom parameters.</param>
     /// <param name="metadata">Optional metadata dictionary to associate with the parent field for custom processing.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
@@ -342,7 +342,7 @@ public sealed class FieldBuilder
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
     /// <param name="type">The GraphQL type of the parent field (typically an object type or array type).</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="arguments">GraphQL arguments for the parent field such as filters, pagination, or custom parameters.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
@@ -352,11 +352,11 @@ public sealed class FieldBuilder
 
     /// <summary>
     /// Adds a field with a specific type, predefined subfields, GraphQL arguments, metadata, and a nested builder action for additional dynamic configuration.
-    /// This is the ultimate comprehensive overload that supports all possible field configuration options including both predefined subfields and dynamic configuration.
+    /// This is the ultimate comprehensive overload that supports all possible field configuration options, including both predefined subfields and dynamic configuration.
     /// </summary>
     /// <param name="fieldName">The name of the parent field to add. Supports dotted notation for nested fields.</param>
     /// <param name="type">The GraphQL type of the parent field (typically an object type or array type).</param>
-    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have default String type.</param>
+    /// <param name="subFields">Array of subfield names to add under this field. Each subfield will have a default String type.</param>
     /// <param name="arguments">GraphQL arguments for the parent field such as filters, pagination, or custom parameters.</param>
     /// <param name="metadata">Optional metadata dictionary to associate with the parent field for custom processing.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields within this field.</param>
@@ -435,17 +435,6 @@ public sealed class FieldBuilder
     }
 
     /// <summary>
-    /// Creates a new FieldBuilder instance for the specified field.
-    /// </summary>
-    /// <param name="fieldDefinitions">The collection of existing field definitions.</param>
-    /// <param name="fieldName">The name of the field to create.</param>
-    /// <returns>A new FieldBuilder instance.</returns>
-    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName)
-    {
-        return Create(fieldDefinitions, fieldName, Constants.DefaultFieldType);
-    }
-
-    /// <summary>
     /// Creates a new FieldBuilder instance for the specified field with type, arguments, and metadata.
     /// </summary>
     /// <param name="fieldDefinitions">The collection of existing field definitions.</param>
@@ -455,7 +444,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>A new FieldBuilder instance.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
+    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
         // FAIL-FAST: Use empty arguments if null or empty
         var argumentsToUse = arguments is { Count: > 0 } ? arguments : null;
@@ -483,8 +472,6 @@ public sealed class FieldBuilder
     public FieldDefinition Build()
         => _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
 
-
-
     /// <summary>
     /// Recursively creates and merges field definitions into the target field collection.
     /// This method handles field merging, argument consolidation, and nested field creation.
@@ -493,18 +480,13 @@ public sealed class FieldBuilder
     /// <param name="fieldDefinition">Field definition to create/merge</param>
     private static void RecursiveCreateField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        var parentField = CreateOrMergeField(fields, fieldDefinition);
+        var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition);
 
         // Recursively process all child fields
         foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
         {
             RecursiveCreateField(parentField.Fields, childFieldDefinition);
         }
-    }
-
-    private static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
-    {
-        return FieldFactory.CreateOrMergeField(fields, fieldDefinition);
     }
 
     internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
@@ -556,33 +538,25 @@ public sealed class FieldBuilder
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder Where(string key, object? value)
     {
-        if (_fieldDefinition._arguments != null && _fieldDefinition._arguments.TryGetValue(key, out var existingValue))
+        // Ensure that _arguments exist (lazy initialization)
+        if (_fieldDefinition._arguments is null)
         {
-            if (existingValue is IDictionary<string, object> existingDict && value is IDictionary<string, object> newDict)
-            {
-                // Merge nested dictionaries
-                _fieldDefinition._arguments[key] = Helpers.MergeDictionaries(existingDict, newDict);
-            }
-            else
-            {
-                // Override the existing value with the new one
-                _fieldDefinition._arguments[key] = value;
-            }
+            _fieldDefinition = _fieldDefinition with { _arguments = new(StringComparer.OrdinalIgnoreCase) };
         }
-        else
-        {
-            // Lazy create Arguments dictionary only when needed
-            if (_fieldDefinition._arguments is null)
+
+        // Determine the final value: merge dictionaries if both are dictionaries, otherwise set/override
+        _fieldDefinition._arguments[key] = _fieldDefinition._arguments.TryGetValue(key, out var existingValue)
+            ? (existingValue, value) switch
             {
-                _fieldDefinition = _fieldDefinition with { Arguments = new() { [key] = value } };
+                // Both values are dictionaries - merge them recursively
+                (IDictionary<string, object?> existingDict, IDictionary<string, object?> newDict)
+                    => Helpers.MergeNullableDictionaries(existingDict, newDict),
+
+                // Not dictionaries or mixed types - override with new value
+                _ => value
             }
-            else
-            {
-                _fieldDefinition._arguments[key] = value;
-            }
-        }
+            : value; // Key doesn't exist - set the value
 
         return this;
     }
-
 }

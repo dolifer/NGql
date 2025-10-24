@@ -7,24 +7,9 @@ namespace NGql.Core.Features;
 /// Manages query name mappings and provides path resolution functionality.
 /// Maps original query names to their merged definition names and handles path navigation.
 /// </summary>
-public sealed class QueryMap
+internal sealed class QueryMap
 {
     private readonly Dictionary<string, string> _mappings = new();
-
-    /// <summary>
-    /// Gets the current mappings as a read-only dictionary.
-    /// </summary>
-    public IReadOnlyDictionary<string, string> Mappings => _mappings;
-
-    /// <summary>
-    /// Updates the mapping for a specific query name.
-    /// </summary>
-    /// <param name="queryName">The original query name</param>
-    /// <param name="mappedPath">The mapped path</param>
-    public void UpdateMapping(string queryName, string mappedPath)
-    {
-        _mappings[queryName] = mappedPath;
-    }
 
     /// <summary>
     /// Updates multiple mappings at once.
@@ -39,14 +24,11 @@ public sealed class QueryMap
     }
 
     /// <summary>
-    /// Gets the mapped path for a query name, or returns the original name if no mapping exists.
+    /// Gets the mapped path for a query name or returns the original name if no mapping exists.
     /// </summary>
     /// <param name="queryName">The query name to look up</param>
     /// <returns>The mapped path or the original query name</returns>
-    public string GetMappedPath(string queryName)
-    {
-        return _mappings.GetValueOrDefault(queryName, queryName);
-    }
+    private string GetMappedPath(string queryName) => _mappings.GetValueOrDefault(queryName, queryName);
 
     /// <summary>
     /// Updates the QueryMap entry for the root query to point to its first field's alias/name.
@@ -78,12 +60,12 @@ public sealed class QueryMap
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <param name="queryDefinition">The query definition to search within</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
-    public string[] GetPathTo(string queryName, string? nodePath, QueryDefinition queryDefinition)
+    internal string[] GetPathTo(string queryName, string? nodePath, QueryDefinition queryDefinition)
     {
         var rootPath = GetMappedPath(queryName);
         if (string.IsNullOrEmpty(rootPath))
         {
-            return Array.Empty<string>();
+            return [];
         }
 
         if (string.IsNullOrEmpty(nodePath))
@@ -92,12 +74,7 @@ public sealed class QueryMap
         }
 
         var rootField = FindRootField(queryDefinition, rootPath);
-        if (rootField == null)
-        {
-            return [rootPath];
-        }
-
-        return BuildPathToNode(rootField, nodePath);
+        return rootField == null ? [rootPath] : BuildPathToNode(rootField, nodePath);
     }
 
     private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)
@@ -117,10 +94,17 @@ public sealed class QueryMap
         var targetNode = GetTargetNodeName(nodePath);
         var initialPath = rootField.GetEffectiveName();
 
-        var path = FindPathToNode(rootField, targetNode, [initialPath]);
-        if (path is { Length: > 1 })
+        // Use List for efficient path building without allocations on each recursion
+        var pathBuilder = new List<string>(capacity: 8) { initialPath };
+
+        if (FindPathToNodeOptimized(rootField, targetNode, pathBuilder))
         {
-            return path.Take(path.Length - 1).ToArray();
+            // Remove the target node itself, keep only the path to it
+            if (pathBuilder.Count > 1)
+            {
+                pathBuilder.RemoveAt(pathBuilder.Count - 1);
+            }
+            return pathBuilder.ToArray();
         }
 
         return [rootField.GetEffectiveName()];
@@ -137,13 +121,14 @@ public sealed class QueryMap
     }
 
     /// <summary>
-    /// Recursively searches for a target node and returns the full path to it.
+    /// Recursively searches for a target node and builds the path using a shared List.
+    /// Uses backtracking to avoid allocating new arrays on each recursive call.
     /// </summary>
     /// <param name="field">The field to search within</param>
     /// <param name="targetNode">The target node name to find</param>
-    /// <param name="currentPath">The current path segments</param>
-    /// <returns>The full path to the target node, or null if not found</returns>
-    private static string[]? FindPathToNode(FieldDefinition field, string targetNode, string[] currentPath)
+    /// <param name="pathBuilder">Shared list for building the path (modified in-place)</param>
+    /// <returns>True if a target node was found, false otherwise</returns>
+    private static bool FindPathToNodeOptimized(FieldDefinition field, string targetNode, List<string> pathBuilder)
     {
         // Check if any direct child matches the target node
         foreach (var childField in field.Fields.Values)
@@ -156,30 +141,22 @@ public sealed class QueryMap
 
             if (isMatch)
             {
-                // Found the target node, return the path including the target
-                return currentPath.Concat([fieldIdentifier]).ToArray();
+                // Found the target node, add it to a path
+                pathBuilder.Add(fieldIdentifier);
+                return true;
             }
 
-            var childPath = FindPathToNode(childField, targetNode, currentPath.Concat([fieldIdentifier]).ToArray());
-            if (childPath != null)
+            // Try searching in nested fields
+            pathBuilder.Add(fieldIdentifier);
+            if (FindPathToNodeOptimized(childField, targetNode, pathBuilder))
             {
-                return childPath;
+                return true;
             }
+
+            // Backtrack: remove this field from a path since the target wasn't found here
+            pathBuilder.RemoveAt(pathBuilder.Count - 1);
         }
 
-        return null;
+        return false;
     }
-
-    /// <summary>
-    /// Clears all mappings.
-    /// </summary>
-    public void Clear()
-    {
-        _mappings.Clear();
-    }
-
-    /// <summary>
-    /// Gets the count of current mappings.
-    /// </summary>
-    public int Count => _mappings.Count;
 }

@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Text;
 using NGql.Core.Abstractions;
 
 namespace NGql.Core.Extensions;
@@ -607,7 +608,7 @@ internal static class Helpers
     {
         // Use type interning for memory efficiency
         var nameStr = name.ToString();
-        var typeStr = NGql.Core.Caching.TypeCache.GetInternedType(type);
+        var typeStr = Caching.TypeCache.GetInternedType(type);
         var aliasStr = alias.IsEmpty ? null : alias.ToString();
         var pathStr = path.ToString();
 
@@ -663,59 +664,97 @@ internal static class Helpers
             return null;
         }
 
-        // ULTRA FAST PATH: Simple field name without dots, spaces, or colons
-        if (fieldPath.IndexOf('.') == -1 && fieldPath.IndexOf(' ') == -1 && fieldPath.IndexOf(':') == -1)
+        if (fieldPath.IsSimpleField())
         {
             return fields.GetValueOrDefault(fieldPath.ToString());
         }
 
+        return TraverseFieldPath(fields, fieldPath);
+    }
+
+    private static FieldDefinition? TraverseFieldPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
+    {
         var currentFields = fields;
-        FieldDefinition? currentField = null;
         var remainingPath = fieldPath;
+        FieldDefinition? lastField = null;
 
         while (!remainingPath.IsEmpty)
         {
-            var dotIndex = remainingPath.IndexOf('.');
-            var segment = dotIndex == -1 ? remainingPath : remainingPath[..dotIndex];
+            ExtractPathSegment(remainingPath, out var segment, out var nextPath);
             
-            var colonIndex = segment.LastIndexOf(':');
-            var fieldName = colonIndex == -1 ? segment : segment[(colonIndex + 1)..];
-            fieldName = fieldName.Trim();
-
-            var fieldNameStr = fieldName.ToString();
-            
-            // Try exact match first
-            if (currentFields.TryGetValue(fieldNameStr, out currentField))
+            var currentField = FindFieldInCollection(currentFields, segment.Name);
+            if (currentField == null)
             {
-                // Found it
-            }
-            // Try to find field with type annotation (e.g., "[] posts" when looking for "posts")
-            else
-            {
-                currentField = null;
-                foreach (var field in currentFields.Values)
-                {
-                    var nameSpan = field.Name.AsSpan();
-                    var spaceIndex = nameSpan.LastIndexOf(' ');
-                    var actualName = spaceIndex == -1 ? nameSpan : nameSpan[(spaceIndex + 1)..];
-                    
-                    if (actualName.Trim().SequenceEqual(fieldName))
-                    {
-                        currentField = field;
-                        break;
-                    }
-                }
-
-                if (currentField == null)
-                {
-                    return null;
-                }
+                return null;
             }
 
+            lastField = currentField;
             currentFields = currentField.Fields;
-            remainingPath = dotIndex == -1 ? ReadOnlySpan<char>.Empty : remainingPath[(dotIndex + 1)..];
+            remainingPath = nextPath;
         }
 
-        return currentField;
+        return lastField;
+    }
+
+    private static void ExtractPathSegment(ReadOnlySpan<char> path, out SpanSegment segment, out ReadOnlySpan<char> nextPath)
+    {
+        var dotIndex = path.IndexOf('.');
+        var segmentSpan = dotIndex == -1 ? path : path[..dotIndex];
+        nextPath = dotIndex == -1 ? ReadOnlySpan<char>.Empty : path[(dotIndex + 1)..];
+        
+        var fieldName = segmentSpan.ExtractFieldName();
+        var isLastFragment = dotIndex == -1;
+        
+        segment = new SpanSegment(fieldName, ReadOnlySpan<char>.Empty, isLastFragment, ReadOnlySpan<char>.Empty);
+    }
+
+    private static FieldDefinition? FindFieldInCollection(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    {
+        var fieldNameStr = fieldName.ToString();
+        
+        if (fields.TryGetValue(fieldNameStr, out var field))
+        {
+            return field;
+        }
+
+        return FindFieldWithTypeAnnotation(fields, fieldName);
+    }
+
+    private static FieldDefinition? FindFieldWithTypeAnnotation(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    {
+        foreach (var field in fields.Values)
+        {
+            var nameSpan = field.Name.AsSpan();
+            var spaceIndex = nameSpan.LastIndexOf(' ');
+            var actualName = spaceIndex == -1 ? nameSpan : nameSpan[(spaceIndex + 1)..];
+            
+            if (actualName.Trim().SequenceEqual(fieldName))
+            {
+                return field;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Writes a collection with specified prefix/suffix characters and custom item writer
+    /// </summary>
+    internal static void WriteCollection(char prefix, char suffix, IEnumerable list, StringBuilder builder, Action<StringBuilder, object?> itemWriter)
+    {
+        builder.Append(prefix);
+
+        bool first = true;
+        foreach (var obj in list)
+        {
+            if (!first)
+            {
+                builder.Append(", ");
+            }
+
+            first = false;
+            itemWriter(builder, obj);
+        }
+
+        builder.Append(suffix);
     }
 }

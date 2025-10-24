@@ -1,6 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
+using NGql.Core.Builders;
 
 namespace NGql.Core.Extensions;
 
@@ -44,7 +45,7 @@ internal static class SpanExtensions
     /// <summary>
     /// Get or add a simple field using a span key with optimized path building
     /// </summary>
-    public static FieldDefinition GetOrAddSimpleField(this SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, string fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    public static FieldDefinition GetOrAddSimpleField(this SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField != null)
         {
@@ -69,7 +70,7 @@ internal static class SpanExtensions
         // Build path using spans when possible
         if (string.IsNullOrWhiteSpace(parentPath))
         {
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType.AsSpan(), ReadOnlySpan<char>.Empty, arguments, fieldName, metadata);
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldName, metadata);
             fieldDefinitions.SetValue(fieldName, field);
             return field;
         }
@@ -83,7 +84,7 @@ internal static class SpanExtensions
             pathBuilder.Append(parentPath.AsSpan());
             pathBuilder.Append(fieldName);
                 
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType.AsSpan(), ReadOnlySpan<char>.Empty, arguments, pathBuilder.AsSpan(), metadata);
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, pathBuilder.AsSpan(), metadata);
             fieldDefinitions.SetValue(fieldName, field);
             return field;
         }
@@ -91,20 +92,11 @@ internal static class SpanExtensions
         {
             // Fallback to string concatenation for very long paths
             var fieldPath = $"{parentPath}.{fieldName}";
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType.AsSpan(), ReadOnlySpan<char>.Empty, arguments, fieldPath.AsSpan(), metadata);
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldPath.AsSpan(), metadata);
             fieldDefinitions.SetValue(fieldName, field);
             return field;
         }
     }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool HasSpaces(this ReadOnlySpan<char> span) => span.IndexOf(' ') != -1;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool HasColons(this ReadOnlySpan<char> span) => span.IndexOf(':') != -1;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool HasDots(this ReadOnlySpan<char> span) => span.IndexOf('.') != -1;
 
     /// <summary>
     /// Vectorized field classification - checks all conditions in one pass
@@ -152,13 +144,6 @@ internal static class SpanExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool IsComplexField(this ReadOnlySpan<char> span)
-    {
-        var (hasSpaces, _, hasColons) = span.ClassifyFieldFast();
-        return hasSpaces || hasColons;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasLetterOrDigit(this ReadOnlySpan<char> span)
     {
         foreach (var c in span)
@@ -192,5 +177,16 @@ internal static class SpanExtensions
             end--;
         }
         return span[..(end + 1)];
+    }
+
+    /// <summary>
+    /// Extract the field name from a segment by taking everything after the last colon
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ReadOnlySpan<char> ExtractFieldName(this ReadOnlySpan<char> segment)
+    {
+        var colonIndex = segment.LastIndexOf(':');
+        var fieldName = colonIndex == -1 ? segment : segment[(colonIndex + 1)..];
+        return fieldName.Trim();
     }
 }
