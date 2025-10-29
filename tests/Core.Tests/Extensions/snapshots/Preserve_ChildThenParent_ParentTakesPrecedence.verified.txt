@@ -1,0 +1,13 @@
+﻿query OverlappingQuery{
+    user{
+        posts{
+            author
+            title
+        }
+        profile{
+            bio
+            email
+            name
+        }
+    }
+}

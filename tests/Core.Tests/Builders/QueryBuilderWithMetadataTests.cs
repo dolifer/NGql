@@ -505,4 +505,155 @@ public class QueryBuilderWithMetadataTests
         userField.Fields["name"].Metadata.Should().BeEmpty();
         userField.Fields["email"].Metadata.Should().BeEmpty();
     }
+
+    [Fact]
+    public void PreservationBuilder_Should_Preserve_Field_Metadata()
+    {
+        // Arrange
+        var fieldMetadata = new Dictionary<string, object?>
+        {
+            { "description", "User profile information" },
+            { "cache_ttl", 300 },
+            { "sensitive", true }
+        };
+
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("testQuery")
+            .AddField("user", arguments: null, metadata: fieldMetadata)
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("posts.title");
+
+        // Act - Preserve the user field
+        var preserved = PreservationBuilder
+            .Create(queryBuilder)
+            .Preserve("user")
+            .Build();
+
+        // Assert
+        var preservedUserField = preserved.Definition.Fields["user"];
+        preservedUserField.Metadata.Should().NotBeNull().And.HaveCount(3);
+        preservedUserField.Metadata!["description"].Should().Be("User profile information");
+        preservedUserField.Metadata!["cache_ttl"].Should().Be(300);
+        preservedUserField.Metadata!["sensitive"].Should().Be(true);
+    }
+
+    [Fact]
+    public void PreservationBuilder_Should_Preserve_Nested_Field_Metadata()
+    {
+        // Arrange
+        var profileMetadata = new Dictionary<string, object?>
+        {
+            { "type", "nested_profile" },
+            { "required", true }
+        };
+
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("testQuery")
+            .AddField("user.profile", arguments: null, metadata: profileMetadata)
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.posts.title");
+
+        // Act - Preserve the profile field
+        var preserved = PreservationBuilder
+            .Create(queryBuilder)
+            .Preserve("user.profile")
+            .Build();
+
+        // Assert - Navigate to the preserved profile field
+        var preservedUserField = preserved.Definition.Fields["user"];
+        var preservedProfileField = preservedUserField.Fields["profile"];
+
+        preservedProfileField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        preservedProfileField.Metadata!["type"].Should().Be("nested_profile");
+        preservedProfileField.Metadata!["required"].Should().Be(true);
+    }
+
+    [Fact]
+    public void PreservationBuilder_Should_Preserve_Multiple_Fields_With_Different_Metadata()
+    {
+        // Arrange
+        var userMetadata = new Dictionary<string, object?>
+        {
+            { "field_type", "user" },
+            { "cache_ttl", 300 }
+        };
+        var postsMetadata = new Dictionary<string, object?>
+        {
+            { "field_type", "posts" },
+            { "cache_ttl", 600 }
+        };
+
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("testQuery")
+            .AddField("user", arguments: null, metadata: userMetadata)
+            .AddField("user.name")
+            .AddField("user.email")
+            .AddField("posts", arguments: null, metadata: postsMetadata)
+            .AddField("posts.title")
+            .AddField("comments.text");
+
+        // Act - Preserve both user and posts fields
+        var preserved = PreservationBuilder
+            .Create(queryBuilder)
+            .Preserve("user", "posts")
+            .Build();
+
+        // Assert - Verify both fields preserved their metadata separately
+        var preservedUserField = preserved.Definition.Fields["user"];
+        preservedUserField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        preservedUserField.Metadata!["field_type"].Should().Be("user");
+        preservedUserField.Metadata!["cache_ttl"].Should().Be(300);
+
+        var preservedPostsField = preserved.Definition.Fields["posts"];
+        preservedPostsField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        preservedPostsField.Metadata!["field_type"].Should().Be("posts");
+        preservedPostsField.Metadata!["cache_ttl"].Should().Be(600);
+
+        // Verify metadata doesn't cross-contaminate
+        preservedUserField.Metadata!.Should().NotContainValue("posts");
+        preservedPostsField.Metadata!.Should().NotContainValue("user");
+    }
+
+    [Fact]
+    public void PreservationBuilder_Should_Preserve_Field_Metadata_When_Preserving_Child()
+    {
+        // Arrange
+        var userMetadata = new Dictionary<string, object?>
+        {
+            { "description", "User root field" },
+            { "cached", true }
+        };
+        var profileMetadata = new Dictionary<string, object?>
+        {
+            { "description", "Profile nested field" },
+            { "sensitive", true }
+        };
+
+        var queryBuilder = QueryBuilder
+            .CreateDefaultBuilder("testQuery")
+            .AddField("user", arguments: null, metadata: userMetadata)
+            .AddField("user.profile", arguments: null, metadata: profileMetadata)
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.posts.title");
+
+        // Act - Preserve only the profile field (child of user)
+        var preserved = PreservationBuilder
+            .Create(queryBuilder)
+            .Preserve("user.profile")
+            .Build();
+
+        // Assert - Both user and profile metadata should be preserved
+        var preservedUserField = preserved.Definition.Fields["user"];
+        preservedUserField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        preservedUserField.Metadata!["description"].Should().Be("User root field");
+        preservedUserField.Metadata!["cached"].Should().Be(true);
+
+        var preservedProfileField = preservedUserField.Fields["profile"];
+        preservedProfileField.Metadata.Should().NotBeNull().And.HaveCount(2);
+        preservedProfileField.Metadata!["description"].Should().Be("Profile nested field");
+        preservedProfileField.Metadata!["sensitive"].Should().Be(true);
+    }
 }

@@ -1,0 +1,15 @@
+﻿query MixedQuery{
+    user{
+        posts{
+            author{
+                name
+            }
+            content
+            title
+        }
+        profile{
+            email
+            name
+        }
+    }
+}
