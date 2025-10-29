@@ -46,7 +46,7 @@ public static class FieldSignatureGenerator
     /// <param name="parentPath">Parent path as ReadOnlySpan to avoid string allocations</param>
     private static void AppendFieldSignature(StringBuilder builder, FieldDefinition field, ReadOnlySpan<char> parentPath)
     {
-        // Build current path efficiently using Span operations
+        // Build the current path efficiently using Span operations
         Span<char> currentPathBuffer = stackalloc char[256]; // Stack allocation for path building
         int pathLength = 0;
 

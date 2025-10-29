@@ -1,8 +1,9 @@
 using System.Runtime.CompilerServices;
-using NGql.Core.Builders;
 using NGql.Core.Abstractions;
+using NGql.Core.Builders;
+using NGql.Core.Extensions;
 
-namespace NGql.Core.Extensions;
+namespace NGql.Core.Features;
 
 /// <summary>
 /// Extension methods for preserving specific QueryBuilder fields based on specified paths.
@@ -43,54 +44,72 @@ public static class PreserveExtensions
         return newQuery;
     }
 
-    private static void ExtractMatchingFields(SortedDictionary<string, FieldDefinition> sourceFields, 
+    private static void ExtractMatchingFields(SortedDictionary<string, FieldDefinition> sourceFields,
         SortedDictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
     {
         var dotIndex = path.IndexOf('.');
+        var isLeafPath = dotIndex == -1;
 
-        if (dotIndex == -1)
+        // Extract current segment
+        var currentSegment = isLeafPath ? path : path[..dotIndex];
+
+        var field = FindFieldByNameOrAlias(sourceFields, currentSegment);
+        if (!field.HasValue)
         {
-            // Fast path: single segment - direct lookup
-            var field = FindFieldByNameOrAlias(sourceFields, path);
-            if (field.HasValue)
-            {
-                targetFields[field.Value.Key] = field.Value.Value;
-            }
             return;
         }
 
-        // Multi-segment path
-        var rootName = path[..dotIndex];
+        var (fieldKey, fieldDef) = field.Value;
+
+        // FAST PATH: Leaf node - copy field directly
+        if (isLeafPath)
+        {
+            targetFields[fieldKey] = fieldDef;
+            return;
+        }
+
+        // SLOW PATH: Intermediate node - ensure field exists in target and recurse
+        if (fieldDef._fields == null)
+        {
+            return;
+        }
+
+        if (!targetFields.TryGetValue(fieldKey, out var existingField))
+        {
+            existingField = CloneFieldWithoutChildren(fieldDef);
+            targetFields[fieldKey] = existingField;
+        }
+
         var remainingPath = path[(dotIndex + 1)..];
+        ExtractMatchingFields(fieldDef.Fields, existingField.Fields, remainingPath);
+    }
 
-        var rootField = FindFieldByNameOrAlias(sourceFields, rootName);
-        if (!(rootField.HasValue && rootField.Value.Value._fields != null))
+    /// <summary>
+    /// Creates a shallow clone of a field without its children, preserving arguments and metadata.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition CloneFieldWithoutChildren(FieldDefinition source)
+    {
+        var cloned = new FieldDefinition(
+            source.Name,
+            source.Type ?? Constants.DefaultFieldType,
+            source.Alias,
+            source._arguments,
+            new SortedDictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase))
         {
-            return;
-        }
+            _fields = []
+        };
 
-        var (rootKey, rootFieldDef) = rootField.Value;
-
-        if (!targetFields.TryGetValue(rootKey, out var existingRootField))
+        // Copy metadata if present
+        if (source._metadata != null)
         {
-            existingRootField = new FieldDefinition(rootFieldDef.Name, rootFieldDef.Type ?? Constants.DefaultFieldType, rootFieldDef.Alias, 
-                rootFieldDef._arguments, new SortedDictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase))
+            foreach (var meta in source._metadata)
             {
-                _fields = []
-            };
-
-            if (rootFieldDef._metadata != null)
-            {
-                foreach (var meta in rootFieldDef._metadata)
-                {
-                    existingRootField.Metadata[meta.Key] = meta.Value;
-                }
+                cloned.Metadata[meta.Key] = meta.Value;
             }
-
-            targetFields[rootKey] = existingRootField;
         }
- 
-        ExtractMatchingFields(rootFieldDef.Fields, existingRootField.Fields, remainingPath);
+
+        return cloned;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

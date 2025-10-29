@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using NGql.Core.Builders;
 using NGql.Core.Extensions;
+using NGql.Core.Features;
 using Xunit;
 
 namespace NGql.Core.Tests.Extensions;

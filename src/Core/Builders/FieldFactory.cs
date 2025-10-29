@@ -7,7 +7,7 @@ namespace NGql.Core.Builders;
 
 /// <summary>
 /// Factory class for creating and processing FieldDefinition instances.
-/// Handles complex field creation logic including dotted paths, type parsing, and field merging.
+/// Handles complex field creation logic, including dotted paths, type parsing, and field merging.
 /// </summary>
 internal static class FieldFactory
 {
@@ -22,7 +22,7 @@ internal static class FieldFactory
         // FAST PATH: Simple field name
         if (fieldPath.IsSimpleField())
         {
-            return fieldDefinitions.GetOrAddSimpleField(fieldPath, fieldType.ToString(), arguments, parentPath, metadata);
+            return fieldDefinitions.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata);
         }
 
         // MEDIUM PATH: Dotted field

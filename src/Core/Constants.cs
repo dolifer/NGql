@@ -26,7 +26,7 @@ public static class Constants
     public const string NullableTypeMarker = "?";
 
     /// <summary>
-    /// The marker for array types as span.
+    /// The marker for array types as a span.
     /// </summary>
     internal static ReadOnlySpan<char> ArrayTypeMarkerSpan => ArrayTypeMarker.AsSpan();
 
@@ -41,7 +41,7 @@ public static class Constants
     internal static ReadOnlySpan<char> ObjectFieldTypeSpan => ObjectFieldType.AsSpan();
 
     /// <summary>
-    /// The marker for nullable types as span.
+    /// The marker for nullable types as a span.
     /// </summary>
     internal static ReadOnlySpan<char> NullableTypeMarkerSpan => NullableTypeMarker.AsSpan();
 }

@@ -1,4 +1,4 @@
-namespace NGql.Core.Extensions;
+namespace NGql.Core.Abstractions;
 
 /// <summary>
 /// Ref struct for holding field segment information as spans to avoid string allocations

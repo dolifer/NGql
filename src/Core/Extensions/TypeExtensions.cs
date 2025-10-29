@@ -5,13 +5,13 @@ namespace NGql.Core.Extensions;
 /// <summary>
 /// Extensions for working with field types.
 /// </summary>
-public static class TypeExtensions
+internal static class TypeExtensions
 {
     /// <summary>
     /// Determines if a field type should be converted to an object type when nested fields are added.
     /// </summary>
     /// <param name="fieldDefinition">The field definition to check.</param>
-    /// <returns>True if the type should be converted to object, false if it should preserve its type.</returns>
+    /// <returns>True if the type should be converted to an object, false if it should preserve its type.</returns>
     public static bool ShouldConvertToObjectType(this FieldDefinition fieldDefinition)
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
@@ -119,7 +119,7 @@ public static class TypeExtensions
     /// Gets just the base type name without any markers.
     /// </summary>
     /// <param name="fieldDefinition">The field definition.</param>
-    /// <returns>The base type name without array or nullable markers.</returns>
+    /// <returns>The base type name without an array or nullable markers.</returns>
     public static string GetBaseTypeName(this FieldDefinition fieldDefinition)
         => GetCoreTypeName(fieldDefinition, true, true);
 
@@ -136,4 +136,20 @@ public static class TypeExtensions
             is Constants.ArrayTypeMarker
             or Constants.NullableTypeMarker;
     }
+
+    /// <summary>
+    /// Determines if a type string represents an array type.
+    /// </summary>
+    /// <param name="type">The type string to check.</param>
+    /// <returns>True if the type is an array type, false otherwise.</returns>
+    public static bool IsArrayType(this string? type)
+        => type != null && (type == Constants.ArrayTypeMarker || type.Contains('['));
+
+    /// <summary>
+    /// Determines if a type string represents a nullable type.
+    /// </summary>
+    /// <param name="type">The type string to check.</param>
+    /// <returns>True if the type is nullable, false otherwise.</returns>
+    public static bool IsNullableType(this string? type)
+        => type != null && (type == Constants.NullableTypeMarker || type.EndsWith('?'));
 }
