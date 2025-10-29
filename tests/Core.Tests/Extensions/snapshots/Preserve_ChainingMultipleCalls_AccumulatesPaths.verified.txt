@@ -1,0 +1,12 @@
+﻿query ChainedQuery{
+    user{
+        posts{
+            author
+            title
+        }
+        profile{
+            email
+            name
+        }
+    }
+}

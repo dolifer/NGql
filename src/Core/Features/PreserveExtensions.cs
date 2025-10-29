@@ -8,7 +8,7 @@ namespace NGql.Core.Features;
 /// <summary>
 /// Extension methods for preserving specific QueryBuilder fields based on specified paths.
 /// </summary>
-public static class PreserveExtensions
+internal static class PreserveExtensions
 {
     /// <summary>
     /// Preserves only the fields that match or are descendants of the specified paths.
@@ -117,8 +117,9 @@ public static class PreserveExtensions
     {
         foreach (var kvp in fields)
         {
-            if (nameOrAlias.SequenceEqual(kvp.Value.Name.AsSpan()) ||
-                (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.SequenceEqual(kvp.Value.Alias.AsSpan())))
+            // Use case-insensitive comparison to match SortedDictionary's StringComparer.OrdinalIgnoreCase
+            if (nameOrAlias.Equals(kvp.Value.Name.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.Equals(kvp.Value.Alias.AsSpan(), StringComparison.OrdinalIgnoreCase)))
             {
                 return kvp;
             }

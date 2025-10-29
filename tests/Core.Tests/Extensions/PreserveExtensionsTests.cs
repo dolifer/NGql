@@ -23,7 +23,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.grandchild2");
 
         // Act
-        var result = query.Preserve("parent");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("parent")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -41,7 +44,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.grandchild2");
 
         // Act
-        var result = query.Preserve("parent.child1");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("parent.child1")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -59,7 +65,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.grandchild2");
 
         // Act
-        var result = query.Preserve("parent.child1.grandchild1");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("parent.child1.grandchild1")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -77,7 +86,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.grandchild2");
 
         // Act
-        var result = query.Preserve("parent.child1.grandchild1.name");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("parent.child1.grandchild1.name")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -95,7 +107,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.grandchild2");
 
         // Act
-        var result = query.Preserve("parent.child1.grandchild1", "parent.child2");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("parent.child1.grandchild1", "parent.child2")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -111,7 +126,10 @@ public class PreserveExtensionsTests
             .AddField("parent.child2.email");
 
         // Act
-        var result = query.Preserve("nonexistent.path");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("nonexistent.path")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -126,7 +144,9 @@ public class PreserveExtensionsTests
             .AddField("user.name");
 
         // Act
-        var result = query.Preserve();
+        var result = PreservationBuilder
+            .Create(query)
+            .Build();
 
         // Assert
         return result.Verify();
@@ -141,7 +161,10 @@ public class PreserveExtensionsTests
             .AddField("user.name");
 
         // Act
-        var result = query.Preserve(null);
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve(null)
+            .Build();
 
         // Assert
         return result.Verify();
@@ -159,7 +182,10 @@ public class PreserveExtensionsTests
             .AddField("user.posts.title");
 
         // Act
-        var result = query.Preserve("user.posts");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("user.posts")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -176,7 +202,10 @@ public class PreserveExtensionsTests
             .AddField("userAlias:user.posts.title");
 
         // Act
-        var result = query.Preserve("userAlias.profileAlias");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("userAlias.profileAlias")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -193,7 +222,10 @@ public class PreserveExtensionsTests
             .AddField("userAlias:user.posts.title");
 
         // Act - using field names instead of aliases
-        var result = query.Preserve("user.profile");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("user.profile")
+            .Build();
 
         // Assert
         return result.Verify();
@@ -210,7 +242,34 @@ public class PreserveExtensionsTests
             .AddField("userAlias:user.posts.title");
 
         // Act - mix alias and field name
-        var result = query.Preserve("userAlias.profileAlias", "user.posts");
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("userAlias.profileAlias", "user.posts")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task Preserve_ChainingMultipleCalls_AccumulatesPaths()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ChainedQuery")
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.posts.title")
+            .AddField("user.posts.author")
+            .AddField("user.settings.theme")
+            .AddField("admin.permissions");
+
+        // Act - Chain multiple Preserve() calls to accumulate paths
+        var result = PreservationBuilder
+            .Create(query)
+            .Preserve("user.profile")
+            .Preserve("user.posts")
+            .Build();
 
         // Assert
         return result.Verify();
