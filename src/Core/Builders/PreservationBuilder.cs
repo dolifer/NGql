@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using NGql.Core.Features;
 
 namespace NGql.Core.Builders;
@@ -54,6 +55,77 @@ public sealed class PreservationBuilder
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// Preserves fields referenced in a typed predicate expression.
+    /// Automatically extracts field paths from the expression.
+    /// </summary>
+    /// <typeparam name="T">The type being queried</typeparam>
+    /// <param name="predicate">The predicate expression (e.g., x => x.user.profile.age > 10)</param>
+    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var result = PreservationBuilder
+    ///     .Create(query)
+    ///     .PreserveWhere&lt;MyModel&gt;(x => x.user.profile.age > 10)
+    ///     .PreserveWhere&lt;MyModel&gt;(x => x.user.email != null)
+    ///     .Build();
+    /// // Preserves only: user.profile.age, user.email
+    /// </code>
+    /// </example>
+    public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
+        return Preserve(paths.ToArray());
+    }
+
+    /// <summary>
+    /// Preserves fields referenced in a typed selector expression.
+    /// Useful for selecting specific fields without a predicate.
+    /// Supports anonymous types for flexible field selection.
+    /// </summary>
+    /// <typeparam name="T">The type being queried</typeparam>
+    /// <param name="selector">The selector expression (e.g., x => new { x.user.name, x.user.email })</param>
+    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// var result = PreservationBuilder
+    ///     .Create(query)
+    ///     .PreserveFor&lt;MyModel&gt;(x => new { x.user.name, x.user.email })
+    ///     .Build();
+    /// // Preserves only: user.name, user.email
+    /// </code>
+    /// </example>
+    public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
+        return Preserve(paths.ToArray());
+    }
+
+    /// <summary>
+    /// Preserves fields referenced in any expression.
+    /// Works with runtime-parsed expressions (e.g., from DynamicExpresso).
+    /// </summary>
+    /// <param name="expression">The expression to analyze</param>
+    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
+    /// <example>
+    /// <code>
+    /// // With DynamicExpresso:
+    /// var interpreter = new Interpreter();
+    /// var expr = interpreter.Parse("user.profile.email != null");
+    ///
+    /// var result = PreservationBuilder
+    ///     .Create(query)
+    ///     .PreserveFromExpression(expr)
+    ///     .Build();
+    /// // Preserves only: user.profile.email
+    /// </code>
+    /// </example>
+    public PreservationBuilder PreserveFromExpression(Expression expression)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
+        return Preserve(paths.ToArray());
     }
 
     /// <summary>
