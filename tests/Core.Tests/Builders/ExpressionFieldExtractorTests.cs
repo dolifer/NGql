@@ -407,4 +407,33 @@ public class ExpressionFieldExtractorTests
             .And.Contain("user.profile.name")
             .And.Contain("user.email");
     }
+
+    [Fact]
+    public void ExtractFieldPaths_DirectParameterReference_NullCheck()
+    {
+        // Arrange - Testing the case: playerProfile => playerProfile == null ? null : playerProfile.name
+        Expression<Func<UserData, bool>> expr = playerProfile => playerProfile == null;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Should extract the root parameter name when it's used directly
+        paths.Should().Contain("playerProfile");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_DirectParameterInConditional()
+    {
+        // Arrange - The actual user scenario
+        Expression<Func<UserData, string?>> expr = playerProfile =>
+            playerProfile == null ? null : playerProfile.email;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Should extract both the root parameter (from null check) and the member access
+        paths.Should().HaveCount(2)
+            .And.Contain("playerProfile", "root parameter is checked for null")
+            .And.Contain("email", "email property is accessed");
+    }
 }

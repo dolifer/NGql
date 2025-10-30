@@ -74,6 +74,7 @@ public static class ExpressionFieldExtractor
         public HashSet<string> FieldPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<Expression> _visitedMembers = new(ReferenceEqualityComparer.Instance);
         private readonly Stack<string> _lambdaContextPaths = new();
+        private ParameterExpression? _rootParameter;
 
         /// <summary>
         /// Visits member access expressions (e.g., user.profile.age).
@@ -299,9 +300,31 @@ public static class ExpressionFieldExtractor
         /// </summary>
         protected override Expression VisitLambda<T>(Expression<T> node)
         {
+            // Track the root parameter for the outermost lambda (not nested LINQ lambdas)
+            if (_rootParameter == null && _lambdaContextPaths.Count == 0 && node.Parameters.Count > 0)
+            {
+                _rootParameter = node.Parameters[0];
+            }
+
             // Visit the body to extract paths from nested predicates
             // Example: items.First(p => p.sport == "F")
             Visit(node.Body);
+            return node;
+        }
+
+        /// <summary>
+        /// Visits parameter expressions (e.g., direct parameter references like null checks).
+        /// </summary>
+        protected override Expression VisitParameter(ParameterExpression node)
+        {
+            // If this is the root parameter being used directly (not in a nested lambda context),
+            // add it as a field path. This handles cases like: playerProfile => playerProfile == null
+            if (_rootParameter != null && node == _rootParameter && _lambdaContextPaths.Count == 0)
+            {
+                // Add the parameter name as a field path
+                FieldPaths.Add(node.Name ?? "");
+            }
+
             return node;
         }
 
