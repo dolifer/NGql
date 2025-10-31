@@ -150,8 +150,31 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
-    /// Extracts the parameter name from a lambda expression.
+    /// Preserves a field using GetPathTo to resolve the full path dynamically.
     /// </summary>
+    /// <param name="fieldPath">The field path to preserve</param>
+    /// <param name="nodePath">The node path to resolve (e.g., "edges.node")</param>
+    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
+    public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
+    {
+        var resolvedPath = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
+        if (resolvedPath != null && resolvedPath.Length > 0)
+        {
+            var fullPath = string.Join(".", resolvedPath) + "." + nodePath.Split('.')[^1] + "." + fieldPath;
+            return Preserve(fullPath);
+        }
+        return Preserve($"{nodePath}.{fieldPath}");
+    }
+
+    /// <summary>
+    /// Preserves fields from expression using GetPathTo to resolve the full path dynamically.
+    /// </summary>
+    public PreservationBuilder PreserveAtPathWhere<T>(Expression<Func<T, bool>> predicate, string nodePath)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
+        var parameterName = GetParameterName(predicate);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+    }
     private static string? GetParameterName(LambdaExpression lambda)
     {
         return lambda.Parameters.FirstOrDefault()?.Name;
