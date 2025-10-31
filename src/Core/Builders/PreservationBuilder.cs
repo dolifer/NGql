@@ -74,6 +74,16 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
+    /// Preserves fields referenced in a typed predicate expression with local parameter mapping.
+    /// </summary>
+    public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate, string? nodePath, Dictionary<string, string[]> localMap)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
+        var parameterName = GetParameterName(predicate);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
+    }
+
+    /// <summary>
     /// Preserves fields referenced in a typed selector expression.
     /// </summary>
     public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath = null)
@@ -81,6 +91,16 @@ public sealed class PreservationBuilder
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
         var parameterName = GetParameterName(selector);
         return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+    }
+
+    /// <summary>
+    /// Preserves fields referenced in a typed selector expression with local parameter mapping.
+    /// </summary>
+    public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath, Dictionary<string, string[]> localMap)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
+        var parameterName = GetParameterName(selector);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
     }
 
     /// <summary>
@@ -94,6 +114,16 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
+    /// Preserves fields referenced in a typed expression with local parameter mapping.
+    /// </summary>
+    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath, Dictionary<string, string[]> localMap)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
+        var parameterName = GetParameterName(expression);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
+    }
+
+    /// <summary>
     /// Preserves fields referenced in any expression.
     /// </summary>
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
@@ -103,12 +133,27 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
+    /// Preserves fields referenced in any expression with local parameter mapping.
+    /// </summary>
+    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
+        return PreserveExpandedPaths(paths, nodePath, null, null, localMap);
+    }
+
+    /// <summary>
     /// Expands extracted field paths using GetPathTo when a nodePath is provided.
     /// </summary>
-    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string? parameterName = null, Type? parameterType = null)
+    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string? parameterName = null, Type? parameterType = null, Dictionary<string, string[]>? localMap = null)
     {
         if (string.IsNullOrWhiteSpace(nodePath))
         {
+            // Check localMap first for parameter mapping
+            if (localMap != null && parameterName != null && localMap.TryGetValue(parameterName, out var mappedPaths))
+            {
+                return Preserve(mappedPaths);
+            }
+
             // Filter out parameter names if we have specific field paths
             var specificPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
             return specificPaths.Length > 0 ? Preserve(specificPaths) : Preserve(extractedPaths.ToArray());
@@ -117,6 +162,20 @@ public sealed class PreservationBuilder
         // Filter out parameter names from extracted paths before processing
         var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         
+        // Check localMap first for parameter mapping
+        if (localMap != null && parameterName != null && localMap.TryGetValue(parameterName, out var localMappedPaths) && localMappedPaths.Length > 0)
+        {
+            var basePath = string.Join(".", localMappedPaths);
+            var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var path in filteredPaths)
+            {
+                var fullPath = $"{basePath}.{nodePath}.{path}";
+                expandedPaths.Add(fullPath);
+            }
+            return Preserve(expandedPaths.ToArray());
+        }
+
         // If no specific paths remain after filtering, return original query (greedy preservation)
         if (filteredPaths.Count == 0)
         {
@@ -196,20 +255,18 @@ public sealed class PreservationBuilder
         if (parameterType != null && !path.Contains('.') && IsValidIdentifier(path))
         {
             var properties = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            // If the path matches a property name, it's NOT a parameter name
             return !properties.Any(p => string.Equals(p.Name, path, StringComparison.OrdinalIgnoreCase));
         }
 
-        // Fallback: A parameter name is a simple identifier without dots
-        // But we need to be more specific - common parameter names are lowercase or camelCase
-        // Field names from expressions are usually PascalCase (like ProfileData)
+        // For paths with dots, they're definitely field paths, not parameter names
         if (path.Contains('.'))
             return false;
             
         if (!IsValidIdentifier(path))
             return false;
             
-        // If the path is PascalCase (starts with uppercase), it's likely a field name, not a parameter
-        // Parameter names are typically camelCase (start with lowercase)
+        // Only single lowercase identifiers are likely parameter names
         return char.IsLower(path[0]);
     }
 
