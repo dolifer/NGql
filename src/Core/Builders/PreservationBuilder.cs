@@ -138,7 +138,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        return PreserveExpandedPaths(paths, nodePath, null, null, localMap);
+        var parameterName = expression is LambdaExpression lambda ? GetParameterName(lambda) : null;
+        return PreserveExpandedPaths(paths, nodePath, parameterName, null, localMap);
     }
 
     /// <summary>
@@ -161,12 +162,19 @@ public sealed class PreservationBuilder
 
         // Filter out parameter names from extracted paths before processing
         var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        
+        var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         // Check localMap first for parameter mapping
         if (localMap != null && parameterName != null && localMap.TryGetValue(parameterName, out var localMappedPaths) && localMappedPaths.Length > 0)
         {
+            // If localMap contains full paths, use them directly
+            if (localMappedPaths[0].Contains('.'))
+            {
+                return Preserve(localMappedPaths);
+            }
+            
+            // Otherwise, construct paths from base path + nodePath + extracted fields
             var basePath = string.Join(".", localMappedPaths);
-            var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             
             foreach (var path in filteredPaths)
             {
@@ -182,7 +190,7 @@ public sealed class PreservationBuilder
             return this;
         }
 
-        var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        
         var queryName = _sourceQuery.Definition.Name;
 
         foreach (var path in filteredPaths)
