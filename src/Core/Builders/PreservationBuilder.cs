@@ -140,10 +140,25 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
+    /// Preserves fields referenced in a typed expression.
+    /// </summary>
+    /// <typeparam name="T">The type being queried</typeparam>
+    /// <param name="expression">The expression to analyze</param>
+    /// <param name="nodePath">Optional node path for resolving short notation paths (e.g., "edges.node")</param>
+    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
+    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
+    {
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
+        return PreserveExpandedPaths(paths, nodePath);
+    }
+
+    /// <summary>
     /// Expands extracted field paths using GetPathTo when a nodePath is provided.
     /// </summary>
     private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath)
     {
+        Console.WriteLine($"DEBUG: Extracted paths: [{string.Join(", ", extractedPaths)}]");
+        
         if (string.IsNullOrWhiteSpace(nodePath))
         {
             // No expansion needed
@@ -155,26 +170,15 @@ public sealed class PreservationBuilder
 
         foreach (var path in extractedPaths)
         {
-            // Split the extracted path into segments
-            var pathSegments = path.Split('.');
+            // Resolve the path to the node using GetPathTo
+            var resolvedNodePath = _sourceQuery.GetPathTo(queryName, nodePath);
 
-            // The root field is the first segment from the expression
-            var rootField = pathSegments[0];
-
-            // Build the full node path: nodePath.rootField (e.g., "edges.node.playerProfile")
-            var fullNodePath = $"{nodePath}.{rootField}";
-
-            // Resolve the full path using GetPathTo
-            var resolvedPath = _sourceQuery.GetPathTo(queryName, fullNodePath);
-
-            if (resolvedPath != null && resolvedPath.Length > 0)
+            if (resolvedNodePath != null && resolvedNodePath.Length > 0)
             {
-                // Append remaining path segments (if any) to the resolved path
-                var remainingSegments = pathSegments.Skip(1).ToArray();
-                var finalPath = resolvedPath.Length > 0
-                    ? string.Join(".", resolvedPath.Concat(remainingSegments))
-                    : path; // Fallback to original if resolution fails
-
+                // The GetPathTo method returns the path up to the parent of the target
+                // For "edges.node", it returns path to "edges", so we need to append "node"
+                var fullNodePath = string.Join(".", resolvedNodePath) + "." + nodePath.Split('.')[^1];
+                var finalPath = fullNodePath + "." + path;
                 expandedPaths.Add(finalPath);
             }
             else
@@ -184,6 +188,7 @@ public sealed class PreservationBuilder
             }
         }
 
+        Console.WriteLine($"DEBUG: Final expanded paths: [{string.Join(", ", expandedPaths)}]");
         return Preserve(expandedPaths.ToArray());
     }
 

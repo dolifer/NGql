@@ -75,6 +75,7 @@ public static class ExpressionFieldExtractor
         private readonly HashSet<Expression> _visitedMembers = new(ReferenceEqualityComparer.Instance);
         private readonly Stack<string> _lambdaContextPaths = new();
         private ParameterExpression? _rootParameter;
+        private Type? _rootParameterType;
 
         /// <summary>
         /// Visits member access expressions (e.g., user.profile.age).
@@ -82,9 +83,11 @@ public static class ExpressionFieldExtractor
         /// </summary>
         protected override Expression VisitMember(MemberExpression node)
         {
-            // Skip if we've already processed this expression as part of a larger chain
-            if (_visitedMembers.Contains(node))
+            // Skip properties that should be excluded (like string.Length)
+            if (ShouldExcludeProperty(node))
             {
+                // Still visit the expression to extract paths from null coalescing chains
+                VisitNullCoalescingChain(node.Expression);
                 return node;
             }
 
@@ -100,19 +103,33 @@ public static class ExpressionFieldExtractor
                 }
 
                 FieldPaths.Add(path);
-
-                // Mark this node and all its nested member expressions as visited
-                MarkMemberChainAsVisited(node);
             }
 
             // Visit any method calls in the chain (e.g., First(), Where())
             // This ensures lambda contexts are established properly
             VisitMethodCallsInChain(node);
 
-            // Don't call base.VisitMember - we've already processed the entire chain
-            // in BuildMemberPath, and calling base would cause intermediate paths
-            // to be visited again
             return node;
+        }
+
+        /// <summary>
+        /// Visits null coalescing chains to extract all field paths.
+        /// This handles cases like (x.user.profile.name ?? x.user.email ?? "default").Length
+        /// where we want to extract both user.profile.name and user.email.
+        /// </summary>
+        private void VisitNullCoalescingChain(Expression? expression)
+        {
+            if (expression is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.Coalesce)
+            {
+                // Visit both sides of the null coalescing operator
+                Visit(binaryExpr.Left);
+                Visit(binaryExpr.Right);
+            }
+            else if (expression != null)
+            {
+                // Visit the expression normally
+                Visit(expression);
+            }
         }
 
         /// <summary>
@@ -304,6 +321,7 @@ public static class ExpressionFieldExtractor
             if (_rootParameter == null && _lambdaContextPaths.Count == 0 && node.Parameters.Count > 0)
             {
                 _rootParameter = node.Parameters[0];
+                _rootParameterType = _rootParameter.Type;
             }
 
             // Visit the body to extract paths from nested predicates
@@ -407,6 +425,13 @@ public static class ExpressionFieldExtractor
             {
                 if (currentExpr is MemberExpression memberExpr)
                 {
+                    // Skip properties that should be excluded
+                    if (ShouldExcludeProperty(memberExpr))
+                    {
+                        currentExpr = memberExpr.Expression;
+                        continue;
+                    }
+
                     // Add the member name to the path
                     parts.Push(memberExpr.Member.Name);
                     currentExpr = memberExpr.Expression;
@@ -417,24 +442,50 @@ public static class ExpressionFieldExtractor
                     // Continue from the object the method was called on (the collection)
                     currentExpr = methodCall.Object ?? (methodCall.Arguments.Count > 0 ? methodCall.Arguments[0] : null);
                 }
+                else if (currentExpr is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.Coalesce)
+                {
+                    // For null coalescing, continue with the left side (the potentially null expression)
+                    currentExpr = binaryExpr.Left;
+                }
                 else if (currentExpr is ParameterExpression)
                 {
                     // Reached a parameter (could be root parameter 'x' or lambda parameter 'p')
-                    // If we're inside a lambda context, this is valid (return the path segments we collected)
-                    // If not, this should be from the root
                     break;
                 }
                 else
                 {
                     // Not a valid chain (e.g., constant)
-                    // Don't include this path
                     return null;
                 }
             }
 
-            // Always return the path segments we collected
-            // The caller (VisitMember) will prepend the lambda context if needed
             return parts.Count > 0 ? string.Join(".", parts) : null;
+        }
+
+        /// <summary>
+        /// Determines if a member expression represents a property that should be excluded.
+        /// Only includes properties that are part of the root parameter's type hierarchy.
+        /// </summary>
+        private bool ShouldExcludeProperty(MemberExpression memberExpr)
+        {
+            if (_rootParameterType == null)
+                return false;
+
+            var declaringType = memberExpr.Member.DeclaringType;
+            if (declaringType == null)
+                return false;
+
+            // Exclude properties from system types (like string.Length)
+            if (declaringType.Namespace?.StartsWith("System") == true)
+                return true;
+
+            // Include properties from the root parameter's namespace or related types
+            var rootNamespace = _rootParameterType.Namespace;
+            if (string.IsNullOrEmpty(rootNamespace))
+                return false;
+
+            // Allow properties from the same namespace as the root parameter type
+            return !declaringType.Namespace.StartsWith(rootNamespace);
         }
     }
 }

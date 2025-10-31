@@ -436,4 +436,75 @@ public class ExpressionFieldExtractorTests
             .And.Contain("playerProfile", "root parameter is checked for null")
             .And.Contain("email", "email property is accessed");
     }
+
+    [Fact]
+    public void ExtractFieldPaths_NullCoalescingOperator()
+    {
+        // Arrange - Testing the null coalescing operator (??)
+        Expression<Func<TestModel, bool>> expr = x => (x.user.profile.name ?? "").Length > 0;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Debug - let's see what we actually get
+        var pathsList = paths.ToList();
+        Console.WriteLine($"Found {pathsList.Count} paths: [{string.Join(", ", pathsList)}]");
+
+        // Assert - Should extract the field path from the left side of ??
+        paths.Should().ContainSingle()
+            .Which.Should().Be("user.profile.name");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_SimpleNullCoalescing()
+    {
+        // Arrange - Simpler test
+        Expression<Func<TestModel, string>> expr = x => x.user.profile.name ?? "";
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Debug
+        var pathsList = paths.ToList();
+        Console.WriteLine($"Simple coalesce - Found {pathsList.Count} paths: [{string.Join(", ", pathsList)}]");
+
+        // Assert
+        paths.Should().ContainSingle()
+            .Which.Should().Be("user.profile.name");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_ComplexNullCoalescingExpression()
+    {
+        // Arrange - Testing complex expression with ?? and multiple fields
+        Expression<Func<TestModel, bool>> expr = x => 
+            (x.user.profile.name ?? "").Length > 0 && 
+            x.user.email != null && 
+            x.user.age > 18;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Should extract all field paths
+        paths.Should().HaveCount(3)
+            .And.Contain("user.profile.name")
+            .And.Contain("user.email")
+            .And.Contain("user.age");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_NestedNullCoalescing()
+    {
+        // Arrange - Testing nested null coalescing
+        Expression<Func<TestModel, bool>> expr = x => 
+            (x.user.profile.name ?? x.user.email ?? "default").Length > 0;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Should extract both field paths from the null coalescing chain
+        paths.Should().HaveCount(2)
+            .And.Contain("user.profile.name")
+            .And.Contain("user.email");
+    }
 }
