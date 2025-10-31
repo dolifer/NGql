@@ -173,15 +173,28 @@ public sealed class PreservationBuilder
                 return Preserve(localMappedPaths);
             }
             
-            // Otherwise, construct paths from base path + nodePath + extracted fields
-            var basePath = string.Join(".", localMappedPaths);
-            
-            foreach (var path in filteredPaths)
+            // Check if any extracted path is the parameter name itself (greedy preservation)
+            if (extractedPaths.Contains(parameterName))
             {
-                var fullPath = $"{basePath}.{nodePath}.{path}";
-                expandedPaths.Add(fullPath);
+                // Preserve the entire structure at the localMap location
+                var basePath = string.Join(".", localMappedPaths);
+                var fullPath = $"{basePath}.{nodePath}";
+                return Preserve(fullPath);
             }
-            return Preserve(expandedPaths.ToArray());
+            
+            // Otherwise, construct paths from base path + nodePath + extracted fields
+            var localFilteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (localFilteredPaths.Count > 0)
+            {
+                var basePath = string.Join(".", localMappedPaths);
+                
+                foreach (var path in localFilteredPaths)
+                {
+                    var fullPath = $"{basePath}.{nodePath}.{path}";
+                    expandedPaths.Add(fullPath);
+                }
+                return Preserve(expandedPaths.ToArray());
+            }
         }
 
         // If no specific paths remain after filtering, return original query (greedy preservation)
