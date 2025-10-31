@@ -1,0 +1,12 @@
+﻿query DeepQuery{
+    DeepQuery:data{
+        edges{
+            node{
+                PlayerId:playerId
+                RegData:regData{
+                    RegistrationDate:registrationDate
+                }
+            }
+        }
+    }
+}

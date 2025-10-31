@@ -1,0 +1,10 @@
+﻿query MultiQuery{
+    MultiQuery:data{
+        edges{
+            node{
+                email
+                id
+            }
+        }
+    }
+}

@@ -4,8 +4,6 @@
             author{
                 name
             }
-            content
-            title
         }
         profile{
             email

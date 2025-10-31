@@ -1,0 +1,12 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                PlayerId:playerId
+                RegData:regData{
+                    Region:region
+                }
+            }
+        }
+    }
+}

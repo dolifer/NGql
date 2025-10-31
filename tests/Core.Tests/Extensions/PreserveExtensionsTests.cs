@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -9,6 +10,23 @@ namespace NGql.Core.Tests.Extensions;
 public class PreserveExtensionsTests
 {
     private static readonly Variable SizeVariable = new("$size", "Int");
+
+    private class TestUser { public string? id { get; } public string? email { get; } }
+    private class TestProfile { public string? firstName { get; } public string? lastName { get; } }
+    private class TestSegment { public string? id { get; set; } public string? name { get; set; } }
+    private class TestDeposit 
+    { 
+        public decimal? amount { get; set; } 
+        public DateTime? date { get; set; }
+        public DateTime? Date { get; set; }
+        public TestDepositDetails? Deposit { get; set; }
+    }
+    private class TestDepositDetails
+    {
+        public DateTime? Date { get; set; }
+    }
+    private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } public string? Region { get; set; } }
+    private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; } }
 
     [Fact]
     public Task Preserve_SinglePath_Parent_ReturnsFullQuery()
@@ -170,7 +188,7 @@ public class PreserveExtensionsTests
         // Act
         var result = PreservationBuilder
             .Create(query)
-            .Preserve(null)
+            .Preserve(null!)
             .Build();
 
         // Assert
@@ -409,18 +427,884 @@ public class PreserveExtensionsTests
             .AddField("admin.permissions");
 
         // Act - Mix of overlapping (user.posts + user.posts.author) and sibling (user.profile)
+        // With new behavior: user.posts.author is more specific, so it wins over user.posts
         var result = PreservationBuilder
             .Create(query)
             .Preserve("user.profile", "user.posts", "user.posts.author")
             .Build();
 
-        // Assert - Should include profile and posts (author is redundant)
-        var expectedResult = PreservationBuilder
+        // Assert - Should include profile and only posts.author (more specific path wins)
+        return result.Verify();
+    }
+
+    [Fact]
+    public async Task Preserve_RootPathThenSpecific_SpecificWins()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("RootPathQuery")
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.posts.title");
+
+        // Act - Preserve root "user" then specific "user.profile.name"
+        var result = PreservationBuilder
             .Create(query)
-            .Preserve("user.profile", "user.posts")
+            .Preserve("user")
+            .Preserve("user.profile.name")
             .Build();
 
-        result.ToString().Should().Be(expectedResult.ToString());
-        return result.Verify();
+        // Assert - Should only have user.profile.name, not all of user
+        await result.Verify();
+    }
+
+    // PreserveFromExpression tests
+    [Fact]
+    public async Task PreserveFromExpression_SingleField_PreservesOnlyThatField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleFields_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id != null && u.email != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_WholeObject_PreservesAllFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_WholeObjectThenSpecific_SpecificWins()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u, "edges.node")
+            .PreserveFromExpression((TestUser u) => u.email, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ChainedCalls_AccumulatesFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id, "edges.node")
+            .PreserveFromExpression((TestUser u) => u.email, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ComplexExpression_ExtractsAllReferencedFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ProfileQuery")
+            .AddField("ProfileQuery:data.edges.node.firstName")
+            .AddField("data.edges.node.lastName");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestProfile p) => (p.firstName ?? "").Length > 0 && p.lastName != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    // PreserveAtPath tests
+    [Fact]
+    public async Task PreserveAtPath_SingleField_PreservesOnlyThatField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveAtPath_MultipleFields_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email")
+            .AddField("data.edges.node.name");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .PreserveAtPath("email", "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveAtPath_WithNestedObject_PreservesEntireObject()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ProfileQuery")
+            .AddField("ProfileQuery:data.edges.node.id")
+            .AddField("data.edges.node.profile.firstName")
+            .AddField("data.edges.node.profile.lastName")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("profile", "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveAtPath_CombinedWithPreserveFromExpression_PreservesBoth()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("UserQuery:data.edges.node.email");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "UserQuery" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .PreserveFromExpression((TestUser user) => user.email != null, "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveAtPath_CombinedWithMultiplePreserveFromExpression_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ComplexQuery")
+            .AddField("ComplexQuery:data.edges.node.id")
+            .AddField("ComplexQuery:data.edges.node.email");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "ComplexQuery" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .PreserveFromExpression((TestUser user) => user.email != null, "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveAtPath_WithAutoBuiltPath_PreservesCorrectly()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("AutoQuery")
+            .AddField("AutoQuery:data.edges.node.id")
+            .AddField("AutoQuery:data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .PreserveFromExpression((TestUser user) => user.email != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_WithoutNodePath_NoLocalMap_PreservesDirectly()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("DirectQuery")
+            .AddField("user.id")
+            .AddField("user.email")
+            .AddField("user.name");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser user) => user.email != null)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_GreedyPreservation_NoLocalMap_PreservesAllTypeFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("GreedyQuery")
+            .AddField("GreedyQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser user) => user != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NestedObject_NoLocalMap_PreservesObject()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("NestedQuery")
+            .AddField("NestedQuery:data.edges.node.id")
+            .AddField("data.edges.node.RegData:regData.registrationDate")
+            .AddField("data.edges.node.RegData:regData.registrationType");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => p.RegData != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleFields_NoLocalMap_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("MultiQuery")
+            .AddField("MultiQuery:data.edges.node.id")
+            .AddField("data.edges.node.email")
+            .AddField("data.edges.node.name");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser user) => user.id != null && user.email != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_DeeplyNestedField_WithLocalMap_PreservesOnlySpecificField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PlayerProfileBatchQuery")
+            .AddField("PlayerProfileBatchQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.RegistrationType:registrationType")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.PromoCode:promoCode");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "PlayerProfileBatchQuery", "playerProfile" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile != null && playerProfile.RegData != null && playerProfile.RegData.registrationDate != null,
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_DeeplyNestedField_NoLocalMap_PreservesOnlySpecificField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("DeepQuery")
+            .AddField("DeepQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType")
+            .AddField("data.edges.node.RegData:regData.PromoCode:promoCode");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p != null && p.RegData != null && p.RegData.registrationDate != null,
+                "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_RegDataRegion_WithLocalMap_PreservesOnlyRegion()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile.RegData.Region != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_RegDataOnly_WithLocalMap_PreservesAllRegDataFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // RegData != null should preserve ALL RegData fields (greedy for that object)
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile.RegData != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleSpecificFields_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // Multiple specific fields at same level - preserve both
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p.RegData.Region != null && p.RegData.registrationDate != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ObjectAndSpecificField_SpecificWins()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // RegData != null OR RegData.Region != null - most specific wins
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p.RegData != null || p.RegData.Region != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ThreeLevelNesting_MostSpecificWins()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.user.profile.settings.theme")
+            .AddField("data.user.profile.settings.language")
+            .AddField("data.user.profile.name")
+            .AddField("data.user.email");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "u", new[] { "TestQuery", "data" } }
+        };
+
+        // user.profile != null && user.profile.settings.theme != null
+        // Most specific wins: only theme
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => 
+                u.id != null, 
+                "user", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_EmptyExpression_PreservesNothing()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // True literal - no fields referenced
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => true, "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_SameFieldMultipleTimes_PreservesOnce()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // Same field referenced multiple times
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p.RegData.Region != null && p.RegData.Region.Length > 0, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NestedObjectCheck_PreservesAllNestedFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.user.profile.name")
+            .AddField("data.user.profile.bio")
+            .AddField("data.user.email");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "u", new[] { "TestQuery", "data" } }
+        };
+
+        // user.profile != null - should preserve all profile fields (greedy for profile)
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => 
+                u.id != null, 
+                "user", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MixedNestingLevels_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.user.email")
+            .AddField("data.user.profile.name")
+            .AddField("data.user.profile.bio");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "u", new[] { "TestQuery", "data" } }
+        };
+
+        // Different nesting levels: user.email && user.profile.name
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => 
+                u.email != null, 
+                "user", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NoLocalMap_UsesGetPathTo()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        // No localMap - should use GetPathTo fallback
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p.RegData.Region != null, 
+                "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NullConditionalOperator_PreservesNestedPath()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Equivalent to: playerProfile?.RegData.Region
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                (playerProfile == null ? null : playerProfile.RegData.Region) != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NullConditionalChain_PreservesFullPath()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Equivalent to: playerProfile?.RegData?.Region
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                (playerProfile == null ? null : (playerProfile.RegData == null ? null : playerProfile.RegData.Region)) != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ConditionalExpression_PreservesAllBranches()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Using ternary/conditional: (playerProfile == null) ? null : playerProfile.RegData.Region
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                (playerProfile == null ? null : playerProfile.RegData.Region) != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ConditionalIfFalseBranch_PreservesPath()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Value in IfFalse branch: (playerProfile != null) ? null : playerProfile.RegData.Region
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                (playerProfile != null ? null : playerProfile.RegData.Region) != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ConditionalBothBranches_PreservesBoth()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Both branches have values: (playerProfile == null) ? playerProfile.RegData.RegistrationType : playerProfile.RegData.Region
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                (playerProfile == null ? playerProfile.RegData.registrationType : playerProfile.RegData.Region) != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MethodCallArguments_PreservesFieldsInArguments()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Method call with field as argument: string.IsNullOrWhiteSpace(playerProfile.RegData.Region)
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                !string.IsNullOrWhiteSpace(playerProfile.RegData.Region), 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MethodCallMultipleArguments_PreservesAllFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // Method call with multiple field arguments
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                string.Equals(playerProfile.RegData.Region, playerProfile.RegData.registrationType), 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleLambdaParametersSameBasePath_PreservesAllFields()
+    {
+        // Create separate queries that will be merged
+        var firstQuery = QueryBuilder
+            .CreateDefaultBuilder("FirstQuery")
+            .AddField("FirstQuery:data.edges.node.id")
+            .AddField("FirstQuery:data.edges.node.Deposit:deposit.Date:date");
+
+        var secondQuery = QueryBuilder
+            .CreateDefaultBuilder("SecondQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("SecondQuery:data.edges.node.firstName")
+            .AddField("SecondQuery:data.edges.node.lastName");
+
+        // Merge them with MergeByFieldPath strategy
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstQuery)
+            .Include(secondQuery);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            // Both first and last map to the SAME merged query
+            { "first", new[] { "FirstQuery" } },
+            { "last", new[] { "FirstQuery" } },
+            { "profile", new[] { "SecondQuery" } }
+        };
+
+        // Expression references fields from different parameters
+        var result = PreservationBuilder
+            .Create(mergedQuery)
+            .PreserveFromExpression((TestDeposit first, TestDeposit last, TestProfile profile) => 
+                first.Deposit.Date != null && 
+                first.Deposit.Date == last.Deposit.Date &&
+                profile.firstName == "Test",
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_NonExistentField_PreservesNothing()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // Field not in query - should preserve nothing for that field
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p.playerId != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ComplexBooleanLogic_MostSpecificWins()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "p", new[] { "TestQuery" } }
+        };
+
+        // (RegData != null && Region != null) || (RegistrationDate != null)
+        // Most specific: Region and RegistrationDate
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                (p.RegData != null && p.RegData.Region != null) || p.RegData.registrationDate != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
     }
 }

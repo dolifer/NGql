@@ -447,6 +447,14 @@ public static class ExpressionFieldExtractor
                     // For null coalescing, continue with the left side (the potentially null expression)
                     currentExpr = binaryExpr.Left;
                 }
+                else if (currentExpr is ConditionalExpression conditionalExpr)
+                {
+                    // Handle null-conditional operator (?.) which creates a conditional expression
+                    // Try IfTrue first, fallback to IfFalse if IfTrue is null/constant
+                    currentExpr = conditionalExpr.IfTrue is ConstantExpression { Value: null } 
+                        ? conditionalExpr.IfFalse 
+                        : conditionalExpr.IfTrue;
+                }
                 else if (currentExpr is ParameterExpression)
                 {
                     // Reached a parameter (could be root parameter 'x' or lambda parameter 'p')

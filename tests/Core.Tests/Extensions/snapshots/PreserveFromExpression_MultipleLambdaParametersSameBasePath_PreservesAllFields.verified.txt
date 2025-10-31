@@ -1,0 +1,18 @@
+query MergedQuery{
+    FirstQuery:data{
+        edges{
+            node{
+                Deposit:deposit{
+                    Date:date
+                }
+            }
+        }
+    }
+    SecondQuery:data{
+        edges{
+            node{
+                firstName
+            }
+        }
+    }
+}
