@@ -1,5 +1,5 @@
-using System.Linq;
 using System.Linq.Expressions;
+using System.Reflection;
 using NGql.Core.Features;
 
 namespace NGql.Core.Builders;
@@ -70,7 +70,7 @@ public sealed class PreservationBuilder
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
         var parameterName = GetParameterName(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterName);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
     }
 
     /// <summary>
@@ -80,7 +80,7 @@ public sealed class PreservationBuilder
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
         var parameterName = GetParameterName(selector);
-        return PreserveExpandedPaths(paths, nodePath, parameterName);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
     }
 
     /// <summary>
@@ -90,7 +90,7 @@ public sealed class PreservationBuilder
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
         var parameterName = GetParameterName(expression);
-        return PreserveExpandedPaths(paths, nodePath, parameterName);
+        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
     }
 
     /// <summary>
@@ -99,39 +99,35 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        return PreserveExpandedPaths(paths, nodePath, null);
+        return PreserveExpandedPaths(paths, nodePath, null, null);
     }
 
     /// <summary>
     /// Expands extracted field paths using GetPathTo when a nodePath is provided.
     /// </summary>
-    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string? parameterName = null)
+    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string? parameterName = null, Type? parameterType = null)
     {
         if (string.IsNullOrWhiteSpace(nodePath))
         {
-            // No expansion needed
-            return Preserve(extractedPaths.ToArray());
+            // Filter out parameter names if we have specific field paths
+            var specificPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
+            return specificPaths.Length > 0 ? Preserve(specificPaths) : Preserve(extractedPaths.ToArray());
         }
 
-        // Check if we have only parameter names (greedy preservation)
-        var hasOnlyParameterNames = extractedPaths.All(path => IsParameterName(path, parameterName));
+        // Filter out parameter names from extracted paths before processing
+        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         
-        if (hasOnlyParameterNames)
+        // If no specific paths remain after filtering, return original query (greedy preservation)
+        if (filteredPaths.Count == 0)
         {
-            // For greedy preservation with nodePath, return the original query
-            // This preserves the entire structure at the specified node path
             return this;
         }
 
         var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var queryName = _sourceQuery.Definition.Name;
 
-        foreach (var path in extractedPaths)
+        foreach (var path in filteredPaths)
         {
-            // Skip parameter names in mixed scenarios - they don't get expanded
-            if (IsParameterName(path, parameterName))
-                continue;
-                
             // Resolve the path to the node using GetPathTo
             var resolvedNodePath = _sourceQuery.GetPathTo(queryName, nodePath);
 
@@ -165,7 +161,7 @@ public sealed class PreservationBuilder
     /// Determines if a path represents a parameter name (greedy preservation)
     /// vs a specific field path.
     /// </summary>
-    private static bool IsParameterName(string path, string? actualParameterName)
+    private static bool IsParameterName(string path, string? actualParameterName, Type? parameterType = null)
     {
         // If we have the actual parameter name, use exact match
         if (!string.IsNullOrEmpty(actualParameterName))
@@ -173,8 +169,25 @@ public sealed class PreservationBuilder
             return string.Equals(path, actualParameterName, StringComparison.OrdinalIgnoreCase);
         }
 
+        // If we have parameter type, check if path matches any property name
+        if (parameterType != null && !path.Contains('.') && IsValidIdentifier(path))
+        {
+            var properties = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            return !properties.Any(p => string.Equals(p.Name, path, StringComparison.OrdinalIgnoreCase));
+        }
+
         // Fallback: A parameter name is a simple identifier without dots
-        return !path.Contains('.') && IsValidIdentifier(path);
+        // But we need to be more specific - common parameter names are lowercase or camelCase
+        // Field names from expressions are usually PascalCase (like ProfileData)
+        if (path.Contains('.'))
+            return false;
+            
+        if (!IsValidIdentifier(path))
+            return false;
+            
+        // If the path is PascalCase (starts with uppercase), it's likely a field name, not a parameter
+        // Parameter names are typically camelCase (start with lowercase)
+        return char.IsLower(path[0]);
     }
 
     /// <summary>
@@ -187,16 +200,9 @@ public sealed class PreservationBuilder
         if (_pathsToPreserve.Count == 0)
             return _sourceQuery;
 
-        // Separate parameter names from specific field paths
-        // Note: Without the actual parameter name, we use the fallback logic
-        var specificPaths = _pathsToPreserve.Where(path => !IsParameterName(path, null)).ToArray();
-        
-        // If we have only parameter names (greedy preservation), return original query
-        if (specificPaths.Length == 0)
-            return _sourceQuery;
-
-        // Use only the specific paths for preservation
-        return _sourceQuery.Preserve(specificPaths);
+        // For explicit Preserve() calls, use all paths as-is without filtering
+        // The IsParameterName filtering is only relevant for expression-based methods
+        return _sourceQuery.Preserve(_pathsToPreserve.ToArray());
     }
 
     /// <summary>
