@@ -40,6 +40,7 @@ public sealed class PreservationBuilder
     /// <summary>
     /// Adds one or more field paths to preserve.
     /// Can be called multiple times to accumulate paths.
+    /// More specific paths override broader parent paths.
     /// </summary>
     /// <param name="fieldPaths">The field paths to preserve.</param>
     /// <returns>The current PreservationBuilder instance for method chaining.</returns>
@@ -52,6 +53,13 @@ public sealed class PreservationBuilder
         {
             if (!string.IsNullOrWhiteSpace(path))
             {
+                // Remove any existing paths that are parents of the new path
+                _pathsToPreserve.RemoveWhere(existingPath => 
+                    path.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
+                    (path.Length > existingPath.Length && 
+                     path.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
+                     path[existingPath.Length] == '.'));
+                
                 _pathsToPreserve.Add(path);
             }
         }
@@ -120,7 +128,11 @@ public sealed class PreservationBuilder
         {
             // Remove any existing paths that are parents of the new specific paths
             _pathsToPreserve.RemoveWhere(existingPath => 
-                specificPaths.Any(newPath => newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase)));
+                specificPaths.Any(newPath => 
+                    newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
+                    (newPath.Length > existingPath.Length && 
+                     newPath.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
+                     newPath[existingPath.Length] == '.')));
         }
         
         return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
@@ -142,7 +154,11 @@ public sealed class PreservationBuilder
         {
             // Remove any existing paths that are parents of the new specific paths
             _pathsToPreserve.RemoveWhere(existingPath => 
-                specificPaths.Any(newPath => newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase)));
+                specificPaths.Any(newPath => 
+                    newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
+                    (newPath.Length > existingPath.Length && 
+                     newPath.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
+                     newPath[existingPath.Length] == '.')));
         }
         
         return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
@@ -316,7 +332,60 @@ public sealed class PreservationBuilder
             var fullPath = string.Join(".", resolvedPath) + "." + nodePath.Split('.')[^1] + "." + fieldPath;
             return Preserve(fullPath);
         }
+        
+        // Fallback: search for nodePath in query structure
+        var nodePathSegments = nodePath.Split('.');
+        var foundPath = FindNodePathInStructure(_sourceQuery.Definition.Fields, nodePathSegments, 0, new List<string>());
+        if (foundPath != null)
+        {
+            var fullPath = string.Join(".", foundPath) + "." + fieldPath;
+            return Preserve(fullPath);
+        }
+        
         return Preserve($"{nodePath}.{fieldPath}");
+    }
+    
+    private static List<string>? FindNodePathInStructure(SortedDictionary<string, FieldDefinition> fields, string[] nodePathSegments, int segmentIndex, List<string> currentPath)
+    {
+        if (segmentIndex >= nodePathSegments.Length)
+            return currentPath;
+            
+        var targetSegment = nodePathSegments[segmentIndex];
+        
+        foreach (var kvp in fields)
+        {
+            var field = kvp.Value;
+            
+            // Check if this field matches the target segment (by key or name)
+            if (string.Equals(kvp.Key, targetSegment, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(field.Name, targetSegment, StringComparison.OrdinalIgnoreCase))
+            {
+                var newPath = new List<string>(currentPath) { kvp.Key };
+                
+                // If this is the last segment, we found the complete path
+                if (segmentIndex == nodePathSegments.Length - 1)
+                    return newPath;
+                    
+                // Otherwise, continue searching in child fields
+                if (field.Fields != null)
+                {
+                    var result = FindNodePathInStructure(field.Fields, nodePathSegments, segmentIndex + 1, newPath);
+                    if (result != null)
+                        return result;
+                }
+            }
+            
+            // Also search recursively in child fields (in case target is nested deeper)
+            if (field.Fields != null && segmentIndex == 0)
+            {
+                var newPath = new List<string>(currentPath) { kvp.Key };
+                var result = FindNodePathInStructure(field.Fields, nodePathSegments, 0, newPath);
+                if (result != null)
+                    return result;
+            }
+        }
+        
+        return null;
     }
 
     /// <summary>

@@ -1,6 +1,10 @@
 ﻿query UserQuery{
-    user{
-        email
-        id
+    UserQuery:data{
+        edges{
+            node{
+                email
+                id
+            }
+        }
     }
 }

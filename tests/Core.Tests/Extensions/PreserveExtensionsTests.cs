@@ -458,12 +458,12 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("UserQuery")
-            .AddField("user.id")
-            .AddField("user.email");
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestUser u) => u.id != null, "user")
+            .PreserveFromExpression((TestUser u) => u.id != null, "edges.node")
             .Build();
 
         await result.Verify();
@@ -474,12 +474,12 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("UserQuery")
-            .AddField("user.id")
-            .AddField("user.email");
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestUser u) => u.id != null && u.email != null, "user")
+            .PreserveFromExpression((TestUser u) => u.id != null && u.email != null, "edges.node")
             .Build();
 
         await result.Verify();
@@ -490,12 +490,12 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("UserQuery")
-            .AddField("user.id")
-            .AddField("user.email");
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestUser u) => u, "user")
+            .PreserveFromExpression((TestUser u) => u, "edges.node")
             .Build();
 
         await result.Verify();
@@ -506,13 +506,13 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("UserQuery")
-            .AddField("user.id")
-            .AddField("user.email");
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestUser u) => u, "user")
-            .PreserveFromExpression((TestUser u) => u.email, "user")
+            .PreserveFromExpression((TestUser u) => u, "edges.node")
+            .PreserveFromExpression((TestUser u) => u.email, "edges.node")
             .Build();
 
         await result.Verify();
@@ -523,13 +523,13 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("UserQuery")
-            .AddField("user.id")
-            .AddField("user.email");
+            .AddField("UserQuery:data.edges.node.id")
+            .AddField("data.edges.node.email");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestUser u) => u.id, "user")
-            .PreserveFromExpression((TestUser u) => u.email, "user")
+            .PreserveFromExpression((TestUser u) => u.id, "edges.node")
+            .PreserveFromExpression((TestUser u) => u.email, "edges.node")
             .Build();
 
         await result.Verify();
@@ -540,12 +540,12 @@ public class PreserveExtensionsTests
     {
         var query = QueryBuilder
             .CreateDefaultBuilder("ProfileQuery")
-            .AddField("profile.firstName")
-            .AddField("profile.lastName");
+            .AddField("ProfileQuery:data.edges.node.firstName")
+            .AddField("data.edges.node.lastName");
 
         var result = PreservationBuilder
             .Create(query)
-            .PreserveFromExpression((TestProfile p) => (p.firstName ?? "").Length > 0 && p.lastName != null, "profile")
+            .PreserveFromExpression((TestProfile p) => (p.firstName ?? "").Length > 0 && p.lastName != null, "edges.node")
             .Build();
 
         await result.Verify();

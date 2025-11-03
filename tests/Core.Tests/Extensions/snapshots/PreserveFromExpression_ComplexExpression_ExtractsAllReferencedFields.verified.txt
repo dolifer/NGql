@@ -1,2 +1,10 @@
 ﻿query ProfileQuery{
+    ProfileQuery:data{
+        edges{
+            node{
+                firstName
+                lastName
+            }
+        }
+    }
 }
