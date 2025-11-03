@@ -111,6 +111,18 @@ public sealed class PreservationBuilder
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
         var parameterNames = GetParameterNames(expression);
+        
+        // Remove parent paths when more specific child paths are added
+        var singleParam = parameterNames?.FirstOrDefault();
+        var specificPaths = paths.Where(p => !IsParameterName(p, singleParam, typeof(T))).ToList();
+        
+        if (specificPaths.Any())
+        {
+            // Remove any existing paths that are parents of the new specific paths
+            _pathsToPreserve.RemoveWhere(existingPath => 
+                specificPaths.Any(newPath => newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase)));
+        }
+        
         return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
     }
 
@@ -121,6 +133,18 @@ public sealed class PreservationBuilder
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
         var parameterNames = GetParameterNames(expression);
+        
+        // Remove parent paths when more specific child paths are added
+        var singleParam = parameterNames?.FirstOrDefault();
+        var specificPaths = paths.Where(p => !IsParameterName(p, singleParam, typeof(T))).ToList();
+        
+        if (specificPaths.Any())
+        {
+            // Remove any existing paths that are parents of the new specific paths
+            _pathsToPreserve.RemoveWhere(existingPath => 
+                specificPaths.Any(newPath => newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase)));
+        }
+        
         return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
     }
 
