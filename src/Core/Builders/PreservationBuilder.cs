@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using NGql.Core.Abstractions;
 using NGql.Core.Features;
 
 namespace NGql.Core.Builders;
@@ -149,84 +150,124 @@ public sealed class PreservationBuilder
     {
         if (string.IsNullOrWhiteSpace(nodePath))
         {
-            // Check localMap first for parameter mapping
-            if (localMap != null && parameterName != null && localMap.TryGetValue(parameterName, out var mappedPaths))
+            // Multi-parameter lambda: map each extracted field to its owning query
+            if (localMap != null)
+            {
+                var preservedQueries = new HashSet<string>();
+                
+                foreach (var extractedPath in extractedPaths)
+                {
+                    // Direct parameter mapping
+                    if (localMap.TryGetValue(extractedPath, out var queryPaths))
+                    {
+                        preservedQueries.Add(queryPaths[0]);
+                        continue;
+                    }
+
+                    // Field ownership detection via AST traversal
+                    foreach (var kvp in localMap)
+                    {
+                        var ownerQueryName = kvp.Value[0];
+                        if (_sourceQuery.Definition.Fields.TryGetValue(ownerQueryName, out var queryField) &&
+                            ContainsField(queryField, extractedPath))
+                        {
+                            preservedQueries.Add(ownerQueryName);
+                            break;
+                        }
+                    }
+                }
+                
+                // Preserve all identified queries
+                foreach (var queryName in preservedQueries)
+                {
+                    _pathsToPreserve.Add(queryName);
+                }
+                return this;
+            }
+
+            // Single parameter fallback
+            if (parameterName != null && localMap?.TryGetValue(parameterName, out var mappedPaths) == true)
             {
                 return Preserve(mappedPaths);
             }
 
-            // Filter out parameter names if we have specific field paths
             var specificPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
             return specificPaths.Length > 0 ? Preserve(specificPaths) : Preserve(extractedPaths.ToArray());
         }
 
-        // Filter out parameter names from extracted paths before processing
-        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var expandedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Check localMap first for parameter mapping
-        if (localMap != null && parameterName != null && localMap.TryGetValue(parameterName, out var localMappedPaths) && localMappedPaths.Length > 0)
+        // Handle nodePath case - preserve with path resolution
+        if (localMap != null)
         {
-            // If localMap contains full paths, use them directly
-            if (localMappedPaths[0].Contains('.'))
+            var preservedQueries = new HashSet<string>();
+            
+            // FIRST: Check parameter name for single-parameter lambdas (production case)
+            if (parameterName != null && localMap.TryGetValue(parameterName, out var paramQueryPaths))
             {
-                return Preserve(localMappedPaths);
+                preservedQueries.Add(paramQueryPaths[0]);
             }
             
-            // Check if any extracted path is the parameter name itself (greedy preservation)
-            if (extractedPaths.Contains(parameterName))
+            // SECOND: Check extracted fields for multi-parameter lambdas
+            foreach (var extractedPath in extractedPaths)
             {
-                // Preserve the entire structure at the localMap location
-                var basePath = string.Join(".", localMappedPaths);
-                var fullPath = $"{basePath}.{nodePath}";
-                return Preserve(fullPath);
-            }
-            
-            // Otherwise, construct paths from base path + nodePath + extracted fields
-            var localFilteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (localFilteredPaths.Count > 0)
-            {
-                var basePath = string.Join(".", localMappedPaths);
-                
-                foreach (var path in localFilteredPaths)
+                // Direct parameter mapping
+                if (localMap.TryGetValue(extractedPath, out var queryPaths))
                 {
-                    var fullPath = $"{basePath}.{nodePath}.{path}";
-                    expandedPaths.Add(fullPath);
+                    preservedQueries.Add(queryPaths[0]);
+                    continue;
                 }
-                return Preserve(expandedPaths.ToArray());
-            }
-        }
 
-        // If no specific paths remain after filtering, return original query (greedy preservation)
-        if (filteredPaths.Count == 0)
-        {
+                // Field ownership detection via AST traversal
+                foreach (var kvp in localMap)
+                {
+                    var ownerQueryName = kvp.Value[0];
+                    if (_sourceQuery.Definition.Fields.TryGetValue(ownerQueryName, out var queryField) &&
+                        ContainsField(queryField, extractedPath))
+                    {
+                        preservedQueries.Add(ownerQueryName);
+                        break;
+                    }
+                }
+            }
+            
+            // Preserve all identified queries - just the query names as top-level fields
+            foreach (var queryName in preservedQueries)
+            {
+                _pathsToPreserve.Add(queryName);
+            }
             return this;
         }
 
-        
-        var queryName = _sourceQuery.Definition.Name;
-
+        // Fallback for non-localMap case with nodePath
+        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
         foreach (var path in filteredPaths)
         {
-            // Resolve the path to the node using GetPathTo
-            var resolvedNodePath = _sourceQuery.GetPathTo(queryName, nodePath);
+            PreserveAtPath(path, nodePath);
+        }
+        return this;
+    }
 
-            if (resolvedNodePath != null && resolvedNodePath.Length > 0)
+    /// <summary>
+    /// Efficiently checks if a field exists anywhere in the AST using the same pattern as QueryMap.
+    /// Checks both field names and aliases to handle GraphQL alias syntax like "segmentId:segment".
+    /// </summary>
+    private static bool ContainsField(FieldDefinition field, string fieldName)
+    {
+        // Check direct match for both name and alias
+        if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(field.Alias, fieldName, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Recursively check child fields
+        if (field.Fields?.Values != null)
+        {
+            foreach (var childField in field.Fields.Values)
             {
-                // The GetPathTo method returns the path up to the parent of the target
-                // For "edges.node", it returns path to "edges", so we need to append "node"
-                var fullNodePath = string.Join(".", resolvedNodePath) + "." + nodePath.Split('.')[^1];
-                var finalPath = fullNodePath + "." + path;
-                expandedPaths.Add(finalPath);
-            }
-            else
-            {
-                // If GetPathTo fails, use the original path
-                expandedPaths.Add(path);
+                if (ContainsField(childField, fieldName))
+                    return true;
             }
         }
 
-        return Preserve(expandedPaths.ToArray());
+        return false;
     }
 
     /// <summary>

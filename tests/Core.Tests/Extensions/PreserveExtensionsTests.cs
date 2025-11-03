@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -9,6 +10,17 @@ namespace NGql.Core.Tests.Extensions;
 public class PreserveExtensionsTests
 {
     private static readonly Variable SizeVariable = new("$size", "Int");
+
+    private class TestUser { public string? id { get; set; } public string? email { get; set; } }
+    private class TestProfile { public string? firstName { get; set; } public string? lastName { get; set; } }
+    private class TestSegment { public string? id { get; set; } public string? name { get; set; } }
+    private class TestDeposit 
+    { 
+        public decimal? amount { get; set; } 
+        public DateTime? date { get; set; }
+        public DateTime? Date { get; set; } // Matches production code-generated property
+    }
+    private class TestBusiness { public string? segmentId { get; set; } public string? category { get; set; } }
 
     [Fact]
     public Task Preserve_SinglePath_Parent_ReturnsFullQuery()
