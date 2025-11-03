@@ -70,8 +70,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate, string? nodePath = null)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterName = GetParameterName(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+        var parameterNames = GetParameterNames(predicate);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
     }
 
     /// <summary>
@@ -80,8 +80,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate, string? nodePath, Dictionary<string, string[]> localMap)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterName = GetParameterName(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
+        var parameterNames = GetParameterNames(predicate);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
     }
 
     /// <summary>
@@ -90,8 +90,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath = null)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
-        var parameterName = GetParameterName(selector);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+        var parameterNames = GetParameterNames(selector);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
     }
 
     /// <summary>
@@ -100,8 +100,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath, Dictionary<string, string[]> localMap)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
-        var parameterName = GetParameterName(selector);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
+        var parameterNames = GetParameterNames(selector);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
     }
 
     /// <summary>
@@ -110,8 +110,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterName = GetParameterName(expression);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+        var parameterNames = GetParameterNames(expression);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
     }
 
     /// <summary>
@@ -120,8 +120,8 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath, Dictionary<string, string[]> localMap)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterName = GetParameterName(expression);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T), localMap);
+        var parameterNames = GetParameterNames(expression);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
     }
 
     /// <summary>
@@ -139,14 +139,14 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterName = expression is LambdaExpression lambda ? GetParameterName(lambda) : null;
-        return PreserveExpandedPaths(paths, nodePath, parameterName, null, localMap);
+        var parameterNames = expression is LambdaExpression lambda ? GetParameterNames(lambda) : null;
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, null, localMap);
     }
 
     /// <summary>
     /// Expands extracted field paths using GetPathTo when a nodePath is provided.
     /// </summary>
-    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string? parameterName = null, Type? parameterType = null, Dictionary<string, string[]>? localMap = null)
+    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string[]? parameterNames = null, Type? parameterType = null, Dictionary<string, string[]>? localMap = null)
     {
         if (string.IsNullOrWhiteSpace(nodePath))
         {
@@ -186,12 +186,13 @@ public sealed class PreservationBuilder
             }
 
             // Single parameter fallback
-            if (parameterName != null && localMap?.TryGetValue(parameterName, out var mappedPaths) == true)
+            var singleParamName = parameterNames?.FirstOrDefault();
+            if (singleParamName != null && localMap?.TryGetValue(singleParamName, out var mappedPaths) == true)
             {
                 return Preserve(mappedPaths);
             }
 
-            var specificPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
+            var specificPaths = extractedPaths.Where(path => !IsParameterName(path, singleParamName, parameterType)).ToArray();
             return specificPaths.Length > 0 ? Preserve(specificPaths) : Preserve(extractedPaths.ToArray());
         }
 
@@ -200,13 +201,19 @@ public sealed class PreservationBuilder
         {
             var preservedQueries = new HashSet<string>();
             
-            // FIRST: Check parameter name for single-parameter lambdas (production case)
-            if (parameterName != null && localMap.TryGetValue(parameterName, out var paramQueryPaths))
+            // FIRST: Check ALL parameter names for multi-parameter lambdas
+            if (parameterNames != null && parameterNames.Length > 0)
             {
-                preservedQueries.Add(paramQueryPaths[0]);
+                foreach (var paramName in parameterNames)
+                {
+                    if (localMap.TryGetValue(paramName, out var paramQueryPaths))
+                    {
+                        preservedQueries.Add(paramQueryPaths[0]);
+                    }
+                }
             }
             
-            // SECOND: Check extracted fields for multi-parameter lambdas
+            // SECOND: Check extracted fields for additional field-level mappings
             foreach (var extractedPath in extractedPaths)
             {
                 // Direct parameter mapping
@@ -238,7 +245,8 @@ public sealed class PreservationBuilder
         }
 
         // Fallback for non-localMap case with nodePath
-        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, parameterName, parameterType)).ToArray();
+        var singleParam = parameterNames?.FirstOrDefault();
+        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, singleParam, parameterType)).ToArray();
         foreach (var path in filteredPaths)
         {
             PreserveAtPath(path, nodePath);
@@ -293,12 +301,23 @@ public sealed class PreservationBuilder
     public PreservationBuilder PreserveAtPathWhere<T>(Expression<Func<T, bool>> predicate, string nodePath)
     {
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterName = GetParameterName(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterName, typeof(T));
+        var parameterNames = GetParameterNames(predicate);
+        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
     }
     private static string? GetParameterName(LambdaExpression lambda)
     {
         return lambda.Parameters.FirstOrDefault()?.Name;
+    }
+
+    /// <summary>
+    /// Gets all parameter names from a lambda expression.
+    /// </summary>
+    private static string[]? GetParameterNames(LambdaExpression lambda)
+    {
+        if (lambda.Parameters.Count == 0)
+            return null;
+        
+        return lambda.Parameters.Select(p => p.Name).Where(n => n != null).ToArray()!;
     }
 
     /// <summary>
