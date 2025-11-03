@@ -421,18 +421,133 @@ public class PreserveExtensionsTests
             .AddField("admin.permissions");
 
         // Act - Mix of overlapping (user.posts + user.posts.author) and sibling (user.profile)
+        // With new behavior: user.posts.author is more specific, so it wins over user.posts
         var result = PreservationBuilder
             .Create(query)
             .Preserve("user.profile", "user.posts", "user.posts.author")
             .Build();
 
-        // Assert - Should include profile and posts (author is redundant)
-        var expectedResult = PreservationBuilder
+        // Assert - Should include profile and only posts.author (more specific path wins)
+        return result.Verify();
+    }
+
+    [Fact]
+    public async Task Preserve_RootPathThenSpecific_SpecificWins()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("RootPathQuery")
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.posts.title");
+
+        // Act - Preserve root "user" then specific "user.profile.name"
+        var result = PreservationBuilder
             .Create(query)
-            .Preserve("user.profile", "user.posts")
+            .Preserve("user")
+            .Preserve("user.profile.name")
             .Build();
 
-        result.ToString().Should().Be(expectedResult.ToString());
-        return result.Verify();
+        // Assert - Should only have user.profile.name, not all of user
+        await result.Verify();
+    }
+
+    // PreserveFromExpression tests
+    [Fact]
+    public async Task PreserveFromExpression_SingleField_PreservesOnlyThatField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("user.id")
+            .AddField("user.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id != null, "user")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleFields_PreservesAll()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("user.id")
+            .AddField("user.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id != null && u.email != null, "user")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_WholeObject_PreservesAllFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("user.id")
+            .AddField("user.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u, "user")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_WholeObjectThenSpecific_SpecificWins()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("user.id")
+            .AddField("user.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u, "user")
+            .PreserveFromExpression((TestUser u) => u.email, "user")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ChainedCalls_AccumulatesFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("UserQuery")
+            .AddField("user.id")
+            .AddField("user.email");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestUser u) => u.id, "user")
+            .PreserveFromExpression((TestUser u) => u.email, "user")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_ComplexExpression_ExtractsAllReferencedFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ProfileQuery")
+            .AddField("profile.firstName")
+            .AddField("profile.lastName");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveFromExpression((TestProfile p) => (p.firstName ?? "").Length > 0 && p.lastName != null, "profile")
+            .Build();
+
+        await result.Verify();
     }
 }
