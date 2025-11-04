@@ -1,0 +1,9 @@
+﻿query UserQuery{
+    UserQuery:data{
+        edges{
+            node{
+                id
+            }
+        }
+    }
+}

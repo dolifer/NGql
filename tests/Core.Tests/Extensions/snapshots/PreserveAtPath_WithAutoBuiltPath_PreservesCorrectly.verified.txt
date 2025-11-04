@@ -1,0 +1,10 @@
+﻿query AutoQuery{
+    AutoQuery:data{
+        edges{
+            node{
+                email
+                id
+            }
+        }
+    }
+}

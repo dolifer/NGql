@@ -6,8 +6,7 @@ using NGql.Core.Features;
 namespace NGql.Core.Builders;
 
 /// <summary>
-/// Builder for preserving specific fields from a QueryBuilder.
-/// Provides a fluent API for accumulating multiple field paths before applying the preservation.
+/// Builder for preserving specific fields from a QueryBuilder using functional composition.
 /// </summary>
 public sealed class PreservationBuilder
 {
@@ -20,458 +19,219 @@ public sealed class PreservationBuilder
         _pathsToPreserve = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Creates a new preservation builder for the specified query.
-    /// </summary>
-    /// <param name="query">The source query to preserve fields from.</param>
-    /// <returns>A new PreservationBuilder instance.</returns>
-    /// <example>
-    /// <code>
-    /// var result = PreservationBuilder
-    ///     .Create(query)
-    ///     .Preserve("user.profile")
-    ///     .Preserve("user.posts")
-    ///     .Build();
-    /// </code>
-    /// </example>
-    public static PreservationBuilder Create(QueryBuilder query)
-        => new(query);
+    public static PreservationBuilder Create(QueryBuilder query) => new(query);
 
     /// <summary>
-    /// Adds one or more field paths to preserve.
-    /// Can be called multiple times to accumulate paths.
-    /// More specific paths override broader parent paths.
+    /// Core method: adds paths to preserve with automatic cleanup of parent/child relationships.
     /// </summary>
-    /// <param name="fieldPaths">The field paths to preserve.</param>
-    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
     public PreservationBuilder Preserve(params string[] fieldPaths)
     {
-        if (fieldPaths == null || fieldPaths.Length == 0)
-            return this;
+        if (fieldPaths == null || fieldPaths.Length == 0) return this;
 
-        foreach (var path in fieldPaths)
+        foreach (var path in fieldPaths.Where(p => !string.IsNullOrWhiteSpace(p)))
         {
-            if (!string.IsNullOrWhiteSpace(path))
-            {
-                // Remove any existing paths that are parents of the new path
-                _pathsToPreserve.RemoveWhere(existingPath => 
-                    path.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
-                    (path.Length > existingPath.Length && 
-                     path.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
-                     path[existingPath.Length] == '.'));
-                
-                _pathsToPreserve.Add(path);
-            }
+            // Remove parent paths when adding more specific child
+            _pathsToPreserve.RemoveWhere(existing => 
+                path.StartsWith(existing + ".", StringComparison.OrdinalIgnoreCase));
+            
+            _pathsToPreserve.Add(path);
         }
 
         return this;
     }
 
     /// <summary>
-    /// Preserves fields referenced in a typed predicate expression.
-    /// Automatically extracts field paths from the expression.
+    /// Preserve fields at a specific node path.
     /// </summary>
-    /// <typeparam name="T">The type being queried</typeparam>
-    /// <param name="predicate">The predicate expression (e.g., x => x.user.profile.age > 10)</param>
-    /// <param name="nodePath">Optional node path for resolving short notation paths (e.g., "edges.node")</param>
-    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
-    public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate, string? nodePath = null)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterNames = GetParameterNames(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in a typed predicate expression with local parameter mapping.
-    /// </summary>
-    public PreservationBuilder PreserveWhere<T>(Expression<Func<T, bool>> predicate, string? nodePath, Dictionary<string, string[]> localMap)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterNames = GetParameterNames(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in a typed selector expression.
-    /// </summary>
-    public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath = null)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
-        var parameterNames = GetParameterNames(selector);
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in a typed selector expression with local parameter mapping.
-    /// </summary>
-    public PreservationBuilder PreserveFor<T>(Expression<Func<T, object>> selector, string? nodePath, Dictionary<string, string[]> localMap)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
-        var parameterNames = GetParameterNames(selector);
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in a typed expression.
-    /// </summary>
-    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterNames = GetParameterNames(expression);
-        
-        // Remove parent paths when more specific child paths are added
-        var singleParam = parameterNames?.FirstOrDefault();
-        var specificPaths = paths.Where(p => !IsParameterName(p, singleParam, typeof(T))).ToList();
-        
-        if (specificPaths.Any())
-        {
-            // Remove any existing paths that are parents of the new specific paths
-            _pathsToPreserve.RemoveWhere(existingPath => 
-                specificPaths.Any(newPath => 
-                    newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
-                    (newPath.Length > existingPath.Length && 
-                     newPath.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
-                     newPath[existingPath.Length] == '.')));
-        }
-        
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in a typed expression with local parameter mapping.
-    /// </summary>
-    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath, Dictionary<string, string[]> localMap)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterNames = GetParameterNames(expression);
-        
-        // Remove parent paths when more specific child paths are added
-        var singleParam = parameterNames?.FirstOrDefault();
-        var specificPaths = paths.Where(p => !IsParameterName(p, singleParam, typeof(T))).ToList();
-        
-        if (specificPaths.Any())
-        {
-            // Remove any existing paths that are parents of the new specific paths
-            _pathsToPreserve.RemoveWhere(existingPath => 
-                specificPaths.Any(newPath => 
-                    newPath.StartsWith(existingPath + ".", StringComparison.OrdinalIgnoreCase) ||
-                    (newPath.Length > existingPath.Length && 
-                     newPath.StartsWith(existingPath, StringComparison.OrdinalIgnoreCase) &&
-                     newPath[existingPath.Length] == '.')));
-        }
-        
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T), localMap);
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in any expression.
-    /// </summary>
-    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        return PreserveExpandedPaths(paths, nodePath, null, null);
-    }
-
-    /// <summary>
-    /// Preserves fields referenced in any expression with local parameter mapping.
-    /// </summary>
-    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterNames = expression is LambdaExpression lambda ? GetParameterNames(lambda) : null;
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, null, localMap);
-    }
-
-    /// <summary>
-    /// Expands extracted field paths using GetPathTo when a nodePath is provided.
-    /// </summary>
-    private PreservationBuilder PreserveExpandedPaths(HashSet<string> extractedPaths, string? nodePath, string[]? parameterNames = null, Type? parameterType = null, Dictionary<string, string[]>? localMap = null)
-    {
-        if (string.IsNullOrWhiteSpace(nodePath))
-        {
-            // Multi-parameter lambda: map each extracted field to its owning query
-            if (localMap != null)
-            {
-                var preservedQueries = new HashSet<string>();
-                
-                foreach (var extractedPath in extractedPaths)
-                {
-                    // Direct parameter mapping
-                    if (localMap.TryGetValue(extractedPath, out var queryPaths))
-                    {
-                        preservedQueries.Add(queryPaths[0]);
-                        continue;
-                    }
-
-                    // Field ownership detection via AST traversal
-                    foreach (var kvp in localMap)
-                    {
-                        var ownerQueryName = kvp.Value[0];
-                        if (_sourceQuery.Definition.Fields.TryGetValue(ownerQueryName, out var queryField) &&
-                            ContainsField(queryField, extractedPath))
-                        {
-                            preservedQueries.Add(ownerQueryName);
-                            break;
-                        }
-                    }
-                }
-                
-                // Preserve all identified queries
-                foreach (var queryName in preservedQueries)
-                {
-                    _pathsToPreserve.Add(queryName);
-                }
-                return this;
-            }
-
-            // Single parameter fallback
-            var singleParamName = parameterNames?.FirstOrDefault();
-            if (singleParamName != null && localMap?.TryGetValue(singleParamName, out var mappedPaths) == true)
-            {
-                return Preserve(mappedPaths);
-            }
-
-            var specificPaths = extractedPaths.Where(path => !IsParameterName(path, singleParamName, parameterType)).ToArray();
-            return specificPaths.Length > 0 ? Preserve(specificPaths) : Preserve(extractedPaths.ToArray());
-        }
-
-        // Handle nodePath case - preserve with path resolution
-        if (localMap != null)
-        {
-            var preservedQueries = new HashSet<string>();
-            
-            // FIRST: Check ALL parameter names for multi-parameter lambdas
-            if (parameterNames != null && parameterNames.Length > 0)
-            {
-                foreach (var paramName in parameterNames)
-                {
-                    if (localMap.TryGetValue(paramName, out var paramQueryPaths))
-                    {
-                        preservedQueries.Add(paramQueryPaths[0]);
-                    }
-                }
-            }
-            
-            // SECOND: Check extracted fields for additional field-level mappings
-            foreach (var extractedPath in extractedPaths)
-            {
-                // Direct parameter mapping
-                if (localMap.TryGetValue(extractedPath, out var queryPaths))
-                {
-                    preservedQueries.Add(queryPaths[0]);
-                    continue;
-                }
-
-                // Field ownership detection via AST traversal
-                foreach (var kvp in localMap)
-                {
-                    var ownerQueryName = kvp.Value[0];
-                    if (_sourceQuery.Definition.Fields.TryGetValue(ownerQueryName, out var queryField) &&
-                        ContainsField(queryField, extractedPath))
-                    {
-                        preservedQueries.Add(ownerQueryName);
-                        break;
-                    }
-                }
-            }
-            
-            // Preserve all identified queries - just the query names as top-level fields
-            foreach (var queryName in preservedQueries)
-            {
-                _pathsToPreserve.Add(queryName);
-            }
-            return this;
-        }
-
-        // Fallback for non-localMap case with nodePath
-        var singleParam = parameterNames?.FirstOrDefault();
-        var filteredPaths = extractedPaths.Where(path => !IsParameterName(path, singleParam, parameterType)).ToArray();
-        foreach (var path in filteredPaths)
-        {
-            PreserveAtPath(path, nodePath);
-        }
-        return this;
-    }
-
-    /// <summary>
-    /// Efficiently checks if a field exists anywhere in the AST using the same pattern as QueryMap.
-    /// Checks both field names and aliases to handle GraphQL alias syntax like "segmentId:segment".
-    /// </summary>
-    private static bool ContainsField(FieldDefinition field, string fieldName)
-    {
-        // Check direct match for both name and alias
-        if (string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(field.Alias, fieldName, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        // Recursively check child fields
-        if (field.Fields?.Values != null)
-        {
-            foreach (var childField in field.Fields.Values)
-            {
-                if (ContainsField(childField, fieldName))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Preserves a field using GetPathTo to resolve the full path dynamically.
-    /// </summary>
-    /// <param name="fieldPath">The field path to preserve</param>
-    /// <param name="nodePath">The node path to resolve (e.g., "edges.node")</param>
-    /// <returns>The current PreservationBuilder instance for method chaining.</returns>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
-        var resolvedPath = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
-        if (resolvedPath != null && resolvedPath.Length > 0)
-        {
-            var fullPath = string.Join(".", resolvedPath) + "." + nodePath.Split('.')[^1] + "." + fieldPath;
-            return Preserve(fullPath);
-        }
-        
-        // Fallback: search for nodePath in query structure
-        var nodePathSegments = nodePath.Split('.');
-        var foundPath = FindNodePathInStructure(_sourceQuery.Definition.Fields, nodePathSegments, 0, new List<string>());
-        if (foundPath != null)
-        {
-            var fullPath = string.Join(".", foundPath) + "." + fieldPath;
-            return Preserve(fullPath);
-        }
-        
-        return Preserve($"{nodePath}.{fieldPath}");
+        var fullPath = ResolveFullPath(fieldPath, nodePath);
+        return fullPath != null ? Preserve(fullPath) : this;
     }
-    
-    private static List<string>? FindNodePathInStructure(SortedDictionary<string, FieldDefinition> fields, string[] nodePathSegments, int segmentIndex, List<string> currentPath)
+
+    /// <summary>
+    /// Preserve fields from typed expression.
+    /// </summary>
+    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
+        => PreserveFromExpressionCore(expression, nodePath, null, typeof(T));
+
+    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath, Dictionary<string, string[]> localMap)
+        => PreserveFromExpressionCore(expression, nodePath, localMap, typeof(T));
+
+    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
+        => PreserveFromExpressionCore(expression, nodePath, null, InferTypeFromLambda(expression));
+
+    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
+        => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression));
+
+    public QueryBuilder Build()
+        => _pathsToPreserve.Count == 0 
+            ? _sourceQuery 
+            : _sourceQuery.Preserve(_pathsToPreserve.ToArray());
+
+    private static Type? InferTypeFromLambda(Expression expression)
+        => expression is LambdaExpression lambda && lambda.Parameters.Count > 0 
+            ? lambda.Parameters[0].Type 
+            : null;
+
+    private static string[]? GetParameterNames(Expression expression)
+        => expression is LambdaExpression lambda && lambda.Parameters.Count > 0
+            ? lambda.Parameters.Select(p => p.Name).Where(n => n != null).ToArray()
+            : null;
+
+    private string? ResolveFullPath(string fieldPath, string nodePath)
     {
-        if (segmentIndex >= nodePathSegments.Length)
-            return currentPath;
-            
-        var targetSegment = nodePathSegments[segmentIndex];
+        var pathToNode = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
+        if (pathToNode == null || pathToNode.Length == 0) return null;
+
+        var lastSegment = nodePath.Split('.')[^1];
+        return $"{string.Join(".", pathToNode)}.{lastSegment}.{fieldPath}";
+    }
+
+    private PreservationBuilder PreserveFromExpressionCore(Expression expression, string? nodePath, Dictionary<string, string[]>? localMap, Type? parameterType)
+    {
+        var extractedPaths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
+        var parameterNames = GetParameterNames(expression);
         
-        foreach (var kvp in fields)
+        if (string.IsNullOrWhiteSpace(nodePath))
         {
-            var field = kvp.Value;
+            // No nodePath: preserve extracted paths directly
+            return Preserve(extractedPaths.ToArray());
+        }
+
+        if (localMap != null && parameterNames != null)
+        {
+            // Use localMap to resolve starting point
+            return PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterType);
+        }
+
+        // Fallback: use GetPathTo
+        return PreserveWithGetPathTo(extractedPaths, parameterNames?.FirstOrDefault(), nodePath, parameterType);
+    }
+
+    private PreservationBuilder PreserveWithLocalMap(
+        HashSet<string> extractedPaths, 
+        string[] parameterNames, 
+        string nodePath, 
+        Dictionary<string, string[]> localMap, 
+        Type? parameterType)
+    {
+        foreach (var paramName in parameterNames)
+        {
+            if (!localMap.TryGetValue(paramName, out var basePath)) continue;
+
+            // Get fields to preserve (strip parameter prefix)
+            var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
             
-            // Check if this field matches the target segment (by key or name)
-            if (string.Equals(kvp.Key, targetSegment, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(field.Name, targetSegment, StringComparison.OrdinalIgnoreCase))
+            // Navigate to node and preserve fields
+            var nodeField = NavigateToNode(basePath, nodePath);
+            if (nodeField?.Fields == null) continue;
+
+            foreach (var field in fieldsToPreserve)
             {
-                var newPath = new List<string>(currentPath) { kvp.Key };
-                
-                // If this is the last segment, we found the complete path
-                if (segmentIndex == nodePathSegments.Length - 1)
-                    return newPath;
-                    
-                // Otherwise, continue searching in child fields
-                if (field.Fields != null)
+                var matchingKey = FindFieldKey(nodeField.Fields, field);
+                if (matchingKey != null)
                 {
-                    var result = FindNodePathInStructure(field.Fields, nodePathSegments, segmentIndex + 1, newPath);
-                    if (result != null)
-                        return result;
+                    var fullPath = $"{string.Join(".", basePath.Concat(nodePath.Split('.')))}.{matchingKey}";
+                    Preserve(fullPath);
                 }
             }
-            
-            // Also search recursively in child fields (in case target is nested deeper)
-            if (field.Fields != null && segmentIndex == 0)
+        }
+
+        return this;
+    }
+
+    private PreservationBuilder PreserveWithGetPathTo(
+        HashSet<string> extractedPaths, 
+        string? paramName, 
+        string nodePath, 
+        Type? parameterType)
+    {
+        var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
+        
+        foreach (var field in fieldsToPreserve)
+        {
+            PreserveAtPath(field, nodePath);
+        }
+
+        return this;
+    }
+
+    private static HashSet<string> GetFieldsToPreserve(HashSet<string> extractedPaths, string? paramName, Type? parameterType)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var path in extractedPaths)
+        {
+            // Skip parameter names
+            if (IsParameterName(path, paramName)) continue;
+
+            // Strip parameter prefix (e.g., "playerProfile.RegData" => "RegData")
+            var field = path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
+                ? path.Substring(paramName.Length + 1)
+                : path;
+
+            result.Add(field);
+        }
+
+        // If no specific fields and we have a type, use all type properties (greedy)
+        if (result.Count == 0 && parameterType != null)
+        {
+            var typeProperties = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Select(p => p.Name);
+            foreach (var prop in typeProperties) result.Add(prop);
+        }
+
+        return result;
+    }
+
+    private static bool IsParameterName(string path, string? paramName)
+        => !string.IsNullOrEmpty(paramName) && 
+           string.Equals(path, paramName, StringComparison.OrdinalIgnoreCase);
+
+    private FieldDefinition? NavigateToNode(string[] basePath, string nodePath)
+    {
+        var current = _sourceQuery.Definition.Fields;
+        FieldDefinition? field = null;
+
+        // Navigate through base path
+        foreach (var segment in basePath)
+        {
+            // Try direct key match first, then alias/name match
+            if (!current.TryGetValue(segment, out field))
             {
-                var newPath = new List<string>(currentPath) { kvp.Key };
-                var result = FindNodePathInStructure(field.Fields, nodePathSegments, 0, newPath);
-                if (result != null)
-                    return result;
+                var match = current.FirstOrDefault(kvp =>
+                    string.Equals(kvp.Value.Alias, segment, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(kvp.Value.Name, segment, StringComparison.OrdinalIgnoreCase));
+                
+                if (match.Key == null) return null;
+                field = match.Value;
             }
+            current = field.Fields ?? new SortedDictionary<string, FieldDefinition>();
         }
-        
-        return null;
-    }
 
-    /// <summary>
-    /// Preserves fields from expression using GetPathTo to resolve the full path dynamically.
-    /// </summary>
-    public PreservationBuilder PreserveAtPathWhere<T>(Expression<Func<T, bool>> predicate, string nodePath)
-    {
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(predicate);
-        var parameterNames = GetParameterNames(predicate);
-        return PreserveExpandedPaths(paths, nodePath, parameterNames, typeof(T));
-    }
-    private static string? GetParameterName(LambdaExpression lambda)
-    {
-        return lambda.Parameters.FirstOrDefault()?.Name;
-    }
-
-    /// <summary>
-    /// Gets all parameter names from a lambda expression.
-    /// </summary>
-    private static string[]? GetParameterNames(LambdaExpression lambda)
-    {
-        if (lambda.Parameters.Count == 0)
-            return null;
-        
-        return lambda.Parameters.Select(p => p.Name).Where(n => n != null).ToArray()!;
-    }
-
-    /// <summary>
-    /// Determines if a path represents a parameter name (greedy preservation)
-    /// vs a specific field path.
-    /// </summary>
-    private static bool IsParameterName(string path, string? actualParameterName, Type? parameterType = null)
-    {
-        // If we have the actual parameter name, use exact match
-        if (!string.IsNullOrEmpty(actualParameterName))
+        // Navigate through node path
+        foreach (var segment in nodePath.Split('.'))
         {
-            return string.Equals(path, actualParameterName, StringComparison.OrdinalIgnoreCase);
+            if (!current.TryGetValue(segment, out field))
+            {
+                var match = current.FirstOrDefault(kvp =>
+                    string.Equals(kvp.Value.Alias, segment, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(kvp.Value.Name, segment, StringComparison.OrdinalIgnoreCase));
+                
+                if (match.Key == null) return null;
+                field = match.Value;
+            }
+            current = field.Fields ?? new SortedDictionary<string, FieldDefinition>();
         }
 
-        // If we have parameter type, check if path matches any property name
-        if (parameterType != null && !path.Contains('.') && IsValidIdentifier(path))
-        {
-            var properties = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            // If the path matches a property name, it's NOT a parameter name
-            return !properties.Any(p => string.Equals(p.Name, path, StringComparison.OrdinalIgnoreCase));
-        }
-
-        // For paths with dots, they're definitely field paths, not parameter names
-        if (path.Contains('.'))
-            return false;
-            
-        if (!IsValidIdentifier(path))
-            return false;
-            
-        // Only single lowercase identifiers are likely parameter names
-        return char.IsLower(path[0]);
+        return field;
     }
 
-    /// <summary>
-    /// Builds and returns a new QueryBuilder containing only the preserved fields.
-    /// </summary>
-    /// <returns>A new QueryBuilder instance with only the fields matching the accumulated paths.</returns>
-    public QueryBuilder Build()
-    {
-        // If no paths were specified, return the original query
-        if (_pathsToPreserve.Count == 0)
-            return _sourceQuery;
-
-        // For explicit Preserve() calls, use all paths as-is without filtering
-        // The IsParameterName filtering is only relevant for expression-based methods
-        return _sourceQuery.Preserve(_pathsToPreserve.ToArray());
-    }
-
-    /// <summary>
-    /// Checks if a string is a valid C# identifier.
-    /// </summary>
-    private static bool IsValidIdentifier(string name)
-    {
-        if (string.IsNullOrEmpty(name))
-            return false;
-
-        // Must start with letter or underscore
-        if (!char.IsLetter(name[0]) && name[0] != '_')
-            return false;
-
-        // Rest must be letters, digits, or underscores
-        return name.Skip(1).All(c => char.IsLetterOrDigit(c) || c == '_');
-    }
+    private static string? FindFieldKey(SortedDictionary<string, FieldDefinition> fields, string fieldName)
+        => fields.FirstOrDefault(kvp =>
+            string.Equals(kvp.Key, fieldName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(kvp.Value.Alias, fieldName, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(kvp.Value.Name, fieldName, StringComparison.OrdinalIgnoreCase)
+        ).Key;
 }
