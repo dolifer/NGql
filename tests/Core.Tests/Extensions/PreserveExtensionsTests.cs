@@ -11,18 +11,17 @@ public class PreserveExtensionsTests
 {
     private static readonly Variable SizeVariable = new("$size", "Int");
 
-    private class TestUser { public string? id { get; set; } public string? email { get; set; } }
-    private class TestProfile { public string? firstName { get; set; } public string? lastName { get; set; } }
+    private class TestUser { public string? id { get; } public string? email { get; } }
+    private class TestProfile { public string? firstName { get; } public string? lastName { get; } }
     private class TestSegment { public string? id { get; set; } public string? name { get; set; } }
     private class TestDeposit 
     { 
         public decimal? amount { get; set; } 
         public DateTime? date { get; set; }
-        public DateTime? Date { get; set; } // Matches production code-generated property
+        public DateTime? Date { get; set; }
     }
-    private class TestRegData { public DateTime? registrationDate { get; set; } public string? registrationType { get; set; } }
-    private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; set; } }
-    private class TestBusiness { public string? segmentId { get; set; } public string? category { get; set; } }
+    private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } }
+    private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; } }
 
     [Fact]
     public Task Preserve_SinglePath_Parent_ReturnsFullQuery()
@@ -184,7 +183,7 @@ public class PreserveExtensionsTests
         // Act
         var result = PreservationBuilder
             .Create(query)
-            .Preserve(null)
+            .Preserve(null!)
             .Build();
 
         // Assert
@@ -729,6 +728,53 @@ public class PreserveExtensionsTests
         var result = PreservationBuilder
             .Create(query)
             .PreserveFromExpression((TestUser user) => user.id != null && user.email != null, "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_DeeplyNestedField_WithLocalMap_PreservesOnlySpecificField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PlayerProfileBatchQuery")
+            .AddField("PlayerProfileBatchQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.RegistrationType:registrationType")
+            .AddField("businessObjects.playerProfile.edges.node.RegData:regData.PromoCode:promoCode");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "PlayerProfileBatchQuery", "playerProfile" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile != null && playerProfile.RegData != null && playerProfile.RegData.registrationDate != null,
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_DeeplyNestedField_NoLocalMap_PreservesOnlySpecificField()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("DeepQuery")
+            .AddField("DeepQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType")
+            .AddField("data.edges.node.RegData:regData.PromoCode:promoCode");
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile p) => 
+                p != null && p.RegData != null && p.RegData.registrationDate != null,
+                "edges.node")
             .Build();
 
         await result.Verify();

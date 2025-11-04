@@ -76,13 +76,16 @@ public sealed class PreservationBuilder
 
     private static string[]? GetParameterNames(Expression expression)
         => expression is LambdaExpression lambda && lambda.Parameters.Count > 0
-            ? lambda.Parameters.Select(p => p.Name).Where(n => n != null).ToArray()
+            ? lambda.Parameters.Where(n => n.Name != null).Select(p => p.Name!).ToArray()
             : null;
 
     private string? ResolveFullPath(string fieldPath, string nodePath)
     {
         var pathToNode = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
-        if (pathToNode == null || pathToNode.Length == 0) return null;
+        if (pathToNode == null || pathToNode.Length == 0)
+        {
+            return null;
+        }
 
         var lastSegment = nodePath.Split('.')[^1];
         return $"{string.Join(".", pathToNode)}.{lastSegment}.{fieldPath}";
@@ -110,10 +113,10 @@ public sealed class PreservationBuilder
     }
 
     private PreservationBuilder PreserveWithLocalMap(
-        HashSet<string> extractedPaths, 
-        string[] parameterNames, 
-        string nodePath, 
-        Dictionary<string, string[]> localMap, 
+        HashSet<string> extractedPaths,
+        string[] parameterNames,
+        string nodePath,
+        Dictionary<string, string[]> localMap,
         Type? parameterType)
     {
         foreach (var paramName in parameterNames)
@@ -123,17 +126,29 @@ public sealed class PreservationBuilder
             // Get fields to preserve (strip parameter prefix)
             var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
             
-            // Navigate to node and preserve fields
+            // Navigate to node
             var nodeField = NavigateToNode(basePath, nodePath);
             if (nodeField?.Fields == null) continue;
 
+            var basePathStr = string.Join(".", basePath.Concat(nodePath.Split('.')));
+
             foreach (var field in fieldsToPreserve)
             {
-                var matchingKey = FindFieldKey(nodeField.Fields, field);
-                if (matchingKey != null)
+                // Handle nested paths (e.g., "RegData.registrationDate")
+                if (field.Contains('.'))
                 {
-                    var fullPath = $"{string.Join(".", basePath.Concat(nodePath.Split('.')))}.{matchingKey}";
-                    Preserve(fullPath);
+                    var resolvedPath = ResolveNestedPath(nodeField.Fields, field, basePathStr);
+                    if (resolvedPath != null) Preserve(resolvedPath);
+                }
+                else
+                {
+                    // Simple field - find and preserve
+                    var matchingKey = FindFieldKey(nodeField.Fields, field);
+                    if (matchingKey != null)
+                    {
+                        var fullPath = $"{basePathStr}.{matchingKey}";
+                        Preserve(fullPath);
+                    }
                 }
             }
         }
@@ -141,17 +156,62 @@ public sealed class PreservationBuilder
         return this;
     }
 
+    private static string? ResolveNestedPath(SortedDictionary<string, FieldDefinition> fields, string nestedPath, string basePath)
+    {
+        var segments = nestedPath.Split('.');
+        var currentFields = fields;
+        var resolvedSegments = new List<string>();
+
+        foreach (var segment in segments)
+        {
+            var matchingKey = FindFieldKey(currentFields, segment);
+            if (matchingKey == null) return null;
+
+            resolvedSegments.Add(matchingKey);
+
+            // Navigate to next level
+            if (currentFields.TryGetValue(matchingKey, out var field))
+            {
+                if (field.Fields == null) return null;
+                currentFields = field.Fields;
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        return $"{basePath}.{string.Join(".", resolvedSegments)}";
+    }
+
     private PreservationBuilder PreserveWithGetPathTo(
-        HashSet<string> extractedPaths, 
-        string? paramName, 
-        string nodePath, 
+        HashSet<string> extractedPaths,
+        string? paramName,
+        string nodePath,
         Type? parameterType)
     {
         var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
         
         foreach (var field in fieldsToPreserve)
         {
-            PreserveAtPath(field, nodePath);
+            // For nested paths, resolve each segment
+            if (field.Contains('.'))
+            {
+                var segments = field.Split('.');
+                var firstSegment = segments[0];
+                var remainingPath = string.Join(".", segments.Skip(1));
+                
+                // Preserve the first segment at nodePath, then the rest
+                var fullPath = ResolveFullPath(firstSegment, nodePath);
+                if (fullPath != null)
+                {
+                    Preserve($"{fullPath}.{remainingPath}");
+                }
+            }
+            else
+            {
+                PreserveAtPath(field, nodePath);
+            }
         }
 
         return this;
@@ -159,7 +219,7 @@ public sealed class PreservationBuilder
 
     private static HashSet<string> GetFieldsToPreserve(HashSet<string> extractedPaths, string? paramName, Type? parameterType)
     {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        HashSet<string>? result = null;
 
         foreach (var path in extractedPaths)
         {
@@ -167,22 +227,28 @@ public sealed class PreservationBuilder
             if (IsParameterName(path, paramName)) continue;
 
             // Strip parameter prefix (e.g., "playerProfile.RegData" => "RegData")
-            var field = path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
+            var field = !string.IsNullOrEmpty(paramName) && path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
                 ? path.Substring(paramName.Length + 1)
                 : path;
 
-            result.Add(field);
+            if (!string.IsNullOrEmpty(field))
+            {
+                result ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                result.Add(field);
+            }
         }
 
         // If no specific fields and we have a type, use all type properties (greedy)
-        if (result.Count == 0 && parameterType != null)
+        if ((result == null || result.Count == 0) && parameterType != null)
         {
-            var typeProperties = parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Select(p => p.Name);
-            foreach (var prop in typeProperties) result.Add(prop);
+            result ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+            {
+                result.Add(prop.Name);
+            }
         }
 
-        return result;
+        return result ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsParameterName(string path, string? paramName)
@@ -192,40 +258,41 @@ public sealed class PreservationBuilder
     private FieldDefinition? NavigateToNode(string[] basePath, string nodePath)
     {
         var current = _sourceQuery.Definition.Fields;
-        FieldDefinition? field = null;
-
+        
         // Navigate through base path
         foreach (var segment in basePath)
         {
-            // Try direct key match first, then alias/name match
-            if (!current.TryGetValue(segment, out field))
-            {
-                var match = current.FirstOrDefault(kvp =>
-                    string.Equals(kvp.Value.Alias, segment, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(kvp.Value.Name, segment, StringComparison.OrdinalIgnoreCase));
-                
-                if (match.Key == null) return null;
-                field = match.Value;
-            }
-            current = field.Fields ?? new SortedDictionary<string, FieldDefinition>();
+            if (!TryNavigateToField(current, segment, out var field) || field?.Fields == null) return null;
+            current = field.Fields;
         }
 
         // Navigate through node path
+        FieldDefinition? lastField = null;
         foreach (var segment in nodePath.Split('.'))
         {
-            if (!current.TryGetValue(segment, out field))
-            {
-                var match = current.FirstOrDefault(kvp =>
-                    string.Equals(kvp.Value.Alias, segment, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(kvp.Value.Name, segment, StringComparison.OrdinalIgnoreCase));
-                
-                if (match.Key == null) return null;
-                field = match.Value;
-            }
-            current = field.Fields ?? new SortedDictionary<string, FieldDefinition>();
+            if (!TryNavigateToField(current, segment, out lastField) || lastField?.Fields == null) return null;
+            current = lastField.Fields;
         }
 
-        return field;
+        return lastField;
+    }
+
+    private static bool TryNavigateToField(SortedDictionary<string, FieldDefinition> fields, string segment, out FieldDefinition? field)
+    {
+        if (fields.TryGetValue(segment, out field))
+        {
+            return true;
+        }
+
+        var matchingKey = FindFieldKey(fields, segment);
+        if (matchingKey == null)
+        {
+            field = null;
+            return false;
+        }
+
+        field = fields[matchingKey];
+        return true;
     }
 
     private static string? FindFieldKey(SortedDictionary<string, FieldDefinition> fields, string fieldName)
