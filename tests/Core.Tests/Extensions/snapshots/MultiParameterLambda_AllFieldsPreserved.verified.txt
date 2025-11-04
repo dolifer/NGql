@@ -1,0 +1,14 @@
+﻿query MergedQuery{
+    QueryA:data{
+        edges{
+            node{
+                Settings:settings{
+                    SettingA:settingA
+                    SettingB:settingB
+                    SettingC:settingC
+                }
+                UserId:userId
+            }
+        }
+    }
+}

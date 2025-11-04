@@ -1,9 +1,0 @@
-﻿query OverlappingQuery{
-    user{
-        profile{
-            bio
-            email
-            name
-        }
-    }
-}

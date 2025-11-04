@@ -75,7 +75,7 @@ public static class ExpressionFieldExtractor
         private readonly HashSet<Expression> _visitedMembers = new(ReferenceEqualityComparer.Instance);
         private readonly Stack<string> _lambdaContextPaths = new();
         private ParameterExpression? _rootParameter;
-        private Type? _rootParameterType;
+        private readonly HashSet<Type> _rootParameterTypes = new();
 
         /// <summary>
         /// Visits member access expressions (e.g., user.profile.age).
@@ -321,7 +321,11 @@ public static class ExpressionFieldExtractor
             if (_rootParameter == null && _lambdaContextPaths.Count == 0 && node.Parameters.Count > 0)
             {
                 _rootParameter = node.Parameters[0];
-                _rootParameterType = _rootParameter.Type;
+                // Track ALL parameter types for multi-parameter lambdas
+                foreach (var param in node.Parameters)
+                {
+                    _rootParameterTypes.Add(param.Type);
+                }
             }
 
             // Visit the body to extract paths from nested predicates
@@ -420,6 +424,7 @@ public static class ExpressionFieldExtractor
         {
             var parts = new Stack<string>();
             Expression? currentExpr = node;
+            ParameterExpression? parameterExpr = null;
 
             while (currentExpr != null)
             {
@@ -455,9 +460,10 @@ public static class ExpressionFieldExtractor
                         ? conditionalExpr.IfFalse 
                         : conditionalExpr.IfTrue;
                 }
-                else if (currentExpr is ParameterExpression)
+                else if (currentExpr is ParameterExpression paramExpr)
                 {
-                    // Reached a parameter (could be root parameter 'x' or lambda parameter 'p')
+                    // Reached a parameter - save it for multi-parameter lambda handling
+                    parameterExpr = paramExpr;
                     break;
                 }
                 else
@@ -467,33 +473,35 @@ public static class ExpressionFieldExtractor
                 }
             }
 
-            return parts.Count > 0 ? string.Join(".", parts) : null;
+            if (parts.Count == 0) return null;
+
+            // For multi-parameter lambdas (more than 1 root parameter type), include parameter name
+            if (_rootParameterTypes.Count > 1 && parameterExpr != null && !string.IsNullOrEmpty(parameterExpr.Name))
+            {
+                parts.Push(parameterExpr.Name);
+            }
+
+            return string.Join(".", parts);
         }
 
         /// <summary>
         /// Determines if a member expression represents a property that should be excluded.
-        /// Only includes properties that are part of the root parameter's type hierarchy.
+        /// Only excludes System.* types (like string.Length).
+        /// All other properties are included regardless of namespace, assembly, or where they're declared.
+        /// This supports IL-generated properties and properties from any source.
         /// </summary>
         private bool ShouldExcludeProperty(MemberExpression memberExpr)
         {
-            if (_rootParameterType == null)
-                return false;
-
             var declaringType = memberExpr.Member.DeclaringType;
             if (declaringType == null)
                 return false;
 
-            // Exclude properties from system types (like string.Length)
+            // Only exclude properties from system types (like string.Length)
             if (declaringType.Namespace?.StartsWith("System") == true)
                 return true;
 
-            // Include properties from the root parameter's namespace or related types
-            var rootNamespace = _rootParameterType.Namespace;
-            if (string.IsNullOrEmpty(rootNamespace))
-                return false;
-
-            // Allow properties from the same namespace as the root parameter type
-            return !declaringType.Namespace.StartsWith(rootNamespace);
+            // Include everything else - if it's in the expression tree, it's relevant
+            return false;
         }
     }
 }

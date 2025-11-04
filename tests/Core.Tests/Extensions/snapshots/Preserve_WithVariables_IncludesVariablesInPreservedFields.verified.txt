@@ -1,0 +1,11 @@
+query TestQuery{
+    TestQuery:data{
+        edges{
+            first:$limit{
+                node{
+                    UserId:userId
+                }
+            }
+        }
+    }
+}

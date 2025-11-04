@@ -134,7 +134,9 @@ internal static class QueryMerger
     {
         return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
-            AddFieldWithUniqueKey(updatedFields, originalFieldKey, incomingField, queryMap, incomingQuery.Name);
+            // Mark the field as coming from a NeverMerge query so other queries don't merge into it
+            var fieldWithMetadata = MarkAsNeverMerge(incomingField);
+            AddFieldWithUniqueKey(updatedFields, originalFieldKey, fieldWithMetadata, queryMap, incomingQuery.Name);
         });
     }
 
@@ -208,6 +210,12 @@ internal static class QueryMerger
                 continue;
             }
 
+            // Skip fields that came from NeverMerge queries - they should never be merge targets
+            if (IsMarkedAsNeverMerge(existingField))
+            {
+                continue;
+            }
+
             // Check if the field structures are compatible for merging
             if (FieldDefinitionExtensions.CanMergeFields(existingField, incomingField))
             {
@@ -216,5 +224,32 @@ internal static class QueryMerger
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Marks a field as coming from a NeverMerge query.
+    /// This prevents other queries from merging into this field.
+    /// </summary>
+    private static FieldDefinition MarkAsNeverMerge(FieldDefinition field)
+    {
+        if (field._metadata == null || !field._metadata.ContainsKey("NeverMerge"))
+        {
+            return field with
+            {
+                Metadata = new Dictionary<string, object?>(field._metadata ?? new Dictionary<string, object?>())
+                {
+                    ["NeverMerge"] = true
+                }
+            };
+        }
+        return field;
+    }
+
+    /// <summary>
+    /// Checks if a field is marked as coming from a NeverMerge query.
+    /// </summary>
+    private static bool IsMarkedAsNeverMerge(FieldDefinition field)
+    {
+        return field._metadata?.TryGetValue("NeverMerge", out var value) == true && value is true;
     }
 }

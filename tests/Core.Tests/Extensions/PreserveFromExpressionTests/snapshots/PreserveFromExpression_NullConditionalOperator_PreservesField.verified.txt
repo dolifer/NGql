@@ -1,0 +1,11 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Profile:profile{
+                    Name:name
+                }
+            }
+        }
+    }
+}

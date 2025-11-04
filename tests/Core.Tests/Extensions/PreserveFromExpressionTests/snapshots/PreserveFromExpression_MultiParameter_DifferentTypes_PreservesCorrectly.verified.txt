@@ -1,0 +1,16 @@
+﻿query MergedQuery{
+    QueryA:data{
+        edges{
+            node{
+                Email:email
+            }
+        }
+    }
+    QueryB:data{
+        edges{
+            node{
+                Name:name
+            }
+        }
+    }
+}

@@ -1,0 +1,10 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Scores:scores
+                Tags:tags
+            }
+        }
+    }
+}

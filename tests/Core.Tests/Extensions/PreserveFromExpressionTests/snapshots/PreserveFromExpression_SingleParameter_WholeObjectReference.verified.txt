@@ -1,0 +1,13 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Profile:profile{
+                    Avatar:avatar
+                    Bio:bio
+                    Name:name
+                }
+            }
+        }
+    }
+}

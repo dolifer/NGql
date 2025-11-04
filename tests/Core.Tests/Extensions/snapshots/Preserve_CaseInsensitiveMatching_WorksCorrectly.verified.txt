@@ -1,0 +1,10 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Email:email
+                UserId:userId
+            }
+        }
+    }
+}

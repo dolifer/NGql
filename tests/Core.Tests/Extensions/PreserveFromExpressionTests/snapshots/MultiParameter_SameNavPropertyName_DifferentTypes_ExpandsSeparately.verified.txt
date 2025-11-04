@@ -1,0 +1,13 @@
+﻿query MergedQuery{
+    QueryA:data{
+        edges{
+            node{
+                DepositInfo:depositInfo{
+                    FirstDepositTime:firstDepositTime
+                    SecondDepositTime:secondDepositTime
+                }
+                UserId:userId
+            }
+        }
+    }
+}

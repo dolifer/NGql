@@ -63,6 +63,81 @@ public class QueryBuilderMergingStrategyTests
         await rootBuilder.Verify();
     }
 
+    [Fact]
+    public async Task MultipleChildrenWithSamePath_OneWithNeverMerge_ShouldKeepSeparate()
+    {
+        // Arrange - This tests the corner case where multiple children have identical paths
+        // but one has NeverMerge strategy
+        var rootBuilder = CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath);
+
+        var queryA = CreateDefaultBuilder("QueryA", MergingStrategy.NeverMerge)
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingA:settingA");
+
+        var queryB = CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingB:settingB");
+
+        var queryC = CreateDefaultBuilder("QueryC")
+            .AddField("QueryC:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingC:settingC");
+
+        // Act
+        rootBuilder
+            .Include(queryA)
+            .Include(queryB)
+            .Include(queryC);
+
+        // Assert
+        // QueryA should NOT merge due to NeverMerge strategy
+        rootBuilder.GetPathTo("QueryA").Should().BeEquivalentTo("QueryA");
+
+        // QueryB and QueryC should merge together (both have MergeByDefault and compatible paths)
+        rootBuilder.GetPathTo("QueryB").Should().BeEquivalentTo("QueryB");
+        rootBuilder.GetPathTo("QueryC").Should().BeEquivalentTo("QueryB"); // Merges into QueryB
+
+        // Should have 2 separate definitions: QueryA (separate) + QueryB (with QueryC merged)
+        rootBuilder.DefinitionsCount.Should().Be(2);
+
+        await rootBuilder.Verify();
+    }
+
+    [Fact]
+    public async Task MultipleChildrenNeverMerge_WithSamePath_ShouldAllStaySeparate()
+    {
+        // Arrange - All children have NeverMerge, even with identical paths
+        var rootBuilder = CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath);
+
+        var queryA = CreateDefaultBuilder("QueryA", MergingStrategy.NeverMerge)
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingA:settingA");
+
+        var queryB = CreateDefaultBuilder("QueryB", MergingStrategy.NeverMerge)
+            .AddField("QueryB:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingB:settingB");
+
+        var queryC = CreateDefaultBuilder("QueryC", MergingStrategy.NeverMerge)
+            .AddField("QueryC:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingC:settingC");
+
+        // Act
+        rootBuilder
+            .Include(queryA)
+            .Include(queryB)
+            .Include(queryC);
+
+        // Assert
+        // All should stay separate due to NeverMerge
+        rootBuilder.GetPathTo("QueryA").Should().BeEquivalentTo("QueryA");
+        rootBuilder.GetPathTo("QueryB").Should().BeEquivalentTo("QueryB");
+        rootBuilder.GetPathTo("QueryC").Should().BeEquivalentTo("QueryC");
+
+        // Should have 3 separate definitions
+        rootBuilder.DefinitionsCount.Should().Be(3);
+
+        await rootBuilder.Verify();
+    }
+
     [Theory]
     [InlineData(MergingStrategy.MergeByFieldPath, MergingStrategy.MergeByFieldPath)]
     [InlineData(MergingStrategy.NeverMerge, MergingStrategy.NeverMerge)]

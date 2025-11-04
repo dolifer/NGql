@@ -113,12 +113,13 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> nameOrAlias)
+    internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> nameOrAlias)
     {
         foreach (var kvp in fields)
         {
             // Use case-insensitive comparison to match SortedDictionary's StringComparer.OrdinalIgnoreCase
-            if (nameOrAlias.Equals(kvp.Value.Name.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+            if (nameOrAlias.Equals(kvp.Key.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+                nameOrAlias.Equals(kvp.Value.Name.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
                 (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.Equals(kvp.Value.Alias.AsSpan(), StringComparison.OrdinalIgnoreCase)))
             {
                 return kvp;
