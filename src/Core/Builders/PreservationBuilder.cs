@@ -119,12 +119,36 @@ public sealed class PreservationBuilder
         Dictionary<string, string[]> localMap,
         Type? parameterType)
     {
+        // Group parameters by their base path to handle multiple parameters mapping to same path
+        var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        
         foreach (var paramName in parameterNames)
         {
             if (!localMap.TryGetValue(paramName, out var basePath)) continue;
+            
+            var basePathKey = string.Join(".", basePath);
+            if (!paramsByBasePath.ContainsKey(basePathKey))
+            {
+                paramsByBasePath[basePathKey] = new List<string>();
+            }
+            paramsByBasePath[basePathKey].Add(paramName);
+        }
 
-            // Get fields to preserve (strip parameter prefix)
-            var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
+        // Process each unique base path
+        foreach (var (basePathKey, paramsForPath) in paramsByBasePath)
+        {
+            var basePath = basePathKey.Split('.');
+            
+            // Collect ALL fields from ALL parameters that map to this base path
+            var allFieldsForPath = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var paramName in paramsForPath)
+            {
+                var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
+                foreach (var field in fieldsToPreserve)
+                {
+                    allFieldsForPath.Add(field);
+                }
+            }
             
             // Navigate to node
             var nodeField = NavigateToNode(basePath, nodePath);
@@ -132,7 +156,7 @@ public sealed class PreservationBuilder
 
             var basePathStr = string.Join(".", basePath.Concat(nodePath.Split('.')));
 
-            foreach (var field in fieldsToPreserve)
+            foreach (var field in allFieldsForPath)
             {
                 // Handle nested paths (e.g., "RegData.Region")
                 if (field.Contains('.'))
