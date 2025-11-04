@@ -311,11 +311,29 @@ public sealed class PreservationBuilder
     {
         var current = _sourceQuery.Definition.Fields;
         
-        // Navigate through base path
-        foreach (var segment in basePath)
+        // Navigate through base path - first segment might be an alias
+        if (basePath.Length > 0)
         {
-            if (!TryNavigateToField(current, segment, out var field) || field?.Fields == null) return null;
+            var firstSegment = basePath[0];
+            // Find field by alias first (for merged queries)
+            var field = current.Values.FirstOrDefault(f => 
+                string.Equals(f.Alias, firstSegment, StringComparison.OrdinalIgnoreCase));
+            
+            // Fallback to name match
+            if (field == null && !TryNavigateToField(current, firstSegment, out field))
+            {
+                return null;
+            }
+            
+            if (field?.Fields == null) return null;
             current = field.Fields;
+            
+            // Navigate remaining base path segments
+            for (int i = 1; i < basePath.Length; i++)
+            {
+                if (!TryNavigateToField(current, basePath[i], out field) || field?.Fields == null) return null;
+                current = field.Fields;
+            }
         }
 
         // Navigate through node path

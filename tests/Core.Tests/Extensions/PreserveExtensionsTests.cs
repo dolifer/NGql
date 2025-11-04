@@ -19,6 +19,11 @@ public class PreserveExtensionsTests
         public decimal? amount { get; set; } 
         public DateTime? date { get; set; }
         public DateTime? Date { get; set; }
+        public TestDepositDetails? Deposit { get; set; }
+    }
+    private class TestDepositDetails
+    {
+        public DateTime? Date { get; set; }
     }
     private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } public string? Region { get; set; } }
     private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; } }
@@ -1203,6 +1208,48 @@ public class PreserveExtensionsTests
             .PreserveAtPath("PlayerId", "edges.node")
             .PreserveFromExpression((TestPlayerProfile playerProfile) => 
                 string.Equals(playerProfile.RegData.Region, playerProfile.RegData.registrationType), 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleLambdaParametersSameBasePath_PreservesAllFields()
+    {
+        // Create separate queries that will be merged
+        var firstQuery = QueryBuilder
+            .CreateDefaultBuilder("FirstQuery")
+            .AddField("FirstQuery:data.edges.node.id")
+            .AddField("FirstQuery:data.edges.node.Deposit:deposit.Date:date");
+
+        var secondQuery = QueryBuilder
+            .CreateDefaultBuilder("SecondQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("SecondQuery:data.edges.node.firstName")
+            .AddField("SecondQuery:data.edges.node.lastName");
+
+        // Merge them with MergeByFieldPath strategy
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstQuery)
+            .Include(secondQuery);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            // Both first and last map to the SAME merged query
+            { "first", new[] { "FirstQuery" } },
+            { "last", new[] { "FirstQuery" } },
+            { "profile", new[] { "SecondQuery" } }
+        };
+
+        // Expression references fields from different parameters
+        var result = PreservationBuilder
+            .Create(mergedQuery)
+            .PreserveFromExpression((TestDeposit first, TestDeposit last, TestProfile profile) => 
+                first.Deposit.Date != null && 
+                first.Deposit.Date == last.Deposit.Date &&
+                profile.firstName == "Test",
                 "edges.node", localMap)
             .Build();
 
