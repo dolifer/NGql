@@ -1,0 +1,22 @@
+﻿query DataApiSourceBatchQuery{
+    PlayerFirstDepositBatchQuery:data{
+        edges{
+            node{
+                Deposit:deposit{
+                    FirstDepositTime:firstDepositTime
+                }
+                UserId:userId
+            }
+        }
+    }
+    PlayerLastDepositBatchQuery:data{
+        edges{
+            node{
+                Deposit:deposit{
+                    LastDepositTime:lastDepositTime
+                }
+                UserId:userId
+            }
+        }
+    }
+}

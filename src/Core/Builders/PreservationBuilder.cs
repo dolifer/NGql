@@ -45,17 +45,21 @@ public sealed class PreservationBuilder
     /// </summary>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
-        var pathToNode = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
-        if (pathToNode.Length == 0) return this;
-
-        var fullNodePath = string.Join(".", pathToNode) + "." + nodePath.Split('.')[^1];
-        var (nodeField, _) = FindNodeByPath(_sourceQuery.Definition.Fields, fullNodePath);
-        if (nodeField?.Fields != null)
+        // For merged queries with multiple roots, preserve in all of them
+        foreach (var rootField in _sourceQuery.Definition.Fields.Values)
         {
-            var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
-            if (match.HasValue)
+            var pathToNode = _sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
+            if (pathToNode.Length == 0) continue;
+
+            var fullNodePath = string.Join(".", pathToNode) + "." + nodePath.Split('.')[^1];
+            var (nodeField, _) = FindNodeByPath(_sourceQuery.Definition.Fields, fullNodePath);
+            if (nodeField?.Fields != null)
             {
-                Preserve($"{fullNodePath}.{match.Value.Key}");
+                var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
+                if (match.HasValue)
+                {
+                    Preserve($"{fullNodePath}.{match.Value.Key}");
+                }
             }
         }
         return this;
@@ -84,16 +88,19 @@ public sealed class PreservationBuilder
     /// Preserve fields from typed expression.
     /// </summary>
     public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
-        => PreserveFromExpressionCore(expression, nodePath, null, typeof(T));
+        => PreserveFromExpressionCore(expression, nodePath, null, typeof(T), null);
 
-    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath, Dictionary<string, string[]> localMap)
-        => PreserveFromExpressionCore(expression, nodePath, localMap, typeof(T));
+    public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string nodePath, Dictionary<string, string[]> localMap)
+        => PreserveFromExpressionCore(expression, nodePath, localMap, typeof(T), null);
 
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
-        => PreserveFromExpressionCore(expression, nodePath, null, InferTypeFromLambda(expression));
+        => PreserveFromExpressionCore(expression, nodePath, null, InferTypeFromLambda(expression), null);
 
-    public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath, Dictionary<string, string[]> localMap)
-        => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression));
+    public PreservationBuilder PreserveFromExpression(Expression expression, string nodePath, Dictionary<string, string[]> localMap)
+        => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression), null);
+
+    public PreservationBuilder PreserveFromExpression(Expression expression, string nodePath, Dictionary<string, string[]> localMap, params string[] alwaysPreserveFields)
+        => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression), alwaysPreserveFields);
 
     public QueryBuilder Build()
         => _pathsToPreserve.Count == 0 
@@ -122,7 +129,7 @@ public sealed class PreservationBuilder
         return $"{string.Join(".", pathToNode)}.{lastSegment}.{fieldPath}";
     }
 
-    private PreservationBuilder PreserveFromExpressionCore(Expression expression, string? nodePath, Dictionary<string, string[]>? localMap, Type? parameterType)
+    private PreservationBuilder PreserveFromExpressionCore(Expression expression, string? nodePath, Dictionary<string, string[]>? localMap, Type? parameterType, string[]? alwaysPreserveFields)
     {
         var extractedPaths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
         var parameterNames = GetParameterNames(expression);
@@ -136,7 +143,7 @@ public sealed class PreservationBuilder
         if (localMap != null && parameterNames != null)
         {
             // Use localMap to resolve starting point
-            return PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterType);
+            return PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterType, alwaysPreserveFields);
         }
 
         // Fallback: use GetPathTo
@@ -148,7 +155,8 @@ public sealed class PreservationBuilder
         string[] parameterNames,
         string nodePath,
         Dictionary<string, string[]> localMap,
-        Type? parameterType)
+        Type? parameterType,
+        string[]? alwaysPreserveFields)
     {
         // Group parameters by their base path to handle multiple parameters mapping to same path
         var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -165,6 +173,19 @@ public sealed class PreservationBuilder
             paramsByBasePath[basePathKey].Add(paramName);
         }
 
+        // If alwaysPreserveFields is provided, ensure ALL localMap entries are processed
+        if (alwaysPreserveFields != null && alwaysPreserveFields.Length > 0)
+        {
+            foreach (var (paramName, basePath) in localMap)
+            {
+                var basePathKey = string.Join(".", basePath);
+                if (!paramsByBasePath.ContainsKey(basePathKey))
+                {
+                    paramsByBasePath[basePathKey] = new List<string>();
+                }
+            }
+        }
+
         // Process each unique base path
         foreach (var (basePathKey, paramsForPath) in paramsByBasePath)
         {
@@ -176,6 +197,15 @@ public sealed class PreservationBuilder
             {
                 var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
                 foreach (var field in fieldsToPreserve)
+                {
+                    allFieldsForPath.Add(field);
+                }
+            }
+            
+            // Add always-preserve fields
+            if (alwaysPreserveFields != null)
+            {
+                foreach (var field in alwaysPreserveFields)
                 {
                     allFieldsForPath.Add(field);
                 }
