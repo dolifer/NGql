@@ -1,0 +1,12 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                RegData:regData{
+                    Region:region
+                    RegistrationDate:registrationDate
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,14 @@
+﻿query TestQuery{
+    TestQuery:data{
+        user{
+            email
+            profile{
+                name
+                settings{
+                    language
+                    theme
+                }
+            }
+        }
+    }
+}
