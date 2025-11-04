@@ -20,7 +20,7 @@ public class PreserveExtensionsTests
         public DateTime? date { get; set; }
         public DateTime? Date { get; set; }
     }
-    private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } }
+    private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } public string? Region { get; set; } }
     private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; } }
 
     [Fact]
@@ -775,6 +775,59 @@ public class PreserveExtensionsTests
             .PreserveFromExpression((TestPlayerProfile p) => 
                 p != null && p.RegData != null && p.RegData.registrationDate != null,
                 "edges.node")
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_RegDataRegion_WithLocalMap_PreservesOnlyRegion()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile.RegData.Region != null, 
+                "edges.node", localMap)
+            .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_RegDataOnly_WithLocalMap_PreservesAllRegDataFields()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.PlayerId:playerId")
+            .AddField("data.edges.node.RegData:regData.Region:region")
+            .AddField("data.edges.node.RegData:regData.RegistrationDate:registrationDate")
+            .AddField("data.edges.node.RegData:regData.RegistrationType:registrationType");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerProfile", new[] { "TestQuery" } }
+        };
+
+        // RegData != null should preserve ALL RegData fields (greedy for that object)
+        var result = PreservationBuilder
+            .Create(query)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile playerProfile) => 
+                playerProfile.RegData != null, 
+                "edges.node", localMap)
             .Build();
 
         await result.Verify();

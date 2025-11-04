@@ -134,7 +134,7 @@ public sealed class PreservationBuilder
 
             foreach (var field in fieldsToPreserve)
             {
-                // Handle nested paths (e.g., "RegData.registrationDate")
+                // Handle nested paths (e.g., "RegData.Region")
                 if (field.Contains('.'))
                 {
                     var resolvedPath = ResolveNestedPath(nodeField.Fields, field, basePathStr);
@@ -142,18 +142,37 @@ public sealed class PreservationBuilder
                 }
                 else
                 {
-                    // Simple field - find and preserve
+                    // Simple field - find matching key
                     var matchingKey = FindFieldKey(nodeField.Fields, field);
                     if (matchingKey != null)
                     {
-                        var fullPath = $"{basePathStr}.{matchingKey}";
-                        Preserve(fullPath);
+                        // Check if this field has sub-fields (is an object)
+                        if (nodeField.Fields.TryGetValue(matchingKey, out var fieldDef) && fieldDef.Fields != null && fieldDef.Fields.Count > 0)
+                        {
+                            // Object field: preserve all its sub-fields (greedy for this object)
+                            PreserveObjectFields(fieldDef.Fields, $"{basePathStr}.{matchingKey}");
+                        }
+                        else
+                        {
+                            // Leaf field: preserve just this field
+                            var fullPath = $"{basePathStr}.{matchingKey}";
+                            Preserve(fullPath);
+                        }
                     }
                 }
             }
         }
 
         return this;
+    }
+
+    private void PreserveObjectFields(SortedDictionary<string, FieldDefinition> fields, string basePath)
+    {
+        foreach (var (key, fieldDef) in fields)
+        {
+            var fullPath = $"{basePath}.{key}";
+            Preserve(fullPath);
+        }
     }
 
     private static string? ResolveNestedPath(SortedDictionary<string, FieldDefinition> fields, string nestedPath, string basePath)
@@ -220,13 +239,18 @@ public sealed class PreservationBuilder
     private static HashSet<string> GetFieldsToPreserve(HashSet<string> extractedPaths, string? paramName, Type? parameterType)
     {
         HashSet<string>? result = null;
+        bool hasOnlyParameterName = false;
 
         foreach (var path in extractedPaths)
         {
-            // Skip parameter names
-            if (IsParameterName(path, paramName)) continue;
+            // Check if this is just the parameter name (e.g., "user" in "user != null")
+            if (IsParameterName(path, paramName))
+            {
+                hasOnlyParameterName = true;
+                continue;
+            }
 
-            // Strip parameter prefix (e.g., "playerProfile.RegData" => "RegData")
+            // Strip parameter prefix (e.g., "playerProfile.RegData.Region" => "RegData.Region")
             var field = !string.IsNullOrEmpty(paramName) && path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
                 ? path.Substring(paramName.Length + 1)
                 : path;
@@ -238,8 +262,14 @@ public sealed class PreservationBuilder
             }
         }
 
-        // If no specific fields and we have a type, use all type properties (greedy)
-        if ((result == null || result.Count == 0) && parameterType != null)
+        // Apply "most specific wins" rule: remove broader paths if more specific ones exist
+        if (result != null && result.Count > 1)
+        {
+            result = FilterToMostSpecific(result);
+        }
+
+        // Greedy: if only parameter name was checked (e.g., "user != null"), preserve all type fields
+        if (hasOnlyParameterName && (result == null || result.Count == 0) && parameterType != null)
         {
             result ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -249,6 +279,28 @@ public sealed class PreservationBuilder
         }
 
         return result ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static HashSet<string> FilterToMostSpecific(HashSet<string> paths)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pathList = paths.ToList();
+
+        foreach (var path in pathList)
+        {
+            // Check if any other path is more specific (starts with this path + ".")
+            bool hasMoreSpecific = pathList.Any(other => 
+                other.Length > path.Length && 
+                other.StartsWith(path + ".", StringComparison.OrdinalIgnoreCase));
+
+            // Only add if no more specific path exists
+            if (!hasMoreSpecific)
+            {
+                result.Add(path);
+            }
+        }
+
+        return result;
     }
 
     private static bool IsParameterName(string path, string? paramName)
