@@ -1,0 +1,10 @@
+﻿query GreedyQuery{
+    GreedyQuery:data{
+        edges{
+            node{
+                email
+                id
+            }
+        }
+    }
+}
