@@ -45,8 +45,39 @@ public sealed class PreservationBuilder
     /// </summary>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
-        var fullPath = ResolveFullPath(fieldPath, nodePath);
-        return fullPath != null ? Preserve(fullPath) : this;
+        var pathToNode = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
+        if (pathToNode.Length == 0) return this;
+
+        var fullNodePath = string.Join(".", pathToNode) + "." + nodePath.Split('.')[^1];
+        var (nodeField, _) = FindNodeByPath(_sourceQuery.Definition.Fields, fullNodePath);
+        if (nodeField?.Fields != null)
+        {
+            var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
+            if (match.HasValue)
+            {
+                Preserve($"{fullNodePath}.{match.Value.Key}");
+            }
+        }
+        return this;
+    }
+
+    private static (FieldDefinition?, string) FindNodeByPath(SortedDictionary<string, FieldDefinition> fields, string nodePath)
+    {
+        var segments = nodePath.Split('.');
+        var current = fields;
+        FieldDefinition? lastField = null;
+        var pathSegments = new List<string>();
+
+        foreach (var segment in segments)
+        {
+            var match = PreserveExtensions.FindFieldByNameOrAlias(current, segment.AsSpan());
+            if (!match.HasValue || match.Value.Value.Fields == null) return (null, string.Empty);
+            lastField = match.Value.Value;
+            pathSegments.Add(match.Value.Key);
+            current = lastField.Fields;
+        }
+
+        return (lastField, string.Join(".", pathSegments));
     }
 
     /// <summary>
@@ -167,14 +198,15 @@ public sealed class PreservationBuilder
                 else
                 {
                     // Simple field - find matching key
-                    var matchingKey = FindFieldKey(nodeField.Fields, field);
-                    if (matchingKey != null)
+                    var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, field.AsSpan());
+                    if (match.HasValue)
                     {
+                        var matchingKey = match.Value.Key;
                         // Check if this field has sub-fields (is an object)
-                        if (nodeField.Fields.TryGetValue(matchingKey, out var fieldDef) && fieldDef.Fields != null && fieldDef.Fields.Count > 0)
+                        if (match.Value.Value.Fields != null && match.Value.Value.Fields.Count > 0)
                         {
                             // Object field: preserve all its sub-fields (greedy for this object)
-                            PreserveObjectFields(fieldDef.Fields, $"{basePathStr}.{matchingKey}");
+                            PreserveObjectFields(match.Value.Value.Fields, $"{basePathStr}.{matchingKey}");
                         }
                         else
                         {
@@ -207,21 +239,14 @@ public sealed class PreservationBuilder
 
         foreach (var segment in segments)
         {
-            var matchingKey = FindFieldKey(currentFields, segment);
-            if (matchingKey == null) return null;
+            var match = PreserveExtensions.FindFieldByNameOrAlias(currentFields, segment.AsSpan());
+            if (!match.HasValue) return null;
 
-            resolvedSegments.Add(matchingKey);
+            resolvedSegments.Add(match.Value.Key);
 
             // Navigate to next level
-            if (currentFields.TryGetValue(matchingKey, out var field))
-            {
-                if (field.Fields == null) return null;
-                currentFields = field.Fields;
-            }
-            else
-            {
-                return null;
-            }
+            if (match.Value.Value.Fields == null) return null;
+            currentFields = match.Value.Value.Fields;
         }
 
         return $"{basePath}.{string.Join(".", resolvedSegments)}";
@@ -378,21 +403,14 @@ public sealed class PreservationBuilder
             return true;
         }
 
-        var matchingKey = FindFieldKey(fields, segment);
-        if (matchingKey == null)
+        var match = PreserveExtensions.FindFieldByNameOrAlias(fields, segment.AsSpan());
+        if (!match.HasValue)
         {
             field = null;
             return false;
         }
 
-        field = fields[matchingKey];
+        field = match.Value.Value;
         return true;
     }
-
-    private static string? FindFieldKey(SortedDictionary<string, FieldDefinition> fields, string fieldName)
-        => fields.FirstOrDefault(kvp =>
-            string.Equals(kvp.Key, fieldName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(kvp.Value.Alias, fieldName, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(kvp.Value.Name, fieldName, StringComparison.OrdinalIgnoreCase)
-        ).Key;
 }

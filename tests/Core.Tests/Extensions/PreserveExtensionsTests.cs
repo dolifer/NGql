@@ -24,6 +24,9 @@ public class PreserveExtensionsTests
     private class TestDepositDetails
     {
         public DateTime? Date { get; set; }
+        public DateTime? FirstDepositTime { get; set; }
+        public DateTime? LastDepositTime { get; set; }
+        public DateTime? SecondDepositTime { get; set; }
     }
     private class TestRegData { public DateTime? registrationDate { get; } public string? registrationType { get; set; } public string? Region { get; set; } }
     private class TestPlayerProfile { public string? playerId { get; set; } public TestRegData? RegData { get; } }
@@ -1304,6 +1307,78 @@ public class PreserveExtensionsTests
                 (p.RegData != null && p.RegData.Region != null) || p.RegData.registrationDate != null, 
                 "edges.node", localMap)
             .Build();
+
+        await result.Verify();
+    }
+
+    [Fact]
+    public async Task PreserveFromExpression_MultipleLambdaParametersDifferentQueries_PreservesAllQueries()
+    {
+        // Reproduce the issue from 01_exact_field_preserve.md
+        // Create 4 separate queries that will be merged
+        var firstDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerFirstDepositBatchQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PlayerFirstDepositBatchQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime");
+
+        var secondDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerSecondDepositBatchQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PlayerSecondDepositBatchQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.SecondDepositTime:secondDepositTime");
+
+        var lastDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerLastDepositBatchQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PlayerLastDepositBatchQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.LastDepositTime:lastDepositTime");
+
+        var profileQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerProfileBatchQuery")
+            .AddField("PlayerProfileBatchQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.ProfileData:profileData.Currency:currency");
+
+        // Merge them
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("DataApiSourceBatchQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstDepositQuery)
+            .Include(secondDepositQuery)
+            .Include(lastDepositQuery)
+            .Include(profileQuery);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerFirstDeposit", new[] { "PlayerFirstDepositBatchQuery" } },
+            { "playerSecondDeposit", new[] { "PlayerSecondDepositBatchQuery" } },
+            { "playerLastDeposit", new[] { "PlayerLastDepositBatchQuery" } },
+            { "playerProfile", new[] { "PlayerProfileBatchQuery" } }
+        };
+
+        // Complex expression from the issue - using actual field names from queries
+        var result = PreservationBuilder
+            .Create(mergedQuery)
+            .PreserveAtPath("PlayerId", "edges.node")
+            .PreserveFromExpression((TestDeposit playerFirstDeposit, TestDeposit playerLastDeposit, TestPlayerProfile playerProfile, TestDeposit playerSecondDeposit) => 
+                ((playerFirstDeposit.Deposit.FirstDepositTime != null && 
+                  playerFirstDeposit.Deposit.FirstDepositTime == playerLastDeposit.Deposit.LastDepositTime &&
+                  playerProfile.RegData.Region == "EUR") ||
+                 (playerSecondDeposit.Deposit.SecondDepositTime != null && 
+                  playerFirstDeposit.Deposit.FirstDepositTime != playerSecondDeposit.Deposit.SecondDepositTime &&
+                  playerSecondDeposit.Deposit.SecondDepositTime == playerLastDeposit.Deposit.LastDepositTime &&
+                  playerProfile.RegData.Region == "USD") ||
+                 (playerLastDeposit.Deposit.LastDepositTime != null && 
+                  playerFirstDeposit.Deposit.FirstDepositTime != playerLastDeposit.Deposit.LastDepositTime &&
+                  playerSecondDeposit.Deposit.SecondDepositTime != playerLastDeposit.Deposit.LastDepositTime &&
+                  playerProfile.RegData.Region == "UAH")),
+                "edges.node", localMap)
+            .Build();
+
+        // Assert - All 4 queries should be present
+        result.Definition.Fields.Should().ContainKey("PlayerFirstDepositBatchQuery");
+        result.Definition.Fields.Should().ContainKey("PlayerSecondDepositBatchQuery");
+        result.Definition.Fields.Should().ContainKey("PlayerLastDepositBatchQuery");
+        result.Definition.Fields.Should().ContainKey("PlayerProfileBatchQuery");
 
         await result.Verify();
     }
