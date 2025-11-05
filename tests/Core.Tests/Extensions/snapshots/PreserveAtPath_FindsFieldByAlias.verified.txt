@@ -1,5 +1,5 @@
-﻿query TestQuery{
-    TestQuery:data{
+﻿query PreservedQuery{
+    PreservedQuery:data{
         edges{
             node{
                 RegData:regData{

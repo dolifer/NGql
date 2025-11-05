@@ -1,0 +1,7 @@
+﻿query PreservedQuery($size:Int){
+    user(id:"123"){
+        posts(limit:$size){
+            title
+        }
+    }
+}

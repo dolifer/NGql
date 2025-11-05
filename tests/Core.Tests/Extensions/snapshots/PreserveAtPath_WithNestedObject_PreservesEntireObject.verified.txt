@@ -1,10 +1,11 @@
-﻿query ProfileQuery{
-    ProfileQuery:data{
+﻿query PreservedQuery{
+    PreservedQuery:data{
         edges{
             node{
-                profile{
-                    firstName
-                    lastName
+                RegData:regData{
+                    Region:region
+                    RegistrationDate:registrationDate
+                    RegistrationType:registrationType
                 }
             }
         }

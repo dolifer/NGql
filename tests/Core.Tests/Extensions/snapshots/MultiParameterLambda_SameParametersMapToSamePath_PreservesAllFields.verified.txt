@@ -1,14 +1,15 @@
-query MergedQuery{
-    FirstQuery:data{
+﻿query PreservedQuery{
+    PreservedQueryFirst:data{
         edges{
             node{
                 Deposit:deposit{
-                    Date:date
+                    FirstDepositTime:firstDepositTime
+                    LastDepositTime:lastDepositTime
                 }
             }
         }
     }
-    SecondQuery:data{
+    PreservedQuerySecond:data{
         edges{
             node{
                 firstName

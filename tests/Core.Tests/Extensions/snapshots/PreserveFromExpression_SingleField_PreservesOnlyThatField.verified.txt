@@ -1,5 +1,5 @@
-﻿query UserQuery{
-    UserQuery:data{
+﻿query PreservedQuery{
+    PreservedQuery:data{
         edges{
             node{
                 id

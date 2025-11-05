@@ -1,8 +1,7 @@
-﻿query TestQuery{
-    TestQuery:data{
+﻿query PreservedQuery{
+    PreservedQuery:data{
         edges{
             node{
-                PlayerId:playerId
                 RegData:regData{
                     Region:region
                     RegistrationDate:registrationDate

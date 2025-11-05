@@ -1,7 +1,0 @@
-﻿query RootPathQuery{
-    user{
-        profile{
-            name
-        }
-    }
-}

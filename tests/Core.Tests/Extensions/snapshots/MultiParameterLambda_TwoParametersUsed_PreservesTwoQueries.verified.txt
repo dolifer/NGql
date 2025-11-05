@@ -1,18 +1,9 @@
-﻿query DataApiSourceBatchQuery{
-    PlayerFirstDepositBatchQuery:data{
+﻿query PreservedQuery{
+    PreservedQuery:data{
         edges{
             node{
                 Deposit:deposit{
                     FirstDepositTime:firstDepositTime
-                }
-                UserId:userId
-            }
-        }
-    }
-    PlayerLastDepositBatchQuery:data{
-        edges{
-            node{
-                Deposit:deposit{
                     LastDepositTime:lastDepositTime
                 }
                 UserId:userId
