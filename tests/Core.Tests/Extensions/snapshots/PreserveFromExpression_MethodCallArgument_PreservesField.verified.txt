@@ -2,9 +2,6 @@
     PreservedQuery:data{
         edges{
             node{
-                RegData:regData{
-                    Region:region
-                }
                 UserId:userId
             }
         }

@@ -160,7 +160,7 @@ public sealed class PreservationBuilder
     {
         // Group parameters by their base path to handle multiple parameters mapping to same path
         var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        
+
         foreach (var paramName in parameterNames)
         {
             if (!localMap.TryGetValue(paramName, out var basePath)) continue;
@@ -193,12 +193,39 @@ public sealed class PreservationBuilder
             
             // Collect ALL fields from ALL parameters that map to this base path
             var allFieldsForPath = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var paramName in paramsForPath)
+
+            // Check if any paths have parameter prefixes
+            bool hasParameterPrefixes = extractedPaths.Any(p =>
+                paramsForPath.Any(param => p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase)));
+
+            // Only use "no prefix" mode when:
+            // 1. Multiple parameters map to this path (comparison scenario)
+            // 2. AND none have prefixes
+            bool useNoPrefixMode = !hasParameterPrefixes && paramsForPath.Count > 1;
+
+            if (useNoPrefixMode)
             {
-                var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
-                foreach (var field in fieldsToPreserve)
+                // No parameter prefixes in multi-parameter comparison - use all extracted paths
+                foreach (var path in extractedPaths)
                 {
-                    allFieldsForPath.Add(field);
+                    allFieldsForPath.Add(path);
+                }
+            }
+            else
+            {
+                // Filter per parameter (works for both prefixed and non-prefixed single-parameter cases)
+                foreach (var paramName in paramsForPath)
+                {
+                    var parameterPaths = extractedPaths.Where(p =>
+                        string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
+                        p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
+                        .ToHashSet();
+
+                    var fieldsToPreserve = GetFieldsToPreserve(parameterPaths, paramName, parameterType);
+                    foreach (var field in fieldsToPreserve)
+                    {
+                        allFieldsForPath.Add(field);
+                    }
                 }
             }
             
@@ -267,16 +294,21 @@ public sealed class PreservationBuilder
         var currentFields = fields;
         var resolvedSegments = new List<string>();
 
-        foreach (var segment in segments)
+        for (int i = 0; i < segments.Length; i++)
         {
+            var segment = segments[i];
             var match = PreserveExtensions.FindFieldByNameOrAlias(currentFields, segment.AsSpan());
             if (!match.HasValue) return null;
 
             resolvedSegments.Add(match.Value.Key);
 
-            // Navigate to next level
-            if (match.Value.Value.Fields == null) return null;
-            currentFields = match.Value.Value.Fields;
+            // Only navigate to next level if we're not at the last segment
+            // Leaf fields (last segment) are allowed to have no sub-fields
+            if (i < segments.Length - 1)
+            {
+                if (match.Value.Value.Fields == null) return null;
+                currentFields = match.Value.Value.Fields;
+            }
         }
 
         return $"{basePath}.{string.Join(".", resolvedSegments)}";

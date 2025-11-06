@@ -73,19 +73,16 @@ public class PreserveExtensionsTests
 
     private static QueryBuilder CreateFirstDepositQuery() => QueryBuilder
         .CreateDefaultBuilder("PreservedQuery")
-        .WithMergingStrategy(MergingStrategy.NeverMerge)
         .AddField("PreservedQuery:data.edges.node.UserId:userId")
         .AddField("data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime");
 
     private static QueryBuilder CreateSecondDepositQuery() => QueryBuilder
         .CreateDefaultBuilder("PreservedQuery")
-        .WithMergingStrategy(MergingStrategy.NeverMerge)
         .AddField("PreservedQuery:data.edges.node.UserId:userId")
         .AddField("data.edges.node.Deposit:deposit.SecondDepositTime:secondDepositTime");
 
     private static QueryBuilder CreateLastDepositQuery() => QueryBuilder
         .CreateDefaultBuilder("PreservedQuery")
-        .WithMergingStrategy(MergingStrategy.NeverMerge)
         .AddField("PreservedQuery:data.edges.node.UserId:userId")
         .AddField("data.edges.node.Deposit:deposit.LastDepositTime:lastDepositTime");
 
@@ -389,12 +386,13 @@ public class PreserveExtensionsTests
     {
         var firstQuery = QueryBuilder
             .CreateDefaultBuilder("PreservedQueryFirst")
-            .AddField("PreservedQueryFirst:data.edges.node.id")
+            .AddField("PreservedQueryFirst:data.edges.node.UserId:userId")
             .AddField("PreservedQueryFirst:data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime");
 
         var secondQuery = QueryBuilder
             .CreateDefaultBuilder("PreservedQuerySecond")
             .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuerySecond:data.edges.node.UserId:userId")
             .AddField("PreservedQuerySecond:data.edges.node.firstName")
             .AddField("PreservedQuerySecond:data.edges.node.lastName");
 
@@ -415,7 +413,86 @@ public class PreserveExtensionsTests
                 first.Deposit.FirstDepositTime != null &&
                 last.Deposit.LastDepositTime != null &&
                 profile.firstName == "Test",
-                "edges.node", localMap)
+                "edges.node", localMap, "UserId")
+            .Build();
+
+        return result.Verify();
+    }
+
+    // ===== NEVERMERGE CORNER CASE TESTS =====
+
+    [Fact]
+    public Task NeverMerge_QueriesStaySeparate_PreservesAtTopLevel()
+    {
+        var firstQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime");
+
+        var secondQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.SecondDepositTime:secondDepositTime");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstQuery)
+            .Include(secondQuery);
+
+        // With NeverMerge, queries stay at separate root levels (PreservedQuery, PreservedQuery_1)
+        // We preserve at parent level to keep both separate query trees
+        var result = PreservationBuilder.Create(mergedQuery)
+            .Preserve("PreservedQuery.data")
+            .Preserve("PreservedQuery_1.data")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task NeverMerge_SingleQuery_WithPreservation()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime")
+            .AddField("data.edges.node.Deposit:deposit.SecondDepositTime:secondDepositTime");
+
+        // Preserve at the top level for a single NeverMerge query
+        var result = PreservationBuilder.Create(query)
+            .Preserve("PreservedQuery.data")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task NeverMerge_MixedWithMergeByFieldPath_BothStrategiesWork()
+    {
+        var firstQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Deposit:deposit.FirstDepositTime:firstDepositTime");
+
+        var secondQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.RegData:regData.Region:region");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstQuery)
+            .Include(secondQuery);
+
+        // Preserve both separate query trees created by NeverMerge
+        var result = PreservationBuilder.Create(mergedQuery)
+            .Preserve("PreservedQuery.data")
+            .Preserve("PreservedQuery_1.data")
             .Build();
 
         return result.Verify();

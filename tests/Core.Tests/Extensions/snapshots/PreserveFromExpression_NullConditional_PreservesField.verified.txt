@@ -4,6 +4,8 @@
             node{
                 RegData:regData{
                     Region:region
+                    RegistrationDate:registrationDate
+                    RegistrationType:registrationType
                 }
                 UserId:userId
             }

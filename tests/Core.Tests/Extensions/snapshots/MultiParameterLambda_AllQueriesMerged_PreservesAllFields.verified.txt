@@ -4,8 +4,8 @@
             node{
                 Deposit:deposit{
                     FirstDepositTime:firstDepositTime
-                    SecondDepositTime:secondDepositTime
                     LastDepositTime:lastDepositTime
+                    SecondDepositTime:secondDepositTime
                 }
                 UserId:userId
             }
