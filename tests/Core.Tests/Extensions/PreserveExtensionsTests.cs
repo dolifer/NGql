@@ -26,6 +26,25 @@ public class PreserveExtensionsTests
         public DateTime? LastDepositTime { get; set; }
     }
 
+    // Separate deposit types with Date navigation properties
+    private class FirstDepositDetails
+    {
+        public DateTime? FirstDepositTime { get; set; }
+        public DateTime? Date => FirstDepositTime;
+    }
+
+    private class SecondDepositDetails
+    {
+        public DateTime? SecondDepositTime { get; set; }
+        public DateTime? Date => SecondDepositTime;
+    }
+
+    private class LastDepositDetails
+    {
+        public DateTime? LastDepositTime { get; set; }
+        public DateTime? Date => LastDepositTime;
+    }
+
     private class TestPlayerProfile
     {
         public string? UserId { get; set; }
@@ -419,6 +438,239 @@ public class PreserveExtensionsTests
         return result.Verify();
     }
 
+    // ===== EDGE CASE TESTS =====
+
+    [Fact]
+    public Task EdgeCase_ParameterNameSubstringCollision_PreservesCorrectly()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .AddField("PreservedQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Profile:profile.Currency:currency");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "PreservedQuery" } },
+            { "userProfile", new[] { "PreservedQuery" } }
+        };
+
+        // Ensure "user" doesn't accidentally match "userProfile" prefix
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestUser user, TestProfile userProfile) =>
+                    user.id != null && userProfile.firstName != null,
+                "edges.node", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_MissingLocalMapEntry_SkipsUnmappedParameter()
+    {
+        var query = CreateSimpleQuery();
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "PreservedQuery" } }
+            // Missing "profile" entry
+        };
+
+        // Should only preserve fields from mapped parameters
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestUser user, TestProfile profile) =>
+                    user.id != null && profile.firstName != null,
+                "edges.node", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_ConstantExpression_PreservesAllTypeFields()
+    {
+        var query = CreateSimpleQuery();
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "PreservedQuery" } }
+        };
+
+        // Expression that doesn't access fields - should preserve all type fields
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression((TestUser user) => true, "edges.node", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_SequentialPreserveFromExpression_AccumulatesFields()
+    {
+        var query = CreateSimpleQuery();
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "PreservedQuery" } }
+        };
+
+        // Multiple calls should accumulate, not override
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression((TestUser u) => u.id, "edges.node", localMap)
+            .PreserveFromExpression((TestUser u) => u.email, "edges.node", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_SameFieldNameDifferentContexts_PreservesBoth()
+    {
+        var firstQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerQuery")
+            .AddField("PlayerQuery:data.player.Name:name")
+            .AddField("data.player.Score:score");
+
+        var secondQuery = QueryBuilder
+            .CreateDefaultBuilder("TeamQuery")
+            .AddField("TeamQuery:data.team.Name:name")
+            .AddField("data.team.Rating:rating");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("Query", MergingStrategy.MergeByFieldPath)
+            .Include(firstQuery)
+            .Include(secondQuery);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "player", new[] { "PlayerQuery" } },
+            { "team", new[] { "TeamQuery" } }
+        };
+
+        // Both have "Name" field in different contexts
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestUser player, TestUser team) =>
+                    player.id != null && team.id != null,
+                "data", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_MixedPreservationMethods_AllWorkTogether()
+    {
+        var query = CreatePreservedQuery();
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "player", new[] { "PreservedQuery" } }
+        };
+
+        // Mix direct paths, PreserveAtPath, and PreserveFromExpression
+        var result = PreservationBuilder.Create(query)
+            .Preserve("PreservedQuery.data.edges.node.UserId")
+            .PreserveAtPath("RegData", "edges.node")
+            .PreserveFromExpression((TestPlayerProfile player) => player.UserId != null, "edges.node", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_AlwaysPreserveFields_EmptyArray()
+    {
+        var mergedQuery = CreateMergedQuery();
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerFirstDeposit", new[] { "PreservedQuery" } }
+        };
+
+        // Empty alwaysPreserveFields array
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDeposit playerFirstDeposit) =>
+                    playerFirstDeposit.Deposit.FirstDepositTime != null,
+                "edges.node", localMap, Array.Empty<string>())
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_AlwaysPreserveFields_MultipleFields()
+    {
+        var mergedQuery = CreateMergedQuery();
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerFirstDeposit", new[] { "PreservedQuery" } }
+        };
+
+        // Multiple alwaysPreserveFields
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDeposit playerFirstDeposit) =>
+                    playerFirstDeposit.Deposit.FirstDepositTime != null,
+                "edges.node", localMap, "UserId", "ProfileData")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_VeryDeepNesting_FiveLevels()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .AddField("PreservedQuery:data.edges.node.Profile:profile.Settings:settings.Preferences:preferences.Display:display.Theme:theme.Color:color");
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("PreservedQuery.data.edges.node.profile.settings.preferences.display.theme")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task EdgeCase_ThreeParametersDifferentRoots_AllPreserved()
+    {
+        var depositQuery = QueryBuilder
+            .CreateDefaultBuilder("DepositQuery")
+            .AddField("DepositQuery:data.deposits.FirstDepositTime:firstDepositTime");
+
+        var profileQuery = QueryBuilder
+            .CreateDefaultBuilder("ProfileQuery")
+            .AddField("ProfileQuery:data.profiles.Currency:currency");
+
+        var statsQuery = QueryBuilder
+            .CreateDefaultBuilder("StatsQuery")
+            .AddField("StatsQuery:data.stats.TotalBets:totalBets");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("Query", MergingStrategy.MergeByFieldPath)
+            .Include(depositQuery)
+            .Include(profileQuery)
+            .Include(statsQuery);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "deposit", new[] { "DepositQuery" } },
+            { "profile", new[] { "ProfileQuery" } },
+            { "stats", new[] { "StatsQuery" } }
+        };
+
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDeposit deposit, TestProfile profile, TestUser stats) =>
+                    deposit.Deposit.FirstDepositTime != null &&
+                    profile.firstName != null &&
+                    stats.id != null,
+                "data", localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
     // ===== NEVERMERGE CORNER CASE TESTS =====
 
     [Fact]
@@ -493,6 +745,165 @@ public class PreserveExtensionsTests
         var result = PreservationBuilder.Create(mergedQuery)
             .Preserve("PreservedQuery.data")
             .Preserve("PreservedQuery_1.data")
+            .Build();
+
+        return result.Verify();
+    }
+
+    // ===== ORIGINAL ISSUE REGRESSION TEST =====
+    // This test recreates the scenario from 01_task.txt to ensure the type drift bug is fixed
+
+    [Fact]
+    public Task OriginalIssue_FourQueriesMerged_MultiParameterLambda_AllFieldsPreserved()
+    {
+        // Simulate the original issue scenario with 4 queries that merge:
+        // PlayerFirstDepositBatchQuery, PlayerLastDepositBatchQuery,
+        // PlayerSecondDepositBatchQuery, PlayerProfileBatchQuery
+
+        var firstDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("FirstDepositQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("FirstDepositQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.FirstDepositTime:firstDepositTime");
+
+        var lastDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("LastDepositQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("LastDepositQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.LastDepositTime:lastDepositTime");
+
+        var secondDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("SecondDepositQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("SecondDepositQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.SecondDepositTime:secondDepositTime");
+
+        var profileQuery = QueryBuilder
+            .CreateDefaultBuilder("ProfileQuery")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("ProfileQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.ProfileData:profileData.Currency:currency");
+
+        // Merge all queries
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstDepositQuery)
+            .Include(lastDepositQuery)
+            .Include(secondDepositQuery)
+            .Include(profileQuery);
+
+        // Create localMap for 4-parameter lambda
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerFirstDeposit", new[] { "FirstDepositQuery" } },
+            { "playerLastDeposit", new[] { "LastDepositQuery" } },
+            { "playerSecondDeposit", new[] { "SecondDepositQuery" } },
+            { "playerProfile", new[] { "ProfileQuery" } }
+        };
+
+        // Apply preservation with multi-parameter lambda
+        // Before fix: only fields from first parameter were preserved
+        // After fix: fields from ALL parameters should be preserved
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDepositDetails playerFirstDeposit, TestDepositDetails playerLastDeposit,
+                 TestDepositDetails playerSecondDeposit, TestPlayerProfile playerProfile) =>
+                    playerFirstDeposit.FirstDepositTime != null &&
+                    playerLastDeposit.LastDepositTime != null &&
+                    playerSecondDeposit.SecondDepositTime != null &&
+                    playerProfile.ProfileData!.Currency != null,
+                "businessObjects.playerProfile.edges.node",
+                localMap,
+                "PlayerId")
+            .Build();
+
+        return result.Verify();
+    }
+
+    // ===== NAVIGATION PROPERTY TESTS =====
+
+    [Fact]
+    public Task NavigationProperty_Simple_ResolvesToActualField()
+    {
+        // Simple test: navigation property at same level as query field
+        var query = QueryBuilder
+            .CreateDefaultBuilder("PreservedQuery")
+            .AddField("PreservedQuery:data.user.FirstDepositTime:firstDepositTime");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "deposit", new[] { "PreservedQuery" } }
+        };
+
+        // Lambda references .Date which is a navigation property => FirstDepositTime
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (FirstDepositDetails deposit) => deposit.Date != null,
+                "data.user",
+                localMap)
+            .Build();
+
+        return result.Verify();
+    }
+
+    // ===== ISSUE 04: Navigation Property Pattern =====
+    // Lambda references .Date navigation property which maps to different fields per parameter
+
+    [Fact]
+    public Task Issue04_NavigationProperty_DateMapsToSpecificDepositTimes()
+    {
+        // This reproduces the exact scenario from 04_issue where:
+        // - Lambda references playerX.Date (navigation property)
+        // - playerFirstDeposit.Date => FirstDepositTime
+        // - playerSecondDeposit.Date => SecondDepositTime
+        // - playerLastDeposit.Date => LastDepositTime
+        // - Two parameters map to the same merged root
+
+        var firstDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerFirstDepositBatchQuery")
+            .AddField("PlayerFirstDepositBatchQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.FirstDepositTime:firstDepositTime");
+
+        var secondDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerSecondDepositBatchQuery")
+            .AddField("PlayerSecondDepositBatchQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.SecondDepositTime:secondDepositTime");
+
+        var lastDepositQuery = QueryBuilder
+            .CreateDefaultBuilder("PlayerLastDepositBatchQuery")
+            .AddField("PlayerLastDepositBatchQuery:businessObjects.playerProfile.edges.node.PlayerId:playerId")
+            .AddField("businessObjects.playerProfile.edges.node.Metrics:metrics.RealTime:realTime.Deposit:deposit.LastDepositTime:lastDepositTime");
+
+        // Merge with MergeByFieldPath - First and Second will merge together
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("DataApiSourceBatchQuery", MergingStrategy.MergeByFieldPath)
+            .Include(firstDepositQuery)
+            .Include(secondDepositQuery)
+            .Include(lastDepositQuery);
+
+        // LocalMap reflects the merge: All three queries merge into the same root
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "playerFirstDeposit", new[] { "PlayerFirstDepositBatchQuery", "playerProfile" } },
+            { "playerSecondDeposit", new[] { "PlayerFirstDepositBatchQuery", "playerProfile" } },
+            { "playerLastDeposit", new[] { "PlayerFirstDepositBatchQuery", "playerProfile" } } // All map to same merged root!
+        };
+
+        // Lambda references .Date navigation property
+        // The expression extractor will extract "Date" from all three parameters
+        //
+        // IMPORTANT: Real code uses GetPathTo which returns path TO "edges" but not including it
+        // So localMap has ["PlayerFirstDepositBatchQuery", "playerProfile"]
+        // And nodePath is "edges.node" (not the full path to Deposit)
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (FirstDepositDetails playerFirstDeposit, SecondDepositDetails playerSecondDeposit, LastDepositDetails playerLastDeposit) =>
+                    playerFirstDeposit.Date != null &&
+                    playerSecondDeposit.Date != null &&
+                    playerLastDeposit.Date != null,
+                "edges.node", // This is what the real code uses, not the full path!
+                localMap,
+                "PlayerId")
             .Build();
 
         return result.Verify();

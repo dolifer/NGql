@@ -1,0 +1,7 @@
+﻿query PreservedQuery{
+    PreservedQuery:data{
+        user{
+            FirstDepositTime:firstDepositTime
+        }
+    }
+}

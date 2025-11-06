@@ -1,0 +1,13 @@
+﻿query PreservedQuery{
+    PreservedQuery:data{
+        edges{
+            node{
+                Name:name
+                Profile:profile{
+                    Currency:currency
+                }
+                UserId:userId
+            }
+        }
+    }
+}

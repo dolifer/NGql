@@ -1,0 +1,12 @@
+﻿query Query{
+    PlayerQuery:data{
+        player{
+            Name:name
+            Score:score
+        }
+        team{
+            Name:name
+            Rating:rating
+        }
+    }
+}

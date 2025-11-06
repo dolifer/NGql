@@ -1,0 +1,20 @@
+﻿query DataApiSourceBatchQuery{
+    PlayerFirstDepositBatchQuery:businessObjects{
+        playerProfile{
+            edges{
+                node{
+                    Metrics:metrics{
+                        RealTime:realTime{
+                            Deposit:deposit{
+                                FirstDepositTime:firstDepositTime
+                                LastDepositTime:lastDepositTime
+                                SecondDepositTime:secondDepositTime
+                            }
+                        }
+                    }
+                    PlayerId:playerId
+                }
+            }
+        }
+    }
+}
