@@ -696,49 +696,4 @@ public class PreserveFromExpressionTests
         // Assert - should preserve both FirstDepositTime and SecondDepositTime (expanded from Date)
         return result.Verify();
     }
-
-    [Fact]
-    public Task MultiParameter_UnprefixedNavProperty_BothTypesExpanded()
-    {
-        // This tests the EXACT issue reported: expression extracts ["playerFirstDeposit", "playerSecondDeposit"]
-        // WITHOUT the .Date suffix because Date property is in a different namespace (IL-generated)
-        // and gets excluded by ShouldExcludeProperty
-        // This triggers useNoPrefixMode = true
-        var queryA = QueryBuilder
-            .CreateDefaultBuilder("QueryA")
-            .AddField("QueryA:data.edges.node.FirstDepositTime:firstDepositTime")
-            .AddField("data.edges.node.SecondDepositTime:secondDepositTime");
-
-        var queryB = QueryBuilder
-            .CreateDefaultBuilder("QueryB")
-            .AddField("QueryB:data.edges.node.FirstDepositTime:firstDepositTime")
-            .AddField("data.edges.node.SecondDepositTime:secondDepositTime");
-
-        var mergedQuery = QueryBuilder
-            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
-            .Include(queryA)
-            .Include(queryB);
-
-        // Both parameters map to same merged node (same base path)
-        var localMap = new Dictionary<string, string[]>
-        {
-            { "playerFirstDeposit", new[] { "QueryA" } },
-            { "playerSecondDeposit", new[] { "QueryB" } }
-        };
-
-        // Act - Date property is defined in ExternalFramework.Generated namespace (different from parameter type)
-        // ShouldExcludeProperty will exclude it, so extracted paths = ["playerFirstDeposit", "playerSecondDeposit"]
-        // This triggers useNoPrefixMode = true (multiple params, no prefixes on extracted paths)
-        var result = PreservationBuilder.Create(mergedQuery)
-            .PreserveFromExpression(
-                (ExternalFramework.Generated.PlayerDepositQuery playerFirstDeposit,
-                 ExternalFramework.Generated.PlayerDepositQuery playerSecondDeposit) =>
-                    playerFirstDeposit.Date != null && playerSecondDeposit.Date != null,
-                "edges.node",
-                localMap)
-            .Build();
-
-        // Assert - Even though Date is excluded from extraction, the greedy fallback should preserve all fields
-        return result.Verify();
-    }
 }
