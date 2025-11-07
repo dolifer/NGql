@@ -235,10 +235,19 @@ public sealed class PreservationBuilder
 
             if (useNoPrefixMode)
             {
-                // No parameter prefixes in multi-parameter comparison - use all extracted paths
-                foreach (var path in extractedPaths)
+                // No parameter prefixes in multi-parameter comparison
+                // Need to expand navigation properties for each parameter type
+                foreach (var paramName in paramsForPath)
                 {
-                    allFieldsForPath.Add(path);
+                    // Get the specific type for THIS parameter
+                    parameterTypes.TryGetValue(paramName, out var specificParameterType);
+
+                    // Expand navigation properties with the specific parameter type
+                    var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, null, specificParameterType);
+                    foreach (var field in fieldsToPreserve)
+                    {
+                        allFieldsForPath.Add(field);
+                    }
                 }
             }
             else

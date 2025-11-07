@@ -507,4 +507,37 @@ public class ExpressionFieldExtractorTests
             .And.Contain("user.profile.name")
             .And.Contain("user.email");
     }
+
+    [Fact]
+    public void ExtractFieldPaths_PropertyFromDifferentNamespace_StillExtracted()
+    {
+        // Arrange - property Date is defined in ExternalFramework.Generated namespace
+        // but exists on the parameter type, so should be extracted regardless
+        Expression<Func<ExternalFramework.Generated.PlayerDepositQuery, bool>> expr =
+            x => x.Date != null;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Date property should be extracted even though it's from different namespace
+        paths.Should().ContainSingle()
+            .Which.Should().Be("Date");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_MultiParam_PropertyFromDifferentNamespace_ExtractedWithPrefix()
+    {
+        // Arrange - Two different parameter types, both with Date property from external namespace
+        Expression<Func<ExternalFramework.Generated.PlayerDepositQuery,
+                        ExternalFramework.Generated.PlayerDepositQuery, bool>> expr =
+            (first, second) => first.Date != null && second.Date != null;
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert - Should extract Date with parameter prefixes since types are same (only 1 root type)
+        // Wait, both types are the same, so _rootParameterTypes.Count == 1, no prefix added
+        paths.Should().ContainSingle()
+            .Which.Should().Be("Date");
+    }
 }

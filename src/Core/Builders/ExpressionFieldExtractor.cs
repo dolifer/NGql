@@ -486,33 +486,22 @@ public static class ExpressionFieldExtractor
 
         /// <summary>
         /// Determines if a member expression represents a property that should be excluded.
-        /// Only includes properties that are part of the root parameter's type hierarchy.
+        /// Only excludes System.* types (like string.Length).
+        /// All other properties are included regardless of namespace, assembly, or where they're declared.
+        /// This supports IL-generated properties and properties from any source.
         /// </summary>
         private bool ShouldExcludeProperty(MemberExpression memberExpr)
         {
-            if (_rootParameterTypes.Count == 0)
-                return false;
-
             var declaringType = memberExpr.Member.DeclaringType;
             if (declaringType == null)
                 return false;
 
-            // Exclude properties from system types (like string.Length)
+            // Only exclude properties from system types (like string.Length)
             if (declaringType.Namespace?.StartsWith("System") == true)
                 return true;
 
-            // Include properties if they match ANY of the root parameter type namespaces
-            foreach (var paramType in _rootParameterTypes)
-            {
-                var rootNamespace = paramType.Namespace;
-                if (!string.IsNullOrEmpty(rootNamespace) && declaringType.Namespace?.StartsWith(rootNamespace) == true)
-                {
-                    return false; // Include this property
-                }
-            }
-
-            // Exclude if no parameter type namespace matched
-            return true;
+            // Include everything else - if it's in the expression tree, it's relevant
+            return false;
         }
     }
 }
