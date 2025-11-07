@@ -134,4 +134,38 @@ public static class TestDataModels
         public string? Name { get; set; }
         public decimal? Price { get; set; }
     }
+
+    /// <summary>
+    /// Model with nested navigation properties for testing deep computed property resolution
+    /// </summary>
+    public class UserWithComputedProfile
+    {
+        public string? UserId { get; set; }
+        public ComputedProfile? Profile { get; set; }
+    }
+
+    /// <summary>
+    /// Profile with nested computed properties
+    /// </summary>
+    public class ComputedProfile
+    {
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+        public ComputedContact? Contact { get; set; }
+
+        // Navigation property - should expand to FirstName and LastName
+        public string? Name => $"{FirstName} {LastName}";
+    }
+
+    /// <summary>
+    /// Contact info with computed property
+    /// </summary>
+    public class ComputedContact
+    {
+        public string? PrimaryEmail { get; set; }
+        public string? SecondaryEmail { get; set; }
+
+        // Navigation property - should expand to PrimaryEmail and SecondaryEmail
+        public string? Email => PrimaryEmail ?? SecondaryEmail;
+    }
 }

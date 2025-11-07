@@ -1,0 +1,16 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Profile:profile{
+                    Contact:contact{
+                        PrimaryEmail:primaryEmail
+                    }
+                    FirstName:firstName
+                    LastName:lastName
+                }
+                UserId:userId
+            }
+        }
+    }
+}

@@ -452,6 +452,7 @@ public sealed class PreservationBuilder
     /// Expands a field name if it's a navigation property (getter-only computed property).
     /// For navigation properties, returns all settable properties from the type.
     /// Otherwise, returns the original field name.
+    /// Handles nested paths like "profile.name" by only checking the first segment.
     /// </summary>
     private static HashSet<string> ExpandNavigationProperty(string fieldName, Type? parameterType)
     {
@@ -465,8 +466,23 @@ public sealed class PreservationBuilder
 
         try
         {
-            // Get the property from the type
-            var property = parameterType.GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance);
+            // Handle nested paths - only check the first segment for navigation properties
+            string firstSegment;
+            string? remainingPath = null;
+
+            var dotIndex = fieldName.IndexOf('.');
+            if (dotIndex > 0)
+            {
+                firstSegment = fieldName.Substring(0, dotIndex);
+                remainingPath = fieldName.Substring(dotIndex + 1);
+            }
+            else
+            {
+                firstSegment = fieldName;
+            }
+
+            // Get the property from the type (only first segment)
+            var property = parameterType.GetProperty(firstSegment, BindingFlags.Public | BindingFlags.Instance);
             if (property == null)
             {
                 result.Add(fieldName);
@@ -482,14 +498,35 @@ public sealed class PreservationBuilder
                     // Skip navigation properties themselves (getter-only)
                     if (prop.SetMethod != null)
                     {
-                        result.Add(prop.Name);
+                        // If there was a remaining path, append it to each expanded property
+                        if (remainingPath != null)
+                        {
+                            result.Add($"{prop.Name}.{remainingPath}");
+                        }
+                        else
+                        {
+                            result.Add(prop.Name);
+                        }
                     }
                 }
             }
             else
             {
-                // Not a navigation property - just return the field name
-                result.Add(fieldName);
+                // Not a navigation property - check if we need to recurse for nested path
+                if (remainingPath != null && property.PropertyType != null)
+                {
+                    // Recurse on the remaining path with the property's type
+                    var nestedExpanded = ExpandNavigationProperty(remainingPath, property.PropertyType);
+                    foreach (var nestedField in nestedExpanded)
+                    {
+                        result.Add($"{firstSegment}.{nestedField}");
+                    }
+                }
+                else
+                {
+                    // Just return the field name
+                    result.Add(fieldName);
+                }
             }
         }
         catch

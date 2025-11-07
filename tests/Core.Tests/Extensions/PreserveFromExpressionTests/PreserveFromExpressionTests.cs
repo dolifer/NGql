@@ -535,4 +535,122 @@ public class PreserveFromExpressionTests
         // Assert - should only preserve Email from the expression
         return result.Verify();
     }
+
+    [Fact]
+    public Task NestedComputedProperty_SingleLevel_ExpandsCorrectly()
+    {
+        // Arrange - query with nested profile that has a computed property
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.FirstName:firstName")
+            .AddField("data.edges.node.Profile:profile.LastName:lastName");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "TestQuery" } }
+        };
+
+        // Act - reference computed property Profile.Name which should expand to FirstName and LastName
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithComputedProfile user) => user.Profile.Name != null,
+                "edges.node",
+                localMap,
+                new[] { "UserId" })
+            .Build();
+
+        // Assert - should preserve UserId and both FirstName and LastName (expanded from Name)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task NestedComputedProperty_TwoLevels_ExpandsCorrectly()
+    {
+        // Arrange - query with deeply nested computed properties
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.PrimaryEmail:primaryEmail")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.SecondaryEmail:secondaryEmail");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "TestQuery" } }
+        };
+
+        // Act - reference computed property Profile.Contact.Email which should expand to PrimaryEmail and SecondaryEmail
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithComputedProfile user) => user.Profile.Contact.Email != null,
+                "edges.node",
+                localMap,
+                new[] { "UserId" })
+            .Build();
+
+        // Assert - should preserve UserId and both PrimaryEmail and SecondaryEmail (expanded from Email)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task NestedComputedProperty_MixedComputedAndRegular_ExpandsOnlyComputed()
+    {
+        // Arrange - query with nested profile that has both computed and regular properties
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.FirstName:firstName")
+            .AddField("data.edges.node.Profile:profile.LastName:lastName")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.PrimaryEmail:primaryEmail")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.SecondaryEmail:secondaryEmail");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "TestQuery" } }
+        };
+
+        // Act - reference both computed (Profile.Name) and regular (Profile.Contact.PrimaryEmail) properties
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithComputedProfile user) =>
+                    user.Profile.Name != null && user.Profile.Contact.PrimaryEmail != null,
+                "edges.node",
+                localMap,
+                new[] { "UserId" })
+            .Build();
+
+        // Assert - should preserve UserId, FirstName/LastName (from Name), and PrimaryEmail (direct)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task NestedComputedProperty_InsideConditional_ExpandsCorrectly()
+    {
+        // Arrange - query with nested computed property inside conditional logic
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.FirstName:firstName")
+            .AddField("data.edges.node.Profile:profile.LastName:lastName")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.PrimaryEmail:primaryEmail")
+            .AddField("data.edges.node.Profile:profile.Contact:contact.SecondaryEmail:secondaryEmail");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "TestQuery" } }
+        };
+
+        // Act - use computed property in conditional with null coalescing
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithComputedProfile user) =>
+                    (user.Profile.Name ?? user.Profile.Contact.Email) != null,
+                "edges.node",
+                localMap,
+                new[] { "UserId" })
+            .Build();
+
+        // Assert - should preserve UserId, FirstName/LastName (from Name), and PrimaryEmail/SecondaryEmail (from Email)
+        return result.Verify();
+    }
 }
