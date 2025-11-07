@@ -2,10 +2,8 @@
     TestQuery:data{
         edges{
             node{
-                Profile:profile{
-                    Age:age
-                    Name:name
-                }
+                Email:email
+                Name:name
                 UserId:userId
             }
         }

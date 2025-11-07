@@ -1,0 +1,10 @@
+﻿query QueryA{
+    QueryA:data{
+        edges{
+            node{
+                Email:email
+                UserId:userId
+            }
+        }
+    }
+}

@@ -1,0 +1,538 @@
+using System;
+using System.Collections.Generic;
+using System.Linq.Expressions;
+using System.Threading.Tasks;
+using NGql.Core.Builders;
+using Xunit;
+
+namespace NGql.Core.Tests.Extensions.PreserveFromExpressionTests;
+
+public class PreserveFromExpressionTests
+{
+    [Fact]
+    public Task MultiParameterLambda_AllFieldsPreserved()
+    {
+        // Create three separate queries that will merge to the same base path
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingA:settingA");
+
+        var queryB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingB:settingB");
+
+        var queryC = QueryBuilder
+            .CreateDefaultBuilder("QueryC")
+            .AddField("QueryC:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingC:settingC");
+
+        // Merge all queries - they will merge to the same base path due to compatible structure
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(queryA)
+            .Include(queryB)
+            .Include(queryC);
+
+        // Simulate the real issue: parameters map to different original queries but same merged path
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "groupA", new[] { "QueryA" } },
+            { "groupB", new[] { "QueryA" } },
+            { "groupC", new[] { "QueryA" } }
+        };
+
+        // Lambda references navigation properties from all three parameters
+        // All three settings should be preserved via their respective navigation properties
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDataModels.SettingGroupA groupA, TestDataModels.SettingGroupB groupB, TestDataModels.SettingGroupC groupC) =>
+                    groupA.Field != null &&      // Preserves settingA via navigation property
+                    groupB.Field != null &&      // Preserves settingB via navigation property
+                    groupC.Field != null,        // Preserves settingC via navigation property
+                "edges.node",
+                localMap,
+                "UserId")
+            .Build();
+
+        return result.Verify();
+    }
+    
+    [Fact]
+    public Task MultiParameterLambda_AllFieldsPreserved_NeverMerge()
+    {
+        // Create three separate queries that will merge to the same base path
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .WithMergingStrategy(MergingStrategy.NeverMerge)
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingA:settingA");
+
+        var queryB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingB:settingB");
+
+        var queryC = QueryBuilder
+            .CreateDefaultBuilder("QueryC")
+            .AddField("QueryC:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Settings:settings.SettingC:settingC");
+
+        // Merge all queries - they will merge to the same base path due to compatible structure
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(queryA)
+            .Include(queryB)
+            .Include(queryC);
+
+        Console.WriteLine("MergedQuery: " + mergedQuery.ToString());
+
+        // QueryA has NeverMerge, so it stays separate with its own root.
+        // QueryB and QueryC both have MergeByFieldPath (default), so they merge together into QueryB.
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "groupA", new[] { "QueryA" } },  // Maps to separate QueryA root
+            { "groupB", new[] { "QueryB" } },  // Maps to QueryB root
+            { "groupC", new[] { "QueryB" } }   // Also maps to QueryB (merged into it)
+        };
+
+        // Lambda references navigation properties from all three parameters
+        // All three settings should be preserved via their respective navigation properties
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDataModels.SettingGroupA groupA, TestDataModels.SettingGroupB groupB, TestDataModels.SettingGroupC groupC) =>
+                    groupA.Field != null &&      // Preserves settingA via navigation property
+                    groupB.Field != null &&      // Preserves settingB via navigation property
+                    groupC.Field != null,        // Preserves settingC via navigation property
+                "edges.node",
+                localMap,
+                "UserId")
+            .Build();
+
+        return result.Verify();
+    }
+    
+    [Fact]
+    public Task PreserveFromExpression_SingleParameter_SimpleField()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        // Act - preserve field referenced in expression
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_SingleParameter_MultipleFields()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Age:age");
+
+        // Act - preserve multiple fields from expression
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email != null && user.Name != null && user.Age > 18,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_SingleParameter_NestedField()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Name:name")
+            .AddField("data.edges.node.Profile:profile.Bio:bio")
+            .AddField("data.edges.node.Settings:settings.Theme:theme");
+
+        // Act - preserve nested field from expression
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithProfile user) => user.Profile.Name != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_SingleParameter_WholeObjectReference()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Name:name")
+            .AddField("data.edges.node.Profile:profile.Bio:bio")
+            .AddField("data.edges.node.Profile:profile.Avatar:avatar");
+
+        // Act - reference whole object (should preserve all fields of that type)
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithProfile user) => user.Profile != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_SingleParameter_MethodCall()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        // Act - preserve field used in method call
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email.Contains("@example.com"),
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_NoNodePath_PreservesDirectly()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:userId")
+            .AddField("email")
+            .AddField("name");
+
+        // Act - no nodePath specified
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression((TestDataModels.SimpleUser user) => user.Email != null)
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_ChainedCalls_AccumulatesFields()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Age:age");
+
+        // Act - chain multiple PreserveFromExpression calls
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email != null,
+                "edges.node")
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Name != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_WithNavigationProperty_ExpandsToActualFields()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.FirstDepositTime:firstDepositTime")
+            .AddField("data.edges.node.SecondDepositTime:secondDepositTime");
+
+        // Act - reference navigation property (should expand to actual settable fields)
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.DepositInfo deposit) => deposit.Date != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_ComplexBooleanLogic_PreservesAllReferencedFields()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Age:age")
+            .AddField("data.edges.node.Status:status");
+
+        // Act - complex boolean expression
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) =>
+                    (user.Email != null && user.Name != null) || (user.Age > 18 && user.Status == "active"),
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_WithAlwaysPreserveFields_IncludesExtraFields()
+    {
+        // Arrange
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "QueryA" } }
+        };
+
+        // Act - specify always-preserve fields
+        var result = PreservationBuilder.Create(queryA)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email != null,
+                "edges.node",
+                localMap,
+                "UserId")
+            .Build();
+
+        // Assert - should preserve BOTH Email (from expression) AND UserId (from alwaysPreserveFields)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_NullConditionalOperator_PreservesField()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Name:name")
+            .AddField("data.edges.node.Profile:profile.Bio:bio");
+
+        // Act - use null-conditional operator
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithProfile user) => user.Profile.Name != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_TernaryOperator_PreservesAllBranches()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Status:status");
+
+        // Act - use ternary operator
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Status == "active" ? user.Email : user.Name,
+                "edges.node")
+            .Build();
+
+        // Assert - should preserve status, email, and name
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_StringOperations_PreservesField()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        // Act - use string operations
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) =>
+                    user.Email.ToLower().Contains("@") &&
+                    user.Name.StartsWith("A"),
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_NumericComparisons_PreservesField()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Age:age")
+            .AddField("data.edges.node.Score:score");
+
+        // Act - use numeric comparisons
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) =>
+                    user.Age >= 18 && user.Age <= 65,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_NestedObjects_PreservesFullPath()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Address:address.City:city")
+            .AddField("data.edges.node.Profile:profile.Address:address.Street:street")
+            .AddField("data.edges.node.Profile:profile.Name:name");
+
+        // Act - reference deeply nested field
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestDataModels.UserWithAddress>(
+                user => user.Profile!.Address!.City == "New York",
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_ArrayIndexing_PreservesArray()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Tags:tags")
+            .AddField("data.edges.node.Scores:scores");
+
+        // Act - reference array indexing
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestDataModels.UserWithArrays>(
+                user => user.Tags![0] == "premium" && user.Scores!.Length > 0,
+                "edges.node")
+            .Build();
+
+        // Assert - should preserve tags and scores
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_MultiParameter_DifferentTypes_PreservesCorrectly()
+    {
+        // Arrange
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email");
+
+        var queryB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.ProductId:productId")
+            .AddField("data.edges.node.Name:name");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.NeverMerge)
+            .Include(queryA)
+            .Include(queryB);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "QueryA" } },
+            { "product", new[] { "QueryB" } }
+        };
+
+        // Act - different parameter types
+        Expression<Func<TestDataModels.SimpleUser, TestDataModels.Product, bool>> expr =
+            (user, product) => user.Email != null && product.Name != null;
+
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (Expression)expr,
+                "edges.node",
+                localMap)
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveFromExpression_WithAlwaysPreserveFields_EmptyArray_OnlyPreservesExpression()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", new[] { "TestQuery" } }
+        };
+
+        // Act - no alwaysPreserveFields parameter (uses overload without it)
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user.Email != null,
+                "edges.node",
+                localMap)
+            .Build();
+
+        // Assert - should only preserve Email from the expression
+        return result.Verify();
+    }
+}

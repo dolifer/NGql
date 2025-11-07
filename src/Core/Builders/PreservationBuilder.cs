@@ -55,10 +55,23 @@ public sealed class PreservationBuilder
             var (nodeField, _) = FindNodeByPath(_sourceQuery.Definition.Fields, fullNodePath);
             if (nodeField?.Fields != null)
             {
-                var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
-                if (match.HasValue)
+                // Handle nested field paths (e.g., "profile.name" means navigate to profile, then find name)
+                if (fieldPath.Contains('.'))
                 {
-                    Preserve($"{fullNodePath}.{match.Value.Key}");
+                    var resolvedPath = ResolveNestedPath(nodeField.Fields, fieldPath, fullNodePath);
+                    if (resolvedPath != null)
+                    {
+                        Preserve(resolvedPath);
+                    }
+                }
+                else
+                {
+                    // Simple field name - direct lookup
+                    var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
+                    if (match.HasValue)
+                    {
+                        Preserve($"{fullNodePath}.{match.Value.Key}");
+                    }
                 }
             }
         }
@@ -237,6 +250,13 @@ public sealed class PreservationBuilder
                         string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
                         p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
                         .ToHashSet();
+
+                    // If no paths matched with prefix, but we have extracted paths and only one parameter,
+                    // assume the paths are already stripped (no prefix) and use all of them
+                    if (parameterPaths.Count == 0 && extractedPaths.Count > 0 && paramsForPath.Count == 1)
+                    {
+                        parameterPaths = extractedPaths;
+                    }
 
                     // Get the specific type for THIS parameter
                     parameterTypes.TryGetValue(paramName, out var specificParameterType);

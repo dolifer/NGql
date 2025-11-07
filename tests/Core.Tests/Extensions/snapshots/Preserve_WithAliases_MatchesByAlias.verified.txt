@@ -3,9 +3,9 @@
         edges{
             node{
                 Profile:profile{
-                    Age:age
-                    Name:name
+                    DisplayName:name
                 }
+                UserEmail:email
                 UserId:userId
             }
         }

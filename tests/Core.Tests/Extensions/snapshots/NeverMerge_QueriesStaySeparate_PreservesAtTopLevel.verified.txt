@@ -1,4 +1,0 @@
-﻿query PreservedQuery{
-    PreservedQuery:data
-    PreservedQuery_1:data
-}

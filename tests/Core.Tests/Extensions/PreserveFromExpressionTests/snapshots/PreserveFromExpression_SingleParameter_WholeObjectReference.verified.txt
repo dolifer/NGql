@@ -3,10 +3,10 @@
         edges{
             node{
                 Profile:profile{
-                    Age:age
+                    Avatar:avatar
+                    Bio:bio
                     Name:name
                 }
-                UserId:userId
             }
         }
     }

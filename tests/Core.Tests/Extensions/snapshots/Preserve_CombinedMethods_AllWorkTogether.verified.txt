@@ -2,9 +2,9 @@
     TestQuery:data{
         edges{
             node{
+                Email:email
                 Profile:profile{
-                    Age:age
-                    Name:name
+                    Bio:bio
                 }
                 UserId:userId
             }

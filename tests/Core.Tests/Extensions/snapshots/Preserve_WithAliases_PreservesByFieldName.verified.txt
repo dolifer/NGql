@@ -1,8 +1,0 @@
-﻿query PreservedQuery{
-    UserAlias:user{
-        ProfileAlias:profile{
-            bio
-            name
-        }
-    }
-}

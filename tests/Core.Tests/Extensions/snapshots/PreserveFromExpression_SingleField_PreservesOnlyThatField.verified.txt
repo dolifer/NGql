@@ -1,9 +1,0 @@
-﻿query PreservedQuery{
-    PreservedQuery:data{
-        edges{
-            node{
-                id
-            }
-        }
-    }
-}

@@ -3,10 +3,10 @@
         edges{
             node{
                 Profile:profile{
-                    Age:age
-                    Name:name
+                    Address:address{
+                        City:city
+                    }
                 }
-                UserId:userId
             }
         }
     }
