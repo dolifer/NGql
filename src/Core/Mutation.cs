@@ -2,14 +2,9 @@
 
 namespace NGql.Core;
 
-public sealed class Mutation
+public sealed class Mutation(string name, params Variable[] variables)
 {
-    private readonly QueryBlock _block;
-
-    public Mutation(string name, params Variable[] variables)
-    {
-        _block = new QueryBlock(name, "mutation", variables: variables);
-    }
+    private readonly QueryBlock _block = new(name, "mutation", variables: variables);
 
     /// <inheritdoc cref="QueryBlock.Name"/>
     public string Name => _block.Name;

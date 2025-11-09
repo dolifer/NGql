@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 using NGql.Core.Features;
 
 namespace NGql.Core.Builders;
@@ -24,16 +24,16 @@ public sealed class PreservationBuilder
     /// <summary>
     /// Core method: adds paths to preserve with automatic cleanup of parent/child relationships.
     /// </summary>
-    public PreservationBuilder Preserve(params string[] fieldPaths)
+    public PreservationBuilder Preserve(params string[]? fieldPaths)
     {
         if (fieldPaths == null || fieldPaths.Length == 0) return this;
 
         foreach (var path in fieldPaths.Where(p => !string.IsNullOrWhiteSpace(p)))
         {
             // Remove parent paths when adding more specific child
-            _pathsToPreserve.RemoveWhere(existing => 
+            _pathsToPreserve.RemoveWhere(existing =>
                 path.StartsWith(existing + ".", StringComparison.OrdinalIgnoreCase));
-            
+
             _pathsToPreserve.Add(path);
         }
 
@@ -52,49 +52,28 @@ public sealed class PreservationBuilder
             if (pathToNode.Length == 0) continue;
 
             var fullNodePath = string.Join(".", pathToNode) + "." + nodePath.Split('.')[^1];
-            var (nodeField, _) = FindNodeByPath(_sourceQuery.Definition.Fields, fullNodePath);
-            if (nodeField?.Fields != null)
+            var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
+            if (nodeField == null || !nodeField.HasFields) continue;
+
+            if (fieldPath.Contains('.'))
             {
-                // Handle nested field paths (e.g., "profile.name" means navigate to profile, then find name)
-                if (fieldPath.Contains('.'))
+                var resolvedPath = QueryDefinitionExtensions.NavigatePath(nodeField.Fields, fieldPath.AsSpan(), out var resolved, fullNodePath)
+                    != null ? resolved : null;
+                if (resolvedPath != null)
                 {
-                    var resolvedPath = ResolveNestedPath(nodeField.Fields, fieldPath, fullNodePath);
-                    if (resolvedPath != null)
-                    {
-                        Preserve(resolvedPath);
-                    }
+                    Preserve(resolvedPath);
                 }
-                else
+            }
+            else
+            {
+                var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
+                if (match.HasValue)
                 {
-                    // Simple field name - direct lookup
-                    var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
-                    if (match.HasValue)
-                    {
-                        Preserve($"{fullNodePath}.{match.Value.Key}");
-                    }
+                    Preserve($"{fullNodePath}.{match.Value.Key}");
                 }
             }
         }
         return this;
-    }
-
-    private static (FieldDefinition?, string) FindNodeByPath(SortedDictionary<string, FieldDefinition> fields, string nodePath)
-    {
-        var segments = nodePath.Split('.');
-        var current = fields;
-        FieldDefinition? lastField = null;
-        var pathSegments = new List<string>();
-
-        foreach (var segment in segments)
-        {
-            var match = PreserveExtensions.FindFieldByNameOrAlias(current, segment.AsSpan());
-            if (!match.HasValue || match.Value.Value.Fields == null) return (null, string.Empty);
-            lastField = match.Value.Value;
-            pathSegments.Add(match.Value.Key);
-            current = lastField.Fields;
-        }
-
-        return (lastField, string.Join(".", pathSegments));
     }
 
     /// <summary>
@@ -116,8 +95,8 @@ public sealed class PreservationBuilder
         => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression), alwaysPreserveFields);
 
     public QueryBuilder Build()
-        => _pathsToPreserve.Count == 0 
-            ? _sourceQuery 
+        => _pathsToPreserve.Count == 0
+            ? _sourceQuery
             : _sourceQuery.Preserve(_pathsToPreserve.ToArray());
 
     private static Type? InferTypeFromLambda(Expression expression)
@@ -125,539 +104,15 @@ public sealed class PreservationBuilder
             ? lambda.Parameters[0].Type
             : null;
 
-    private static string[]? GetParameterNames(Expression expression)
-        => expression is LambdaExpression lambda && lambda.Parameters.Count > 0
-            ? lambda.Parameters.Where(n => n.Name != null).Select(p => p.Name!).ToArray()
-            : null;
-
-    /// <summary>
-    /// Extracts a dictionary mapping parameter names to their types from a lambda expression.
-    /// Returns empty dictionary if the expression is not a lambda or has no parameters.
-    /// </summary>
-    private static Dictionary<string, Type> GetParameterTypes(Expression expression)
-    {
-        if (expression is not LambdaExpression lambda || lambda.Parameters.Count == 0)
-        {
-            return new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return lambda.Parameters
-            .Where(p => p.Name != null)
-            .ToDictionary(p => p.Name!, p => p.Type, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private string? ResolveFullPath(string fieldPath, string nodePath)
-    {
-        var pathToNode = _sourceQuery.GetPathTo(_sourceQuery.Definition.Name, nodePath);
-        if (pathToNode == null || pathToNode.Length == 0)
-        {
-            return null;
-        }
-
-        var lastSegment = nodePath.Split('.')[^1];
-        return $"{string.Join(".", pathToNode)}.{lastSegment}.{fieldPath}";
-    }
-
-    private PreservationBuilder PreserveFromExpressionCore(Expression expression, string? nodePath, Dictionary<string, string[]>? localMap, Type? parameterType, string[]? alwaysPreserveFields)
-    {
-        var extractedPaths = ExpressionFieldExtractor.ExtractFieldPaths(expression);
-        var parameterNames = GetParameterNames(expression);
-        var parameterTypes = GetParameterTypes(expression);
-
-        if (string.IsNullOrWhiteSpace(nodePath))
-        {
-            // No nodePath: preserve extracted paths directly
-            return Preserve(extractedPaths.ToArray());
-        }
-
-        if (localMap != null && parameterNames != null)
-        {
-            // Use localMap to resolve starting point
-            return PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterTypes, alwaysPreserveFields);
-        }
-
-        // Fallback: use GetPathTo (legacy - uses first parameter type for backward compatibility)
-        return PreserveWithGetPathTo(extractedPaths, parameterNames?.FirstOrDefault(), nodePath, parameterType);
-    }
-
-    private PreservationBuilder PreserveWithLocalMap(
-        HashSet<string> extractedPaths,
-        string[] parameterNames,
-        string nodePath,
-        Dictionary<string, string[]> localMap,
-        Dictionary<string, Type> parameterTypes,
+    private PreservationBuilder PreserveFromExpressionCore(
+        Expression expression,
+        string? nodePath,
+        Dictionary<string, string[]>? localMap,
+        Type? parameterType,
         string[]? alwaysPreserveFields)
     {
-        // Group parameters by their base path to handle multiple parameters mapping to same path
-        var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var paramName in parameterNames)
-        {
-            if (!localMap.TryGetValue(paramName, out var basePath)) continue;
-            
-            var basePathKey = string.Join(".", basePath);
-            if (!paramsByBasePath.ContainsKey(basePathKey))
-            {
-                paramsByBasePath[basePathKey] = new List<string>();
-            }
-            paramsByBasePath[basePathKey].Add(paramName);
-        }
-
-        // If alwaysPreserveFields is provided, ensure ALL localMap entries are processed
-        if (alwaysPreserveFields != null && alwaysPreserveFields.Length > 0)
-        {
-            foreach (var (paramName, basePath) in localMap)
-            {
-                var basePathKey = string.Join(".", basePath);
-                if (!paramsByBasePath.ContainsKey(basePathKey))
-                {
-                    paramsByBasePath[basePathKey] = new List<string>();
-                }
-            }
-        }
-
-        // Process each unique base path
-        foreach (var (basePathKey, paramsForPath) in paramsByBasePath)
-        {
-            var basePath = basePathKey.Split('.');
-            
-            // Collect ALL fields from ALL parameters that map to this base path
-            var allFieldsForPath = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            // Check if any paths have parameter prefixes
-            bool hasParameterPrefixes = extractedPaths.Any(p =>
-                paramsForPath.Any(param => p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase)));
-
-            // Only use "no prefix" mode when:
-            // 1. Multiple parameters map to this path (comparison scenario)
-            // 2. AND none have prefixes
-            bool useNoPrefixMode = !hasParameterPrefixes && paramsForPath.Count > 1;
-
-            if (useNoPrefixMode)
-            {
-                // No parameter prefixes in multi-parameter comparison
-                // Need to expand navigation properties for each parameter type
-                foreach (var paramName in paramsForPath)
-                {
-                    // Get the specific type for THIS parameter
-                    parameterTypes.TryGetValue(paramName, out var specificParameterType);
-
-                    // Expand navigation properties with the specific parameter type
-                    var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, null, specificParameterType);
-                    foreach (var field in fieldsToPreserve)
-                    {
-                        allFieldsForPath.Add(field);
-                    }
-                }
-            }
-            else
-            {
-                // Filter per parameter (works for both prefixed and non-prefixed single-parameter cases)
-                foreach (var paramName in paramsForPath)
-                {
-                    var parameterPaths = extractedPaths.Where(p =>
-                        string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
-                        p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
-                        .ToHashSet();
-
-                    // If no paths matched with prefix, but we have extracted paths and only one parameter,
-                    // assume the paths are already stripped (no prefix) and use all of them
-                    if (parameterPaths.Count == 0 && extractedPaths.Count > 0 && paramsForPath.Count == 1)
-                    {
-                        parameterPaths = extractedPaths;
-                    }
-
-                    // Get the specific type for THIS parameter
-                    parameterTypes.TryGetValue(paramName, out var specificParameterType);
-
-                    var fieldsToPreserve = GetFieldsToPreserve(parameterPaths, paramName, specificParameterType);
-                    foreach (var field in fieldsToPreserve)
-                    {
-                        allFieldsForPath.Add(field);
-                    }
-                }
-            }
-            
-            // Add always-preserve fields
-            if (alwaysPreserveFields != null)
-            {
-                foreach (var field in alwaysPreserveFields)
-                {
-                    allFieldsForPath.Add(field);
-                }
-            }
-            
-            // Navigate to node
-            var nodeField = NavigateToNode(basePath, nodePath);
-            if (nodeField?.Fields == null) continue;
-
-            var basePathStr = string.Join(".", basePath.Concat(nodePath.Split('.')));
-
-            foreach (var field in allFieldsForPath)
-            {
-                // Handle nested paths (e.g., "RegData.Region")
-                if (field.Contains('.'))
-                {
-                    var resolvedPath = ResolveNestedPath(nodeField.Fields, field, basePathStr);
-                    if (resolvedPath != null) Preserve(resolvedPath);
-                }
-                else
-                {
-                    // Simple field - first try direct match at current level
-                    var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, field.AsSpan());
-                    if (match.HasValue)
-                    {
-                        var matchingKey = match.Value.Key;
-                        // Check if this field has sub-fields (is an object)
-                        if (match.Value.Value.Fields != null && match.Value.Value.Fields.Count > 0)
-                        {
-                            // Object field: preserve all its sub-fields (greedy for this object)
-                            PreserveObjectFields(match.Value.Value.Fields, $"{basePathStr}.{matchingKey}");
-                        }
-                        else
-                        {
-                            // Leaf field: preserve just this field
-                            var fullPath = $"{basePathStr}.{matchingKey}";
-                            Preserve(fullPath);
-                        }
-                    }
-                    else
-                    {
-                        // Direct match failed - try recursive search through descendants
-                        var recursiveMatches = FindFieldRecursively(nodeField.Fields, field, "");
-                        foreach (var recursivePath in recursiveMatches)
-                        {
-                            var fullPath = $"{basePathStr}.{recursivePath}";
-                            Preserve(fullPath);
-                        }
-                    }
-                }
-            }
-        }
-
+        var processor = new ExpressionPreservationProcessor(_sourceQuery, path => Preserve(path));
+        processor.ProcessExpression(expression, nodePath, localMap, parameterType, alwaysPreserveFields);
         return this;
-    }
-
-    private void PreserveObjectFields(SortedDictionary<string, FieldDefinition> fields, string basePath)
-    {
-        foreach (var (key, fieldDef) in fields)
-        {
-            var fullPath = $"{basePath}.{key}";
-            Preserve(fullPath);
-        }
-    }
-
-    private static string? ResolveNestedPath(SortedDictionary<string, FieldDefinition> fields, string nestedPath, string basePath)
-    {
-        var segments = nestedPath.Split('.');
-        var currentFields = fields;
-        var resolvedSegments = new List<string>();
-
-        for (int i = 0; i < segments.Length; i++)
-        {
-            var segment = segments[i];
-            var match = PreserveExtensions.FindFieldByNameOrAlias(currentFields, segment.AsSpan());
-            if (!match.HasValue) return null;
-
-            resolvedSegments.Add(match.Value.Key);
-
-            // Only navigate to next level if we're not at the last segment
-            // Leaf fields (last segment) are allowed to have no sub-fields
-            if (i < segments.Length - 1)
-            {
-                if (match.Value.Value.Fields == null) return null;
-                currentFields = match.Value.Value.Fields;
-            }
-        }
-
-        return $"{basePath}.{string.Join(".", resolvedSegments)}";
-    }
-
-    private PreservationBuilder PreserveWithGetPathTo(
-        HashSet<string> extractedPaths,
-        string? paramName,
-        string nodePath,
-        Type? parameterType)
-    {
-        var fieldsToPreserve = GetFieldsToPreserve(extractedPaths, paramName, parameterType);
-        
-        foreach (var field in fieldsToPreserve)
-        {
-            // For nested paths, resolve each segment
-            if (field.Contains('.'))
-            {
-                var segments = field.Split('.');
-                var firstSegment = segments[0];
-                var remainingPath = string.Join(".", segments.Skip(1));
-                
-                // Preserve the first segment at nodePath, then the rest
-                var fullPath = ResolveFullPath(firstSegment, nodePath);
-                if (fullPath != null)
-                {
-                    Preserve($"{fullPath}.{remainingPath}");
-                }
-            }
-            else
-            {
-                PreserveAtPath(field, nodePath);
-            }
-        }
-
-        return this;
-    }
-
-    private static HashSet<string> GetFieldsToPreserve(HashSet<string> extractedPaths, string? paramName, Type? parameterType)
-    {
-        HashSet<string>? result = null;
-        bool hasOnlyParameterName = false;
-
-        foreach (var path in extractedPaths)
-        {
-            // Check if this is just the parameter name (e.g., "user" in "user != null")
-            if (IsParameterName(path, paramName))
-            {
-                hasOnlyParameterName = true;
-                continue;
-            }
-
-            // Strip parameter prefix (e.g., "playerProfile.RegData.Region" => "RegData.Region")
-            var field = !string.IsNullOrEmpty(paramName) && path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
-                ? path.Substring(paramName.Length + 1)
-                : path;
-
-            if (!string.IsNullOrEmpty(field))
-            {
-                result ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                // Check if this is a navigation property and expand it
-                var expanded = ExpandNavigationProperty(field, parameterType);
-                foreach (var expandedField in expanded)
-                {
-                    result.Add(expandedField);
-                }
-            }
-        }
-
-        // Apply "most specific wins" rule: remove broader paths if more specific ones exist
-        if (result != null && result.Count > 1)
-        {
-            result = FilterToMostSpecific(result);
-        }
-
-        // Greedy: if only parameter name was checked (e.g., "user != null"), preserve all type fields
-        if (hasOnlyParameterName && (result == null || result.Count == 0) && parameterType != null)
-        {
-            result ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                result.Add(prop.Name);
-            }
-        }
-
-        return result ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Expands a field name if it's a navigation property (getter-only computed property).
-    /// For navigation properties, returns all settable properties from the type.
-    /// Otherwise, returns the original field name.
-    /// Handles nested paths like "profile.name" by only checking the first segment.
-    /// </summary>
-    private static HashSet<string> ExpandNavigationProperty(string fieldName, Type? parameterType)
-    {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (parameterType == null)
-        {
-            result.Add(fieldName);
-            return result;
-        }
-
-        try
-        {
-            // Handle nested paths - only check the first segment for navigation properties
-            string firstSegment;
-            string? remainingPath = null;
-
-            var dotIndex = fieldName.IndexOf('.');
-            if (dotIndex > 0)
-            {
-                firstSegment = fieldName.Substring(0, dotIndex);
-                remainingPath = fieldName.Substring(dotIndex + 1);
-            }
-            else
-            {
-                firstSegment = fieldName;
-            }
-
-            // Get the property from the type (only first segment)
-            var property = parameterType.GetProperty(firstSegment, BindingFlags.Public | BindingFlags.Instance);
-            if (property == null)
-            {
-                result.Add(fieldName);
-                return result;
-            }
-
-            // Check if this is a navigation property (getter-only, no setter)
-            if (property.SetMethod == null && property.GetGetMethod()?.IsPublic == true)
-            {
-                // This is a navigation property - get all SETTABLE properties
-                foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                {
-                    // Skip navigation properties themselves (getter-only)
-                    if (prop.SetMethod != null)
-                    {
-                        // If there was a remaining path, append it to each expanded property
-                        if (remainingPath != null)
-                        {
-                            result.Add($"{prop.Name}.{remainingPath}");
-                        }
-                        else
-                        {
-                            result.Add(prop.Name);
-                        }
-                    }
-                }
-            }
-            else
-            {
-                // Not a navigation property - check if we need to recurse for nested path
-                if (remainingPath != null && property.PropertyType != null)
-                {
-                    // Recurse on the remaining path with the property's type
-                    var nestedExpanded = ExpandNavigationProperty(remainingPath, property.PropertyType);
-                    foreach (var nestedField in nestedExpanded)
-                    {
-                        result.Add($"{firstSegment}.{nestedField}");
-                    }
-                }
-                else
-                {
-                    // Just return the field name
-                    result.Add(fieldName);
-                }
-            }
-        }
-        catch
-        {
-            // If anything fails during reflection, just return the original field name
-            result.Add(fieldName);
-        }
-
-        return result;
-    }
-
-    private static HashSet<string> FilterToMostSpecific(HashSet<string> paths)
-    {
-        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var pathList = paths.ToList();
-
-        foreach (var path in pathList)
-        {
-            // Check if any other path is more specific (starts with this path + ".")
-            bool hasMoreSpecific = pathList.Any(other => 
-                other.Length > path.Length && 
-                other.StartsWith(path + ".", StringComparison.OrdinalIgnoreCase));
-
-            // Only add if no more specific path exists
-            if (!hasMoreSpecific)
-            {
-                result.Add(path);
-            }
-        }
-
-        return result;
-    }
-
-    private static bool IsParameterName(string path, string? paramName)
-        => !string.IsNullOrEmpty(paramName) &&
-           string.Equals(path, paramName, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Recursively searches for a field by name through all descendant nodes.
-    /// Returns the full paths to all matching fields.
-    /// </summary>
-    private static List<string> FindFieldRecursively(SortedDictionary<string, FieldDefinition> fields, string fieldName, string basePath)
-    {
-        var results = new List<string>();
-
-        foreach (var (key, fieldDef) in fields)
-        {
-            var currentPath = string.IsNullOrEmpty(basePath) ? key : $"{basePath}.{key}";
-
-            // Check if THIS specific field matches by name or alias
-            if (string.Equals(fieldDef.Name, fieldName, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrEmpty(fieldDef.Alias) && string.Equals(fieldDef.Alias, fieldName, StringComparison.OrdinalIgnoreCase)))
-            {
-                results.Add(currentPath);
-            }
-
-            // Recursively search child fields
-            if (fieldDef.Fields != null && fieldDef.Fields.Count > 0)
-            {
-                var childResults = FindFieldRecursively(fieldDef.Fields, fieldName, currentPath);
-                results.AddRange(childResults);
-            }
-        }
-
-        return results;
-    }
-
-    private FieldDefinition? NavigateToNode(string[] basePath, string nodePath)
-    {
-        var current = _sourceQuery.Definition.Fields;
-        
-        // Navigate through base path - first segment might be an alias
-        if (basePath.Length > 0)
-        {
-            var firstSegment = basePath[0];
-            // Find field by alias first (for merged queries)
-            var field = current.Values.FirstOrDefault(f => 
-                string.Equals(f.Alias, firstSegment, StringComparison.OrdinalIgnoreCase));
-            
-            // Fallback to name match
-            if (field == null && !TryNavigateToField(current, firstSegment, out field))
-            {
-                return null;
-            }
-            
-            if (field?.Fields == null) return null;
-            current = field.Fields;
-            
-            // Navigate remaining base path segments
-            for (int i = 1; i < basePath.Length; i++)
-            {
-                if (!TryNavigateToField(current, basePath[i], out field) || field?.Fields == null) return null;
-                current = field.Fields;
-            }
-        }
-
-        // Navigate through node path
-        FieldDefinition? lastField = null;
-        foreach (var segment in nodePath.Split('.'))
-        {
-            if (!TryNavigateToField(current, segment, out lastField) || lastField?.Fields == null) return null;
-            current = lastField.Fields;
-        }
-
-        return lastField;
-    }
-
-    private static bool TryNavigateToField(SortedDictionary<string, FieldDefinition> fields, string segment, out FieldDefinition? field)
-    {
-        if (fields.TryGetValue(segment, out field))
-        {
-            return true;
-        }
-
-        var match = PreserveExtensions.FindFieldByNameOrAlias(fields, segment.AsSpan());
-        if (!match.HasValue)
-        {
-            field = null;
-            return false;
-        }
-
-        field = match.Value.Value;
-        return true;
     }
 }

@@ -21,9 +21,7 @@ public static class ExpressionFieldExtractor
     /// </code>
     /// </example>
     public static HashSet<string> ExtractFieldPaths<T>(Expression<Func<T, bool>> predicate)
-    {
-        return ExtractFieldPaths((Expression)predicate);
-    }
+        => ExtractFieldPaths((Expression)predicate);
 
     /// <summary>
     /// Extracts field paths from a typed selector expression.
@@ -40,9 +38,7 @@ public static class ExpressionFieldExtractor
     /// </code>
     /// </example>
     public static HashSet<string> ExtractFieldPaths<T, TResult>(Expression<Func<T, TResult>> selector)
-    {
-        return ExtractFieldPaths((Expression)selector);
-    }
+        => ExtractFieldPaths((Expression)selector);
 
     /// <summary>
     /// Extracts field paths from any expression.
@@ -72,7 +68,6 @@ public static class ExpressionFieldExtractor
     private sealed class FieldPathVisitor : ExpressionVisitor
     {
         public HashSet<string> FieldPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<Expression> _visitedMembers = new(ReferenceEqualityComparer.Instance);
         private readonly Stack<string> _lambdaContextPaths = new();
         private ParameterExpression? _rootParameter;
         private readonly HashSet<Type> _rootParameterTypes = new();
@@ -162,25 +157,12 @@ public static class ExpressionFieldExtractor
         }
 
         /// <summary>
-        /// Marks all member expressions in a chain as visited to prevent duplicate processing.
-        /// </summary>
-        private void MarkMemberChainAsVisited(MemberExpression node)
-        {
-            var current = node;
-            while (current != null)
-            {
-                _visitedMembers.Add(current);
-                current = current.Expression as MemberExpression;
-            }
-        }
-
-        /// <summary>
         /// Visits method call expressions (e.g., LINQ methods like First, Where, Any).
         /// Tracks the base path for LINQ methods to properly resolve lambda parameter references.
         /// </summary>
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
-            var isLinqMethod = IsLinqMethod(node.Method.Name);
+            var isLinqMethod = IsLinqMethod(node);
 
             // Get the base path BEFORE visiting (so expressions aren't marked as visited yet)
             string? basePath = null;
@@ -230,13 +212,12 @@ public static class ExpressionFieldExtractor
         }
 
         /// <summary>
-        /// Determines if a method name is a LINQ method that operates on collections.
+        /// Determines if a method is a LINQ extension method from System.Linq.
         /// </summary>
-        private static bool IsLinqMethod(string methodName)
+        private static bool IsLinqMethod(MethodCallExpression node)
         {
-            return methodName is "First" or "FirstOrDefault" or "Last" or "LastOrDefault" or
-                   "Single" or "SingleOrDefault" or "Where" or "Any" or "All" or
-                   "Select" or "SelectMany" or "Count" or "Sum" or "Average" or "Min" or "Max";
+            var declaringType = node.Method.DeclaringType;
+            return declaringType is { Namespace: "System.Linq", Name: "Enumerable" or "Queryable" };
         }
 
         /// <summary>

@@ -7,105 +7,31 @@ namespace NGql.Core.Pooling;
 /// </summary>
 internal static class LockFreeHashSetPool
 {
-    private const int ThreadLocalCacheSize = 2;
-    private const int GlobalPoolSize = 24;
     private const int MaxSize = 128; // Prevent memory bloat from large sets
-    
-    // Thread-local storage for per-thread caches
-    [ThreadStatic]
-    private static ThreadLocalCache? _cache;
-    
-    // Global lock-free fallback pool with monitoring
-    private static readonly MonitoredLockFreeStack<HashSet<string>> _globalPool = new();
-    private static volatile int _globalCount = 0;
+
+    private static readonly ThreadLocalPool<HashSet<string>> _pool = new(
+        factory: () => new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+        reset: set => set.Clear(),
+        validateForReturn: set => set.Count <= MaxSize, // Skip very large sets to prevent memory bloat
+        poolName: "hashset"
+    );
 
     /// <summary>
-    /// Thread-local cache for HashSet instances
-    /// </summary>
-    private sealed class ThreadLocalCache
-    {
-        private readonly HashSet<string>?[] _items = new HashSet<string>?[ThreadLocalCacheSize];
-        private int _count = 0;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGet(out HashSet<string> set)
-        {
-            if (_count > 0)
-            {
-                var index = --_count;
-                set = _items[index]!;
-                _items[index] = null;
-                ThreadLocalMemoryManager.RecordThreadLocalHit("hashset");
-                return true;
-            }
-            set = null!;
-            return false;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryReturn(HashSet<string> set)
-        {
-            // Only cache reasonably sized sets to prevent memory bloat
-            if (_count < ThreadLocalCacheSize && set.Count <= MaxSize)
-            {
-                set.Clear();
-                _items[_count++] = set;
-                return true;
-            }
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Gets a HashSet from thread-local cache first, then global pool, or creates new
+    /// Gets an empty pooled HashSet (for warmup/testing)
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static HashSet<string> Get()
-    {
-        // ULTRA FAST PATH: Thread-local cache hit
-        var cache = _cache ??= new ThreadLocalCache();
-        if (cache.TryGet(out var set))
-        {
-            return set;
-        }
-
-        // FAST PATH: Global lock-free pool
-        if (_globalPool.TryPop(out set))
-        {
-            Interlocked.Decrement(ref _globalCount);
-            return set;
-        }
-
-        // SLOW PATH: Allocate new HashSet
-        ThreadLocalMemoryManager.RecordAllocation("hashset");
-        return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-    }
+    internal static PooledHashSet GetPooled() => new(_pool.Get());
 
     /// <summary>
-    /// Returns HashSet to thread-local cache first, then global pool
+    /// Gets a pooled HashSet populated from source
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Return(HashSet<string> set)
+    internal static PooledHashSet GetPooled(HashSet<string> source)
     {
-        if (set == null) return;
-
-        // Skip very large sets to prevent memory bloat
-        if (set.Count > MaxSize) return;
-
-        // ULTRA FAST PATH: Return to thread-local cache
-        var cache = _cache ??= new ThreadLocalCache();
-        if (cache.TryReturn(set))
-        {
-            return;
-        }
-
-        // FAST PATH: Return to global pool if not full
-        if (_globalCount < GlobalPoolSize)
-        {
-            set.Clear();
-            _globalPool.Push(set);
-            Interlocked.Increment(ref _globalCount);
-        }
+        var set = _pool.Get();
+        foreach (var item in source)
+            set.Add(item);
+        return new PooledHashSet(set);
     }
 
     /// <summary>
@@ -114,18 +40,28 @@ internal static class LockFreeHashSetPool
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static PooledHashSet GetPooled(IEnumerable<string> source)
     {
-        var set = Get();
+        var set = _pool.Get();
         foreach (var item in source)
             set.Add(item);
         return new PooledHashSet(set);
     }
 
     /// <summary>
-    /// Gets an empty pooled HashSet
+    /// Returns HashSet to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static PooledHashSet GetPooled()
+    private static void Return(HashSet<string> set)
     {
-        return new PooledHashSet(Get());
+        _pool.Return(set);
+    }
+
+    /// <summary>
+    /// Zero-allocation ref struct wrapper with lock-free pooling
+    /// </summary>
+    internal ref struct PooledHashSet
+    {
+        public readonly HashSet<string> Set;
+        internal PooledHashSet(HashSet<string> set) => Set = set;
+        public void Dispose() => Return(Set);
     }
 }
