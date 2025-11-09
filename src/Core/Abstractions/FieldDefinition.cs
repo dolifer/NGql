@@ -102,6 +102,12 @@ public sealed record FieldDefinition
     [JsonIgnore]
     public bool IsNullable => _isNullable ??= _type.IsNullableType();
 
+    /// <summary>
+    /// Gets a value indicating whether this field has child fields.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasFields => _fields is { Count: > 0 };
+
     // Methods
     public override string ToString()
     {

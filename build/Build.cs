@@ -6,7 +6,7 @@ using Nuke.Common.ProjectModel;
 using Nuke.Common.Tooling;
 using Nuke.Common.Tools.Coverlet;
 using Nuke.Common.Tools.DotNet;
-using Nuke.Common.Tools.MinVer;
+using Nuke.Common.Tools.GitVersion;
 using Nuke.Common.Tools.ReportGenerator;
 using static Nuke.Common.Tools.DotNet.DotNetTasks;
 using static Nuke.Common.Tools.ReportGenerator.ReportGeneratorTasks;
@@ -18,8 +18,10 @@ class Build : NukeBuild
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
+    [Required] const string MinNetCoreVersion = "net8.0";
+
     [Required] [Solution] readonly Solution Solution;
-    [MinVer(Framework = "net7.0")] readonly MinVer MinVer;
+    [GitVersion] readonly GitVersion GitVersion;
     [Required] [GitRepository] readonly GitRepository GitRepository;
     
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
@@ -55,9 +57,9 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetProjectFile(Solution)
                 .SetConfiguration(Configuration)
-                .SetAssemblyVersion(MinVer.AssemblyVersion)
-                .SetFileVersion(MinVer.FileVersion)
-                .SetInformationalVersion(MinVer.Version));
+                .SetAssemblyVersion(GitVersion.AssemblySemVer)
+                .SetFileVersion(GitVersion.AssemblySemFileVer)
+                .SetInformationalVersion(GitVersion.InformationalVersion));
         });
 
     Target Test => _ => _
@@ -94,7 +96,7 @@ class Build : NukeBuild
                 .SetRepositoryUrl(GitRepository.HttpsUrl)
                 .SetConfiguration(Configuration)
                 .SetOutputDirectory(PackagesDirectory)
-                .SetVersion(MinVer.PackageVersion));
+                .SetVersion(GitVersion.NuGetVersionV2));
         });
 
     Target Publish => _ => _
@@ -125,6 +127,6 @@ class Build : NukeBuild
                 .SetReports(CoverletResultDirectory / "*.xml")
                 .SetReportTypes(ReportTypes.HtmlInline_AzurePipelines, ReportTypes.Badges)
                 .SetTargetDirectory(CoverageReportDirectory)
-                .SetFramework("net7.0"));
+                .SetFramework(MinNetCoreVersion));
         });
 }

@@ -13,8 +13,5 @@ internal static class CharArrayPool
     
     internal static void Return(char[] array, bool clearArray = false) => Pool.Return(array, clearArray);
 
-    internal static PooledCharArray GetPooled(int minimumLength)
-    {
-        return new PooledCharArray(Rent(minimumLength), minimumLength);
-    }
+    internal static PooledCharArray GetPooled(int minimumLength) => new(Rent(minimumLength), minimumLength);
 }

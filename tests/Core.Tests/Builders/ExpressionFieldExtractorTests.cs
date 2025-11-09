@@ -20,24 +20,16 @@ public class ExpressionFieldExtractorTests
     private class UserData
     {
         public ProfileData profile { get; set; } = null!;
-        public SettingsData settings { get; set; } = null!;
-        public int age { get; set; }
-        public string? email { get; set; }
-        public bool isActive { get; set; }
+        public int age { get; }
+        public string? email { get; }
+        public bool isActive { get; }
     }
 
     private class ProfileData
     {
-        public string? name { get; set; }
-        public string? email { get; set; }
-        public string? phone { get; set; }
-        public int age { get; set; }
-    }
-
-    private class SettingsData
-    {
-        public string? theme { get; set; }
-        public string? language { get; set; }
+        public string? name { get; }
+        public string? email { get; }
+        public int age { get; }
     }
 
     private class MetricsData
@@ -53,9 +45,7 @@ public class ExpressionFieldExtractorTests
 
     private class DepositsData
     {
-        public decimal firstDepositAmount { get; set; }
-        public DateTime? firstDepositDate { get; set; }
-        public string? firstDepositPaymentSystem { get; set; }
+        public decimal firstDepositAmount { get; }
     }
 
     private class OnceADayData
@@ -70,8 +60,8 @@ public class ExpressionFieldExtractorTests
 
     private class PreferenceData
     {
-        public string? sport { get; set; }
-        public int totalBetsCount { get; set; }
+        public string? sport { get; }
+        public int totalBetsCount { get; }
     }
 
     [Fact]
@@ -229,7 +219,7 @@ public class ExpressionFieldExtractorTests
     {
         // Arrange
         Expression<Func<TestModel, bool>> expr = x =>
-            x.metrics.onceADay.sport.preferences.First().totalBetsCount > 0;
+            x.metrics.onceADay.sport.preferences[0].totalBetsCount > 0;
 
         // Act
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
@@ -272,8 +262,8 @@ public class ExpressionFieldExtractorTests
     public void ExtractFieldPaths_WithLinqWhere()
     {
         // Arrange
-        Expression<Func<TestModel, bool>> expr = x =>
-            x.metrics.onceADay.sport.preferences.Where(p => p.sport == "F").Any();
+        Expression<Func<TestModel, IEnumerable<PreferenceData>>> expr = x =>
+            x.metrics.onceADay.sport.preferences.Where(p => p.sport == "F");
 
         // Act
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);

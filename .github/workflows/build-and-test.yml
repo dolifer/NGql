@@ -14,23 +14,19 @@ jobs:
     steps:
       - uses: actions/checkout@v1
         with:
-          fetch-depth: 0
-      - name: Install net6.0
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '6.0.x'
-      - name: Install net7.0
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '7.0.x'
-      - name: Install net8.0
+          fetch-depth: 0      
+      - name: Install net8.x
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '8.0.x'
-      - name: Install net9.0
+      - name: Install net9.x
         uses: actions/setup-dotnet@v1
         with:
           dotnet-version: '9.0.x'
+      - name: Install net10.x
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '10.0.x'
       - name: Run ./build.sh Coverage
         run: ./build.sh Coverage
         env:

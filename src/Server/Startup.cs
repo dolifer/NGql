@@ -1,5 +1,7 @@
 using System.Diagnostics.CodeAnalysis;
-using GraphQL.Server;
+using System.Threading.Tasks;
+using GraphQL;
+using GraphQL.Execution;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,24 +24,30 @@ public class Startup
             .AddMediatR(c => c.RegisterServicesFromAssemblyContaining<Startup>());
 
         services
-            .AddSingleton<DemoSchema>()
-            .AddGraphQL((options, provider) =>
-            {
-                options.EnableMetrics = true;
-                var logger = provider.GetRequiredService<ILogger<Startup>>();
-                options.UnhandledExceptionDelegate = ctx => logger.LogError("{Error} occurred", ctx.OriginalException.Message);
-            })
-            // It is required when both GraphQL HTTP and GraphQL WebSockets middlewares are mapped to the same endpoint (by default 'graphql').
-            .AddDefaultEndpointSelectorPolicy()
-            // Add required services for GraphQL request/response de/serialization
-            .AddSystemTextJson() // For .NET Core 3+
-            .AddErrorInfoProvider(opt => opt.ExposeExceptionStackTrace = true)
-            .AddGraphTypes(typeof(DemoSchema)); // Add all IGraphType implementors in the assembly which ChatSchema exists
+            .AddGraphQL(b => b
+                .AddSchema<DemoSchema>()
+                .AddSystemTextJson()
+                .AddErrorInfoProvider(opt => opt.ExposeExceptionDetailsMode = ExposeExceptionDetailsMode.Message)
+                .AddGraphTypes(typeof(DemoSchema).Assembly) // Add all IGraphType implementors in the assembly which DemoSchema exists
+                .ConfigureExecutionOptions(options =>
+                {
+                    options.EnableMetrics = true;
+                    // Unhandled exception delegate will be set in Configure method with proper DI
+                })
+            );
     }
 
     // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env, ILogger<Startup> logger)
     {
+        // Configure GraphQL unhandled exception handling with injected logger
+        var executionOptions = app.ApplicationServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<ExecutionOptions>>();
+        executionOptions.Value.UnhandledExceptionDelegate = ctx =>
+        {
+            logger.LogError("{Error} occurred", ctx.OriginalException.Message);
+            return Task.CompletedTask;
+        };
+
         if (env.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -54,8 +62,8 @@ public class Startup
             // map HTTP middleware for schema at the default path /graphql
             endpoints.MapGraphQL<DemoSchema>();
 
-            // map playground middleware at the default path /ui/playground with default options
-            endpoints.MapGraphQLPlayground("/");
+            // map ui
+            endpoints.MapGraphQLGraphiQL("/");
         });
     }
 }

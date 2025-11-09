@@ -1,0 +1,23 @@
+tag-prefix: ''
+next-version: '2.0.0'
+
+branches:
+  main:
+    regex: ^master$|^main$
+    increment: Patch
+  develop:
+    regex: ^dev(elop)?(ment)?$
+    increment: Minor
+    label: preview
+  release:
+    regex: ^releases?[/-]
+    increment: None
+    label: beta
+  feature:
+    regex: ^features?[/-]
+    increment: Inherit
+    label: preview
+  hotfix:
+    regex: ^hotfix(es)?[/-]
+    increment: Patch
+    label: beta

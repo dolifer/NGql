@@ -45,7 +45,7 @@ internal static class ValueFormatter
             Enum enumValue => enumValue.ToString(),
             Variable variable => variable.Name,
 
-            _ => default
+            _ => null
         };
 
         return !string.IsNullOrWhiteSpace(stringValue);
