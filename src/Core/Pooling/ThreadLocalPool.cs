@@ -14,6 +14,7 @@ internal sealed class ThreadLocalPool<T> where T : class
 
     // Thread-local storage for per-thread caches to eliminate contention
     [ThreadStatic]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Minor Code Smell", "S2743:Static fields should not be used in generic types", Justification = "Intentional: Each closed generic type needs its own thread-local cache")]
     private static ThreadLocalCache? _cache;
 
     // Global lock-free fallback pool using atomic operations
@@ -82,18 +83,19 @@ internal sealed class ThreadLocalPool<T> where T : class
     /// Gets an item from thread-local cache first, then global pool, or creates new
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S2696:Instance members should not write to static fields", Justification = "[ThreadStatic] field is per-thread, lazy initialization on first access is intentional")]
     public T Get()
     {
         // ULTRA FAST PATH: Thread-local cache hit (no contention)
         var cache = _cache ??= new ThreadLocalCache();
-        if (cache.TryGet(out var item) && item != null)
+        if (cache.TryGet(out var item) && item is not null)
         {
             ThreadLocalMemoryManager.RecordThreadLocalHit(_poolName);
             return item;
         }
 
         // FAST PATH: Global lock-free pool
-        if (_globalPool.TryPop(out item) && item != null)
+        if (_globalPool.TryPop(out item))
         {
             Interlocked.Decrement(ref _globalCount);
             return item;
@@ -108,6 +110,7 @@ internal sealed class ThreadLocalPool<T> where T : class
     /// Returns item to thread-local cache first, then global pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S2696:Instance members should not write to static fields", Justification = "[ThreadStatic] field is per-thread, lazy initialization on first access is intentional")]
     public void Return(T? item)
     {
         if (item == null) return;

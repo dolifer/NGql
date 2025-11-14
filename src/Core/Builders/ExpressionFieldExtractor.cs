@@ -223,7 +223,7 @@ public static class ExpressionFieldExtractor
         /// <summary>
         /// Gets the base path from a method call (the collection being operated on).
         /// </summary>
-        private string? GetMethodCallBasePath(MethodCallExpression node)
+        private static string? GetMethodCallBasePath(MethodCallExpression node)
         {
             // For instance methods: obj.Method()
             if (node.Object != null)
@@ -471,7 +471,7 @@ public static class ExpressionFieldExtractor
         /// All other properties are included regardless of namespace, assembly, or where they're declared.
         /// This supports IL-generated properties and properties from any source.
         /// </summary>
-        private bool ShouldExcludeProperty(MemberExpression memberExpr)
+        private static bool ShouldExcludeProperty(MemberExpression memberExpr)
         {
             var declaringType = memberExpr.Member.DeclaringType;
             if (declaringType == null)

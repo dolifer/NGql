@@ -34,15 +34,13 @@ internal static class LockFreeStringBuilderPool
     /// Returns StringBuilder to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Return(StringBuilder sb)
-    {
-        _pool.Return(sb);
-    }
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3398:Move this method inside 'PooledStringBuilder'", Justification = "ref struct cannot contain static members; method must access static pool field")]
+    private static void Return(StringBuilder sb) => _pool.Return(sb);
 
     /// <summary>
     /// Zero-allocation ref struct wrapper with lock-free pooling
     /// </summary>
-    internal ref struct PooledStringBuilder
+    internal readonly ref struct PooledStringBuilder
     {
         public readonly StringBuilder StringBuilder;
         internal PooledStringBuilder(StringBuilder sb) => StringBuilder = sb;

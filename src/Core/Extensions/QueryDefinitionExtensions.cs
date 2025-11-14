@@ -56,7 +56,7 @@ public static class QueryDefinitionExtensions
                 break; // Last segment
 
             // Navigate to next level (but allow last segment to be a leaf)
-            if (currentField.Fields == null)
+            if (currentField._fields == null)
             {
                 resolvedPath = null;
                 return null;
@@ -66,11 +66,17 @@ public static class QueryDefinitionExtensions
             path = path[(dotIndex + 1)..];
         }
 
-        resolvedPath = pathSegments != null
-            ? (prependPath != null
-                ? $"{prependPath}.{string.Join(".", pathSegments)}"
-                : string.Join(".", pathSegments))
-            : null;
+        if (pathSegments == null)
+        {
+            resolvedPath = null;
+        }
+        else
+        {
+            var joinedPath = string.Join(".", pathSegments);
+            resolvedPath = prependPath != null
+                ? $"{prependPath}.{joinedPath}"
+                : joinedPath;
+        }
 
         return currentField;
     }

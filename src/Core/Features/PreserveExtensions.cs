@@ -115,7 +115,7 @@ internal static class PreserveExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(SortedDictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
     {
-        if (fields == null || nameOrAlias == null || nameOrAlias.Length == 0)
+        if (fields == null || nameOrAlias.Length == 0)
         {
             return null;
         }

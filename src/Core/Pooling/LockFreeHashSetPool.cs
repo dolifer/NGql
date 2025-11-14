@@ -50,15 +50,13 @@ internal static class LockFreeHashSetPool
     /// Returns HashSet to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Return(HashSet<string> set)
-    {
-        _pool.Return(set);
-    }
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3398:Move this method inside 'PooledHashSet'", Justification = "ref struct cannot contain static members; method must access static pool field")]
+    private static void Return(HashSet<string> set) => _pool.Return(set);
 
     /// <summary>
     /// Zero-allocation ref struct wrapper with lock-free pooling
     /// </summary>
-    internal ref struct PooledHashSet
+    internal readonly ref struct PooledHashSet
     {
         public readonly HashSet<string> Set;
         internal PooledHashSet(HashSet<string> set) => Set = set;

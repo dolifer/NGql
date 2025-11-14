@@ -115,14 +115,11 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         var hasParameterPrefixes = false;
         foreach (var p in extractedPaths)
         {
-            foreach (var param in paramsForPath)
+            if (paramsForPath.Any(param => p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase)))
             {
-                if (p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasParameterPrefixes = true;
-                    break;
-                }
+                hasParameterPrefixes = true;
             }
+
             if (hasParameterPrefixes) break;
         }
 
@@ -145,14 +142,11 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             {
                 // Filter paths for this parameter
                 HashSet<string>? parameterPaths = null;
-                foreach (var p in extractedPaths)
+                foreach (var p in extractedPaths.Where(p => string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
+                                                            p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
-                        p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
-                    {
-                        parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        parameterPaths.Add(p);
-                    }
+                    parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    parameterPaths.Add(p);
                 }
 
                 // Fallback: if no paths matched with prefix but we have paths and one parameter

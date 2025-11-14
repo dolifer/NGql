@@ -19,12 +19,14 @@ public class VersionComparisonBenchmark
     private sealed class Config : ManualConfig
     {
 #pragma warning disable S1144
+#pragma warning disable CS0618 // Type or member is obsolete
         public Config()
         {
             // Compare local version vs published version
             AddJob(Job.Default.WithId("Local"));
 
-            AddJob(Job.Default.WithNuGet("NGql.Core", "1.5.0")
+            AddJob(Job.Default
+                .WithNuGet("NGql.Core", "1.5.0")
                 .WithId("Published")
                 .AsBaseline()
             );
@@ -34,6 +36,7 @@ public class VersionComparisonBenchmark
             WithOption(ConfigOptions.JoinSummary, true);
             WithOption(ConfigOptions.DisableOptimizationsValidator, true);
         }
+#pragma warning restore CS0618 // Type or member is obsolete
 #pragma warning restore S1144
     }
 

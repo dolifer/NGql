@@ -1,6 +1,6 @@
 namespace NGql.Core.Pooling;
 
-internal ref struct PooledCharArray(char[] array, int length)
+internal readonly ref struct PooledCharArray(char[] array, int length)
 {
     public readonly char[] Array = array;
     public readonly int Length = length;

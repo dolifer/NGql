@@ -44,15 +44,13 @@ internal static class LockFreeArgumentsPool
     /// Returns dictionary to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void Return(SortedDictionary<string, object?> dict)
-    {
-        _pool.Return(dict);
-    }
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3398:Move this method inside 'PooledArguments'", Justification = "ref struct cannot contain static members; method must access static pool field")]
+    private static void Return(SortedDictionary<string, object?> dict) => _pool.Return(dict);
 
     /// <summary>
     /// Zero-allocation ref struct wrapper with lock-free pooling
     /// </summary>
-    internal ref struct PooledArguments
+    internal readonly ref struct PooledArguments
     {
         public readonly SortedDictionary<string, object?> Dictionary;
         internal PooledArguments(SortedDictionary<string, object?> dictionary) => Dictionary = dictionary;

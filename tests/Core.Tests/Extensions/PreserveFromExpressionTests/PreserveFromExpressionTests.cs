@@ -395,8 +395,8 @@ public class PreserveFromExpressionTests
         var result = PreservationBuilder.Create(query)
             .PreserveFromExpression(
                 (TestDataModels.SimpleUser user) =>
-                    user.Email.ToLower().Contains("@") &&
-                    user.Name.StartsWith("A"),
+                    user.Email.ToLower().Contains('@') &&
+                    user.Name.StartsWith('A'),
                 "edges.node")
             .Build();
 
@@ -557,7 +557,7 @@ public class PreserveFromExpressionTests
                 (TestDataModels.UserWithComputedProfile user) => user.Profile.Name != null,
                 "edges.node",
                 localMap,
-                new[] { "UserId" })
+                "UserId")
             .Build();
 
         // Assert - should preserve UserId and both FirstName and LastName (expanded from Name)
@@ -585,7 +585,7 @@ public class PreserveFromExpressionTests
                 (TestDataModels.UserWithComputedProfile user) => user.Profile.Contact.Email != null,
                 "edges.node",
                 localMap,
-                new[] { "UserId" })
+                "UserId")
             .Build();
 
         // Assert - should preserve UserId and both PrimaryEmail and SecondaryEmail (expanded from Email)
@@ -616,7 +616,7 @@ public class PreserveFromExpressionTests
                     user.Profile.Name != null && user.Profile.Contact.PrimaryEmail != null,
                 "edges.node",
                 localMap,
-                new[] { "UserId" })
+                "UserId")
             .Build();
 
         // Assert - should preserve UserId, FirstName/LastName (from Name), and PrimaryEmail (direct)
@@ -647,7 +647,7 @@ public class PreserveFromExpressionTests
                     (user.Profile.Name ?? user.Profile.Contact.Email) != null,
                 "edges.node",
                 localMap,
-                new[] { "UserId" })
+                "UserId")
             .Build();
 
         // Assert - should preserve UserId, FirstName/LastName (from Name), and PrimaryEmail/SecondaryEmail (from Email)
