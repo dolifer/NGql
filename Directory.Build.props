@@ -13,11 +13,13 @@
     <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
 
-  <!-- MinVer configuration -->
-  <PropertyGroup>
-    <MinVerMinimumMajorMinor>2.0</MinVerMinimumMajorMinor>
-    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
-  </PropertyGroup>
+  <!-- GitVersion configuration -->
+  <ItemGroup Condition="'$(IsPackable)' != 'False'">
+    <PackageReference Include="GitVersion.MsBuild" Version="6.0.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
   
   <PropertyGroup>
     <!-- Use the latest released C# language version -->

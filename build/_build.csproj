@@ -10,12 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="6.0.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <PackageReference Include="Nuke.Common" Version="9.0.4" />
-    <PackageDownload Include="minver-cli" Version="[6.0.0]" />
+    <PackageDownload Include="GitVersion.Tool" Version="[6.0.5]" />
     <PackageDownload Include="ReportGenerator" Version="[5.5.0]" />
   </ItemGroup>
 
