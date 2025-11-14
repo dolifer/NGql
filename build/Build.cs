@@ -18,8 +18,9 @@ class Build : NukeBuild
     [Parameter("Configuration to build - Default is 'Debug' (local) or 'Release' (server)")]
     readonly Configuration Configuration = IsLocalBuild ? Configuration.Debug : Configuration.Release;
 
+    [Required] const string MinNetCoreVersion = "ne8.0";
     [Required] [Solution] readonly Solution Solution;
-    [MinVer(Framework = "net7.0")] readonly MinVer MinVer;
+    [MinVer(Framework = MinNetCoreVersion)] readonly MinVer MinVer;
     [Required] [GitRepository] readonly GitRepository GitRepository;
     
     static AbsolutePath ArtifactsDirectory => RootDirectory / "artifacts";
@@ -125,6 +126,6 @@ class Build : NukeBuild
                 .SetReports(CoverletResultDirectory / "*.xml")
                 .SetReportTypes(ReportTypes.HtmlInline_AzurePipelines, ReportTypes.Badges)
                 .SetTargetDirectory(CoverageReportDirectory)
-                .SetFramework("net7.0"));
+                .SetFramework(MinNetCoreVersion));
         });
 }

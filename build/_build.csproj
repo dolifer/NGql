@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <NoWarn>CS0649;CS0169</NoWarn>
     <NukeRootDirectory>..</NukeRootDirectory>
     <NukeScriptDirectory>..</NukeScriptDirectory>
@@ -10,10 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MinVer" Version="4.3.0" />
-    <PackageReference Include="Nuke.Common" Version="7.0.6" />
-    <PackageDownload Include="minver-cli" Version="[4.3.0]" />
-    <PackageDownload Include="ReportGenerator" Version="[5.1.25]" />
+    <PackageReference Include="MinVer" Version="6.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Nuke.Common" Version="9.0.4" />
+    <PackageDownload Include="minver-cli" Version="[6.0.0]" />
+    <PackageDownload Include="ReportGenerator" Version="[5.5.0]" />
   </ItemGroup>
 
 </Project>

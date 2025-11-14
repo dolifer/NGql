@@ -3,7 +3,7 @@ using Server.Data.Entities;
 
 namespace Server.Schema;
 
-public class UserType : ObjectGraphType<User>
+public sealed class UserType : ObjectGraphType<User>
 {
     public UserType()
     {

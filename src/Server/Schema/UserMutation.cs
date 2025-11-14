@@ -5,15 +5,15 @@ using Server.Commands;
 
 namespace Server.Schema;
 
-public class UserMutation : ObjectGraphType<object>
+public sealed class UserMutation : ObjectGraphType<object>
 {
     public UserMutation(ISender sender)
     {
-        FieldAsync<UserType>("createUser",
-            arguments: new QueryArguments(
+        Field<UserType>("createUser")
+            .Arguments(new QueryArguments(
                 new QueryArgument<StringGraphType> { Name = "name" }
-            ),
-            resolve: async context =>
+            ))
+            .ResolveAsync(async context =>
             {
                 var name = context.GetArgument<string>("name");
                 return await sender.Send(new CreateUserCommand(name));
