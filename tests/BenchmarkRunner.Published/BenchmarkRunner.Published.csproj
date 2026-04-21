@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>Benchmarks</RootNamespace>
+        <AssemblyName>BenchmarkRunner.Published</AssemblyName>
+        <IsPackable>false</IsPackable>
+        <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+        <TargetFramework>net9.0</TargetFramework>
+        <NoWarn>$(NoWarn);AD0001</NoWarn>
+    </PropertyGroup>
+
+    <!-- Link benchmark source from the Local runner — same code, different NGql.Core version -->
+    <ItemGroup>
+        <Compile Include="..\BenchmarkRunner\Benchmarks\VersionComparisonBenchmark.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" Version="0.15.7" />
+        <PackageReference Include="NGql.Core" Version="1.5.0" />
+    </ItemGroup>
+
+</Project>

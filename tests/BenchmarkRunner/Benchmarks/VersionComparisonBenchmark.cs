@@ -9,9 +9,12 @@ using NGql.Core.Builders;
 namespace Benchmarks.Benchmarks;
 
 /// <summary>
-/// Compares performance between local (current) and published package versions.
-/// Uses out-of-process execution so the NuGet reference is genuinely loaded for the Published job.
-/// Run with: dotnet run -c Release -- --filter "*VersionComparison*SimpleQuery*"
+/// Benchmark suite shared by BenchmarkRunner (local ProjectRef) and BenchmarkRunner.Published (NGql.Core NuGet).
+/// Run both, then use BenchmarkMerger to get a side-by-side comparison.
+///
+/// Local:     dotnet run --project tests/BenchmarkRunner -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/local
+/// Published: dotnet run --project tests/BenchmarkRunner.Published -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/published
+/// Merge:     dotnet run --project tests/BenchmarkMerger -- artifacts/benchmarks/local artifacts/benchmarks/published
 /// </summary>
 [Config(typeof(Config))]
 [MemoryDiagnoser]
@@ -22,18 +25,9 @@ public class VersionComparisonBenchmark
 #pragma warning disable S1144
         public Config()
         {
-            // Single out-of-process job — track absolute numbers over time.
-            // Comparing against the NuGet-published version via WithNuGet() is not possible
-            // once the AssemblyVersion changes (the compiled benchmark binary can only reference
-            // one assembly version). Compare absolute results against the v1.5.0 baseline instead:
-            //   SimpleQuery            v1.5.0: ~722 ns / 3.13 KB
-            //   ArgumentsPoolStress    v1.5.0: ~17,829 ns / 82.08 KB
-            //   ComplexQueryWithMerging v1.5.0: ~3,397 ns / 13.4 KB
-            AddJob(Job.ShortRun.WithId("Local"));
-
+            AddJob(Job.ShortRun);
             AddColumn(StatisticColumn.P95);
             AddDiagnoser(MemoryDiagnoser.Default);
-            WithOption(ConfigOptions.JoinSummary, true);
         }
 #pragma warning restore S1144
     }
