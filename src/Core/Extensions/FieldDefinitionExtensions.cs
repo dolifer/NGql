@@ -45,9 +45,9 @@ internal static class FieldDefinitionExtensions
         // or has different arguments at the same path, they cannot merge.
 
         // Check all incoming nested fields
-        foreach (var (incomingKey, incomingNestedField) in incomingField.Fields)
+        foreach (var (incomingKey, incomingNestedField) in incomingField._fields ?? [])
         {
-            if (existingField.Fields.TryGetValue(incomingKey, out var existingNestedField))
+            if (existingField._fields?.TryGetValue(incomingKey, out var existingNestedField) == true)
             {
                 // If the nested field exists in both, their arguments must match exactly
                 if (!Helpers.AreArgumentsEqual(existingNestedField._arguments, incomingNestedField._arguments))
@@ -75,10 +75,10 @@ internal static class FieldDefinitionExtensions
         }
 
         // Check existing nested fields
-        foreach (var (existingKey, existingNestedField) in existingField.Fields)
+        foreach (var (existingKey, existingNestedField) in existingField._fields ?? [])
         {
             // Existing field has a path that doesn't exist in an incoming field
-            if (!incomingField.Fields.ContainsKey(existingKey) && HasAnyArguments(existingNestedField))
+            if (incomingField._fields?.ContainsKey(existingKey) != true && HasAnyArguments(existingNestedField))
             {
                 // If the existing nested field (or any of its descendants) has arguments,
                 // then these fields are incompatible
@@ -106,10 +106,10 @@ internal static class FieldDefinitionExtensions
         }
 
         // Create a merged field definition
-        var mergedFields = new Dictionary<string, FieldDefinition>(existing.Fields, StringComparer.OrdinalIgnoreCase);
+        var mergedFields = new Dictionary<string, FieldDefinition>(existing._fields ?? [], StringComparer.OrdinalIgnoreCase);
 
         // Merge nested fields recursively
-        foreach (var (key, incomingNestedField) in incoming.Fields)
+        foreach (var (key, incomingNestedField) in incoming._fields ?? [])
         {
             if (mergedFields.TryGetValue(key, out var existingNestedField))
             {
@@ -143,9 +143,9 @@ internal static class FieldDefinitionExtensions
             existing.Name,
             existing._type ?? incoming._type ?? Constants.DefaultFieldType,
             existing._alias,
-            existing.Arguments,
+            existing._arguments,
             mergedFields
-        ).MergeFieldArguments(incoming.Arguments);
+        ).MergeFieldArguments(incoming._arguments);
     }
 
     /// <summary>
@@ -154,10 +154,21 @@ internal static class FieldDefinitionExtensions
     /// <param name="field">The field definition to check</param>
     /// <returns>True if the field or any nested field has arguments, false otherwise</returns>
     private static bool HasAnyArguments(FieldDefinition field)
-        => field.Arguments is { Count: > 0 } || field.Fields.Values.Any(HasAnyArguments);
+    {
+        if (field._arguments is { Count: > 0 })
+            return true;
+        if (field._fields is null)
+            return false;
+        foreach (var child in field._fields.Values)
+        {
+            if (HasAnyArguments(child))
+                return true;
+        }
+        return false;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?>? newArguments)
+    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, IDictionary<string, object?>? newArguments)
     {
         // FAST PATH: If no new arguments to merge, return as-is
         if (newArguments is not { Count: > 0 })
@@ -168,7 +179,10 @@ internal static class FieldDefinitionExtensions
         // FAST PATH: If an existing field has no arguments, just set the new arguments
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {
-            return existingField with { _arguments = newArguments };
+            var sortedNew = newArguments is SortedDictionary<string, object?> sd
+                ? sd
+                : new SortedDictionary<string, object?>(newArguments, StringComparer.OrdinalIgnoreCase);
+            return existingField with { _arguments = sortedNew };
         }
 
         // MERGE PATH: Create a completely new case-insensitive dictionary to ensure proper behavior

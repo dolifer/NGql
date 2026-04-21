@@ -604,7 +604,7 @@ internal static class Helpers
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
     /// </summary>
-    internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
+    internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
     {
         // Use type interning for memory efficiency
         var nameStr = name.ToString();
@@ -644,10 +644,15 @@ internal static class Helpers
     /// <returns>Existing field if found, null otherwise</returns>
     internal static FieldDefinition? FindExistingField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        // Try to find field with same name and alias
-        var existingField = fields.Values.FirstOrDefault(f =>
-            f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias);
-
+        FieldDefinition? existingField = null;
+        foreach (var f in fields.Values)
+        {
+            if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)
+            {
+                existingField = f;
+                break;
+            }
+        }
         return existingField ?? fields.GetValueOrDefault(fieldDefinition.Path);
     }
 

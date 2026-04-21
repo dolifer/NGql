@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Text;
 using NGql.Core.Abstractions;
@@ -13,6 +14,10 @@ public static class FieldSignatureGenerator
 {
     // Pre-allocated StringBuilder for signature generation to avoid repeated allocations
     private static readonly ThreadLocal<StringBuilder> SignatureBuilder = new(() => new StringBuilder(256));
+
+    // Singleton comparer for sorting by Name for deterministic signature generation.
+    private static readonly IComparer<FieldDefinition> FieldNameComparer =
+        Comparer<FieldDefinition>.Create(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
 
     /// <summary>
     /// Generates a unique hash signature for a collection of field definitions.
@@ -119,9 +124,18 @@ public static class FieldSignatureGenerator
         // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
         if (field._fields != null)
         {
-            foreach (var childField in field._fields.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            var fieldCount = field._fields.Count;
+            var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
+            try
             {
-                AppendFieldSignature(builder, childField, currentPath);
+                field._fields.Values.CopyTo(rented, 0);
+                Array.Sort(rented, 0, fieldCount, FieldNameComparer);
+                for (var i = 0; i < fieldCount; i++)
+                    AppendFieldSignature(builder, rented[i], currentPath);
+            }
+            finally
+            {
+                ArrayPool<FieldDefinition>.Shared.Return(rented, clearArray: false);
             }
         }
     }
@@ -152,9 +166,18 @@ public static class FieldSignatureGenerator
         // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
         if (field._fields != null)
         {
-            foreach (var childField in field._fields.Values.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase))
+            var fieldCount = field._fields.Count;
+            var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
+            try
             {
-                AppendFieldSignature(builder, childField, currentPath.AsSpan());
+                field._fields.Values.CopyTo(rented, 0);
+                Array.Sort(rented, 0, fieldCount, FieldNameComparer);
+                for (var i = 0; i < fieldCount; i++)
+                    AppendFieldSignature(builder, rented[i], currentPath.AsSpan());
+            }
+            finally
+            {
+                ArrayPool<FieldDefinition>.Shared.Return(rented, clearArray: false);
             }
         }
     }

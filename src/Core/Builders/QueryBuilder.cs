@@ -2,7 +2,6 @@ using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 using NGql.Core.Features;
-using NGql.Core.Pooling;
 
 namespace NGql.Core.Builders;
 
@@ -88,8 +87,8 @@ public sealed class QueryBuilder
         
         if (arguments?.Count > 0)
         {
-            using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
-            return AddFieldCore(field, pooled.Dictionary, null, metadata);
+            SortedDictionary<string, object?>? sortedArgs = new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
+            return AddFieldCore(field, sortedArgs, null, metadata);
         }
         return AddFieldCore(field, null, null, metadata);
     }
@@ -141,8 +140,10 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
-        return AddFieldCore(field, pooled.Dictionary, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
+        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
+            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
+            : null;
+        return AddFieldCore(field, sortedArgs, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
     }
 
     /// <summary>
@@ -156,8 +157,10 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
-        return AddFieldCore(field, pooled.Dictionary, subFields, metadata);
+        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
+            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
+            : null;
+        return AddFieldCore(field, sortedArgs, subFields, metadata);
     }
 
     /// <summary>
@@ -194,8 +197,10 @@ public sealed class QueryBuilder
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
     {
         ArgumentNullException.ThrowIfNull(fieldBuilder);
-        using var pooled = LockFreeArgumentsPool.GetPooled(arguments);
-        return AddFieldBuilderCore(field, Constants.DefaultFieldType, pooled.Dictionary, metadata, fieldBuilder);
+        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
+            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
+            : null;
+        return AddFieldBuilderCore(field, Constants.DefaultFieldType, sortedArgs, metadata, fieldBuilder);
     }
 
     /// <summary>
@@ -286,56 +291,26 @@ public sealed class QueryBuilder
     /// <returns>Current QueryBuilder instance for method chaining</returns>
     private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
     {
-        if (arguments == null)
-        {
-            var emptyArgs = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-            return AddFieldCore(field, in emptyArgs, subFields, metadata);
-        }
-        return AddFieldCore(field, in arguments, subFields, metadata);
-    }
-
-    /// <summary>
-    /// Core implementation for adding fields with unified parameter handling.
-    /// </summary>
-    /// <param name="field">Field name or path</param>
-    /// <param name="arguments">Normalized arguments dictionary (passed by reference for performance)</param>
-    /// <param name="subFields">Optional array of sub-field definitions</param>
-    /// <param name="metadata">Normalized metadata dictionary (passed by reference for performance)</param>
-    /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldCore(string field, in SortedDictionary<string, object?> arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
-    {
         if (string.IsNullOrWhiteSpace(field))
-        {
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
-        }
 
-        // FAST PATH: Check if subFields is null/empty early to avoid unnecessary work
         var hasSubFields = subFields?.Any() == true;
-        
-        // FAST PATH: Only extract variables if arguments has content
-        if (arguments?.Count > 0)
-        {
-            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
-        }
 
-        // Determine field type based on presence of subfields and existing field type
+        if (arguments is { Count: > 0 })
+            Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
+
         var fieldSpan = field.AsSpan();
         var type = DetermineFieldTypeOptimized(fieldSpan, hasSubFields);
-
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
-        // FAST PATH: Early return if no subfields to process
         if (!hasSubFields)
         {
             QueryMapInstance.UpdateRootMapping(_definition);
             return this;
         }
 
-        // Add all subfields to the builder
         foreach (var subField in subFields!)
-        {
             builder.AddField(subField);
-        }
 
         QueryMapInstance.UpdateRootMapping(_definition);
         return this;

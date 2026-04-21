@@ -45,25 +45,18 @@ internal static class QueryMerger
         var targetVars = targetDefinition._variables;
         var incomingVars = incomingQuery._variables;
 
-        if (targetVars is null && incomingVars is null)
-        {
-            // Both null - no variables to merge
-            targetDefinition.Variables = new SortedSet<Variable>();
-        }
-        else if (targetVars is null)
+        if (targetVars is null && incomingVars is not null)
         {
             // Only incoming has variables
             targetDefinition.Variables = new SortedSet<Variable>(incomingVars!);
         }
-        else if (incomingVars is null)
-        {
-            // Only target has variables - already set, no change needed
-        }
-        else
+        else if (targetVars is not null && incomingVars is not null)
         {
             // Both have variables - need to merge
             targetDefinition.Variables = new SortedSet<Variable>(targetVars.Union(incomingVars));
         }
+        // else: only target has variables (targetVars not null, incomingVars null) - already set, no change needed
+        // else: both null - no variables, lazy-init will handle it if accessed
 
         // Perform the field merge
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);
@@ -243,25 +236,11 @@ internal static class QueryMerger
     /// This prevents other queries from merging into this field.
     /// </summary>
     private static FieldDefinition MarkAsNeverMerge(FieldDefinition field)
-    {
-        if (field._metadata == null || !field._metadata.ContainsKey("NeverMerge"))
-        {
-            return field with
-            {
-                Metadata = new Dictionary<string, object?>(field._metadata ?? new Dictionary<string, object?>())
-                {
-                    ["NeverMerge"] = true
-                }
-            };
-        }
-        return field;
-    }
+        => field.IsNeverMerge ? field : field with { IsNeverMerge = true };
 
     /// <summary>
     /// Checks if a field is marked as coming from a NeverMerge query.
     /// </summary>
     private static bool IsMarkedAsNeverMerge(FieldDefinition field)
-    {
-        return field._metadata?.TryGetValue("NeverMerge", out var value) == true && value is true;
-    }
+        => field.IsNeverMerge;
 }

@@ -38,6 +38,21 @@ public sealed record FieldDefinition
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
+    public FieldDefinition(string name, string type, string? alias, IDictionary<string, object?>? arguments, Dictionary<string, FieldDefinition>? fields = null)
+    {
+        Name = name;
+        _alias = alias;
+        _type = type;
+        if (arguments?.Count > 0)
+        {
+            var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in arguments) sorted[kvp.Key] = kvp.Value;
+            _arguments = sorted;
+        }
+        _fields = fields?.Count > 0 ? fields : null;
+        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
+    }
+
     // Properties
     /// <summary>
     /// The name of the field.
@@ -80,7 +95,7 @@ public sealed record FieldDefinition
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]
-    public SortedDictionary<string, object?> Arguments
+    public IReadOnlyDictionary<string, object?> Arguments
         => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -113,6 +128,9 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonIgnore]
     public bool HasFields => _fields is { Count: > 0 };
+
+    [JsonIgnore]
+    internal bool IsNeverMerge { get; init; }
 
     // Methods
     public override string ToString()

@@ -57,7 +57,7 @@ public class FieldBuilderTests
     public void Can_Create_FieldDefinition_With_Arguments_Using_FieldBuilder()
     {
         // Arrange
-        var arguments = new SortedDictionary<string, object?>
+        var arguments = new Dictionary<string, object?>
         {
             { "limit", 10 },
             { "offset", 0 }
@@ -81,7 +81,7 @@ public class FieldBuilderTests
     {
         // Arrange
         var existingField = new FieldDefinition("user", "User", "currentUser",
-            new SortedDictionary<string, object?> { { "id", "123" } }
+            new Dictionary<string, object?> { { "id", "123" } }
         );
 
         // Act
@@ -243,7 +243,7 @@ public class FieldBuilderTests
     public void Can_Add_Field_With_Arguments_Using_FieldBuilder()
     {
         // Arrange
-        var arguments = new SortedDictionary<string, object?>
+        var arguments = new Dictionary<string, object?>
         {
             { "first", 5 }
         };
@@ -534,7 +534,7 @@ public class FieldBuilderTests
             .Where("id", "123")
             .AddField("name")
             .AddField("email")
-            .AddField("posts", "Post[]", new SortedDictionary<string, object?> { { "first", 10 } })
+            .AddField("posts", "Post[]", new Dictionary<string, object?> { { "first", 10 } })
             .AddField("profile", "Profile", nestedBuilder => nestedBuilder
                 .AddField("bio")
                 .AddField("avatar"))
@@ -838,7 +838,7 @@ public class FieldBuilderTests
     {
         // Arrange
         var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-        var args = new SortedDictionary<string, object?> { { "first", 10 } };
+        var args = new Dictionary<string, object?> { { "first", 10 } };
 
         // Act - This should preserve the [] array type even with arguments
         var result = fieldBuilder

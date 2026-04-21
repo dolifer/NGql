@@ -45,7 +45,7 @@ internal static class SpanExtensions
     /// <summary>
     /// Get or add a simple field using a span key with optimized path building
     /// </summary>
-    public static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    public static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField != null)
         {

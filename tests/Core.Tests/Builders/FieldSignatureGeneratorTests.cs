@@ -27,7 +27,7 @@ public class FieldSignatureGeneratorTests
         // Arrange
         var fields1 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
+            ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
                 new Dictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
@@ -36,7 +36,7 @@ public class FieldSignatureGeneratorTests
 
         var fields2 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
+            ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
                 new Dictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
@@ -55,7 +55,7 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_SameFieldsWithSameArguments_ShouldReturnSameSignature()
     {
         // Arrange
-        var args = new SortedDictionary<string, object?> { ["filter"] = "value" };
+        var args = new Dictionary<string, object?> { ["filter"] = "value" };
 
         var fields1 = new Dictionary<string, FieldDefinition>
         {
@@ -79,8 +79,8 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_SameFieldsWithDifferentArguments_ShouldReturnDifferentSignatures()
     {
         // Arrange
-        var args1 = new SortedDictionary<string, object?> { ["filter"] = "value1" };
-        var args2 = new SortedDictionary<string, object?> { ["filter"] = "value2" };
+        var args1 = new Dictionary<string, object?> { ["filter"] = "value1" };
+        var args2 = new Dictionary<string, object?> { ["filter"] = "value2" };
 
         var fields1 = new Dictionary<string, FieldDefinition>
         {
@@ -126,12 +126,12 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_NestedFieldsWithDifferentArguments_ShouldReturnDifferentSignatures()
     {
         // Arrange
-        var nestedArgs1 = new SortedDictionary<string, object?> { ["email"] = "test1@test.com" };
-        var nestedArgs2 = new SortedDictionary<string, object?> { ["email"] = "test2@test.com" };
+        var nestedArgs1 = new Dictionary<string, object?> { ["email"] = "test1@test.com" };
+        var nestedArgs2 = new Dictionary<string, object?> { ["email"] = "test2@test.com" };
 
         var fields1 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
+            ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
                 new Dictionary<string, FieldDefinition>
                 {
                     ["node"] = new("node", "object", null, nestedArgs1, new Dictionary<string, FieldDefinition>())
@@ -140,7 +140,7 @@ public class FieldSignatureGeneratorTests
 
         var fields2 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
+            ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
                 new Dictionary<string, FieldDefinition>
                 {
                     ["node"] = new("node", "object", null, nestedArgs2, new Dictionary<string, FieldDefinition>())
