@@ -30,18 +30,6 @@ public sealed class FieldBuilder
     }
 
     /// <summary>
-    /// Adds a field with a specific type and optional metadata to the builder.
-    /// </summary>
-    /// <param name="fieldName">The name of the field to add. Supports dotted notation for nested fields (e.g., "user.profile.name").</param>
-    /// <param name="type">The GraphQL type of the field (e.g., "String", "Int", "Boolean", "ID", etc.).</param>
-    /// <param name="metadata">Optional metadata dictionary to associate with the field for custom processing.</param>
-    /// <returns>The current FieldBuilder instance for method chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when fieldName or type is null.</exception>
-    /// <exception cref="ArgumentException">Thrown when fieldName is empty or whitespace.</exception>
-    public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? metadata)
-        => AddFieldCore(fieldName, type, metadata: metadata);
-
-    /// <summary>
     /// Adds a field with nested subfields, optional arguments, and metadata to the builder.
     /// This creates an object-type field that contains the specified subfields.
     /// </summary>
@@ -66,7 +54,7 @@ public sealed class FieldBuilder
     /// <exception cref="ArgumentNullException">Thrown when fieldName or type is null.</exception>
     /// <example>
     /// <code>
-    /// builder.AddField("users", "User", new SortedDictionary&lt;string, object?&gt; { ["first"] = 10 });
+    /// builder.AddField("users", "User", new Dictionary&lt;string, object?&gt; { ["first"] = 10 });
     /// </code>
     /// </example>
     public FieldBuilder AddField(string fieldName, string type, Dictionary<string, object?>? arguments, Dictionary<string, object?>? metadata = null)
