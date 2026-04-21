@@ -86,7 +86,7 @@ static List<Row> ParseCsv(string path)
         var paramParts = new List<string>();
         for (int i = 0; i < headers.Length && i < cols.Length; i++)
         {
-            if (!knownFixed.Contains(headers[i]) && !string.IsNullOrEmpty(cols[i]))
+            if (!knownFixed.Contains(headers[i]) && !string.IsNullOrEmpty(cols[i]) && cols[i] != "?")
                 paramParts.Add($"{headers[i]}={cols[i]}");
         }
         parameters = paramParts.Count > 0 ? string.Join(", ", paramParts) : string.Empty;
@@ -108,8 +108,18 @@ static List<Row> ParseCsv(string path)
 
 static string[] SplitCsvLine(string line)
 {
-    // Simple CSV split — BDN doesn't quote fields so comma-splitting is safe
-    return line.Split(',');
+    // BDN quotes fields that contain commas (e.g. "1,707.5 ns"), so we need a real CSV parser.
+    var fields = new List<string>();
+    var sb = new System.Text.StringBuilder();
+    bool inQuotes = false;
+    foreach (var ch in line)
+    {
+        if (ch == '"') { inQuotes = !inQuotes; }
+        else if (ch == ',' && !inQuotes) { fields.Add(sb.ToString()); sb.Clear(); }
+        else { sb.Append(ch); }
+    }
+    fields.Add(sb.ToString());
+    return [.. fields];
 }
 
 static void PrintComparison(string className, List<Row> local, List<Row> published)
