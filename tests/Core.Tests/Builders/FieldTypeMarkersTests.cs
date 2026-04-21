@@ -13,7 +13,7 @@ public class FieldTypeMarkersTests
     public void Pure_Array_Marker_Is_Preserved_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Using just "[]" as the type marker
         var result = fieldBuilder
@@ -34,7 +34,7 @@ public class FieldTypeMarkersTests
     public void Pure_Nullable_Marker_Is_Preserved_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Using just "?" as the type marker
         var result = fieldBuilder
@@ -111,7 +111,7 @@ public class FieldTypeMarkersTests
     public void Complex_Structure_With_Type_Markers_Is_Preserved()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "document", "Document");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "document", "Document");
 
         // Act: Create a complex structure with pure markers and combined types
         var result = fieldBuilder

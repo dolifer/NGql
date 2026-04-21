@@ -1,4 +1,7 @@
-﻿using System.Collections;
+﻿using System.Buffers;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -12,6 +15,12 @@ internal sealed class QueryTextBuilder
 
     // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
     private static readonly string[] PaddingCache = new string[20];
+
+    // Singleton comparer — Dictionary<string,FieldDefinition> is unordered, so we sort at render time.
+    // Static readonly avoids any per-call allocation; the static lambda is stored as a cached delegate.
+    private static readonly IComparer<FieldDefinition> FieldSortComparer =
+        Comparer<FieldDefinition>.Create(static (a, b) =>
+            StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name));
 
     static QueryTextBuilder()
     {
@@ -36,6 +45,9 @@ internal sealed class QueryTextBuilder
 
     public string Build(QueryBlock queryBlock, int indent = 0, string? prefix = null)
     {
+        // Clear only at the top-level call; recursive sub-query calls (indent > 0) accumulate.
+        if (indent == 0) _stringBuilder.Clear();
+
         var pad = GetPadding(indent);
         var prevPad = pad;
 
@@ -98,17 +110,22 @@ internal sealed class QueryTextBuilder
         return _stringBuilder.ToString();
     }
 
-    private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
+    private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
     {
         var padding = GetPadding(indent);
+        var count = fields.Count;
 
-        // Sort fields by both alias and name to maintain consistent ordering
-        var orderedFields = fields.Values
-            .OrderBy(f => f.Alias ?? f.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        // Rent an array, sort it via the singleton comparer, render, then return to pool.
+        // Dictionary<TKey,TValue> is insertion-ordered (not alphabetically), so explicit sort
+        // is always required for deterministic query output.
+        var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
+        int i = 0;
+        foreach (var f in fields.Values) arr[i++] = f;
+        Array.Sort(arr, 0, count, FieldSortComparer);
 
-        foreach (var field in orderedFields)
+        for (int j = 0; j < count; j++)
         {
+            var field = arr[j];
             _stringBuilder.Append(padding);
 
             if (field.Alias != null)
@@ -136,6 +153,9 @@ internal sealed class QueryTextBuilder
                 _stringBuilder.AppendLine();
             }
         }
+
+        Array.Clear(arr, 0, count);
+        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
     }
 
     private void BuildFieldArguments(IReadOnlyDictionary<string, object?> arguments)
@@ -160,6 +180,11 @@ internal sealed class QueryTextBuilder
         _stringBuilder.Append(')');
     }
 
+    // Caches PropertyInfo pairs (Key, Value) for KeyValuePair<,> generic types.
+    private static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)> KvpPropertyCache = new();
+    // Caches PropertyInfo[] per object type for the default WriteObject branch.
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
+
     internal static void WriteObject(StringBuilder builder, object? value)
     {
         if (value is null)
@@ -168,20 +193,18 @@ internal sealed class QueryTextBuilder
             return;
         }
 
-        if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
-        {
-            builder.Append(formattedValue);
+        if (ValueFormatter.TryAppendPrimitive(value, builder))
             return;
-        }
 
         var valueType = value.GetType();
         if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
         {
-            var kvp = (dynamic)value;
-            builder.Append(kvp.Key);
+            var (keyProp, valueProp) = KvpPropertyCache.GetOrAdd(
+                valueType,
+                static t => (t.GetProperty("Key")!, t.GetProperty("Value")!));
+            builder.Append(keyProp.GetValue(value));
             builder.Append(':');
-
-            WriteObject(builder, kvp.Value);
+            WriteObject(builder, valueProp.GetValue(value));
             return;
         }
 
@@ -201,10 +224,18 @@ internal sealed class QueryTextBuilder
 
             default:
                 {
-                    var values = valueType
-                        .GetProperties()
-                        .ToDictionary(x => x.Name, x => x.GetValue(value));
-                    Helpers.WriteCollection('{', '}', values, builder, WriteObject);
+                    var props = ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
+                    builder.Append('{');
+                    bool first = true;
+                    foreach (var prop in props)
+                    {
+                        if (!first) builder.Append(", ");
+                        first = false;
+                        builder.Append(prop.Name);
+                        builder.Append(':');
+                        WriteObject(builder, prop.GetValue(value));
+                    }
+                    builder.Append('}');
                     break;
                 }
         }
@@ -238,8 +269,8 @@ internal sealed class QueryTextBuilder
                     _stringBuilder.AppendLine(strValue);
                     break;
                 case QueryBlock subQuery:
-                    QueryTextBuilder builder = new();
-                    _stringBuilder.AppendLine(builder.Build(subQuery, indent));
+                    this.Build(subQuery, indent); 
+                    _stringBuilder.AppendLine();
                     break;
             }
         }

@@ -7,5 +7,5 @@ namespace NGql.Core.Abstractions;
 /// <param name="UpdatedFields">Collection of field updates to apply</param>
 internal record MergeResult(
     Dictionary<string, string> QueryMap,
-    SortedDictionary<string, FieldDefinition> UpdatedFields
+    Dictionary<string, FieldDefinition> UpdatedFields
 );

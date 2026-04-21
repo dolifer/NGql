@@ -452,7 +452,7 @@ public class FieldBuilderTests
     public void Field_With_Name_Only_Has_String_Type_By_Default_And_Converts_To_Object_When_Nested_Field_Added()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "user", "User");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "user", "User");
 
         // Step 1: Add a field with name only (should default to String type)
         var intermediateBuilder = fieldBuilder.AddField("info");
@@ -821,7 +821,7 @@ public class FieldBuilderTests
     public void AddField_With_Inline_Array_Type_And_SubFields_Should_Preserve_Array_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - This should preserve the [] array type even with subFields
         var result = fieldBuilder
@@ -837,7 +837,7 @@ public class FieldBuilderTests
     public void AddField_With_Inline_Array_Type_And_Arguments_Should_Preserve_Array_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
         var args = new SortedDictionary<string, object?> { { "first", 10 } };
 
         // Act - This should preserve the [] array type even with arguments
@@ -854,7 +854,7 @@ public class FieldBuilderTests
     public void AddField_With_Inline_Type_And_Explicit_Type_Should_Use_Inline_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - Inline type should override explicit type parameter
         var result = fieldBuilder
@@ -870,7 +870,7 @@ public class FieldBuilderTests
     public void AddField_With_Array_Type_And_Action_Should_Preserve_Array_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - Array type should be preserved even with Action
         var result = fieldBuilder
@@ -891,7 +891,7 @@ public class FieldBuilderTests
     public void AddField_With_Custom_Array_Type_And_Action_Should_Preserve_Custom_Array_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - Custom array type should be preserved even with Action
         var result = fieldBuilder
@@ -916,7 +916,7 @@ public class FieldBuilderTests
     public void AddField_Type_Overwrite_Bug_Test()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - This could potentially cause a type overwrite bug
         var result = fieldBuilder
@@ -933,7 +933,7 @@ public class FieldBuilderTests
     public void AddField_Array_State_Lost_Bug_Test()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - This could potentially cause array state to be lost
         var result = fieldBuilder
@@ -953,7 +953,7 @@ public class FieldBuilderTests
     public void AddField_With_SubFields_Should_Not_Overwrite_Explicit_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - Add field with explicit type and subfields
         var result = fieldBuilder
@@ -970,7 +970,7 @@ public class FieldBuilderTests
     public void AddField_SubFields_Added_Later_Should_Not_Change_Explicit_Type()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
 
         // Act - First set explicit type, then add subfields later
         var result = fieldBuilder

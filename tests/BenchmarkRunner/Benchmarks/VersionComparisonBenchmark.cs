@@ -4,6 +4,7 @@ using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Jobs;
+using BenchmarkDotNet.Toolchains.InProcess.Emit;
 using NGql.Core.Builders;
 
 namespace Benchmarks.Benchmarks;
@@ -23,10 +24,13 @@ public class VersionComparisonBenchmark
         public Config()
         {
             // Compare local version vs published version
-            AddJob(Job.Default.WithId("Local"));
+            AddJob(Job.Default
+                .WithToolchain(InProcessEmitToolchain.Instance)
+                .WithId("Local"));
 
             AddJob(Job.Default
                 .WithNuGet("NGql.Core", "1.5.0")
+                .WithToolchain(InProcessEmitToolchain.Instance)
                 .WithId("Published")
                 .AsBaseline()
             );
@@ -49,7 +53,7 @@ public class VersionComparisonBenchmark
             .AddField("users.email");
         return query.ToString();
     }
-
+    
     [Benchmark]
     public string TypeDriftScenario()
     {
@@ -60,7 +64,7 @@ public class VersionComparisonBenchmark
             .AddField("user.profile.bio");
         return query.ToString();
     }
-
+    
     [Benchmark]
     public string CaseInsensitiveFields()
     {
@@ -72,7 +76,7 @@ public class VersionComparisonBenchmark
             .AddField("User.id");    // Different case
         return query.ToString();
     }
-
+    
     [Benchmark]
     public string ComplexQueryWithMerging()
     {
@@ -80,20 +84,20 @@ public class VersionComparisonBenchmark
             .CreateDefaultBuilder("Fragment1")
             .AddField("user.profile.name")
             .AddField("user.profile.avatar");
-
+    
         var fragment2 = QueryBuilder
             .CreateDefaultBuilder("Fragment2")
             .AddField("user.posts.title")
             .AddField("user.posts.publishedAt");
-
+    
         var combined = QueryBuilder
             .CreateDefaultBuilder("Combined")
             .Include(fragment1)
             .Include(fragment2);
-
+    
         return combined.ToString();
     }
-
+    
     [Benchmark]
     public string ArrayTypePreservation()
     {
@@ -105,7 +109,7 @@ public class VersionComparisonBenchmark
             .AddField("posts.title");
         return query.ToString();
     }
-
+    
     [Benchmark]
     [Arguments(10)]
     [Arguments(100)]
@@ -121,7 +125,7 @@ public class VersionComparisonBenchmark
             _ = query.ToString();
         }
     }
-
+    
     [Benchmark]
     public string DeepNestedFields()
     {
@@ -132,7 +136,7 @@ public class VersionComparisonBenchmark
             .AddField("user.profile.settings.theme.colors.primary");
         return query.ToString();
     }
-
+    
     [Benchmark]
     [Arguments(50)]
     [Arguments(200)]
@@ -145,7 +149,7 @@ public class VersionComparisonBenchmark
         }
         _ = builder.ToString();
     }
-
+    
     [Benchmark]
     public void ArgumentsPoolStress()
     {
@@ -158,7 +162,7 @@ public class VersionComparisonBenchmark
         }
         queries.ForEach(q => q.ToString());
     }
-
+    
     [Benchmark]
     public string TypeDriftEdgeCases()
     {
@@ -170,7 +174,7 @@ public class VersionComparisonBenchmark
             .AddField("user.age")              // Should preserve Int
             .ToString();
     }
-
+    
     [Benchmark]
     [Arguments(100)]
     [Arguments(500)]

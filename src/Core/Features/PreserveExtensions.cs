@@ -44,8 +44,8 @@ internal static class PreserveExtensions
         return newQuery;
     }
 
-    private static void ExtractMatchingFields(SortedDictionary<string, FieldDefinition> sourceFields,
-        SortedDictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
+    private static void ExtractMatchingFields(Dictionary<string, FieldDefinition> sourceFields,
+        Dictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
     {
         var dotIndex = path.IndexOf('.');
         var isLeafPath = dotIndex == -1;
@@ -95,7 +95,7 @@ internal static class PreserveExtensions
             source.Type ?? Constants.DefaultFieldType,
             source.Alias,
             source._arguments,
-            new SortedDictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase))
+            new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase))
         {
             _fields = []
         };
@@ -113,7 +113,7 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(SortedDictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
+    internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(Dictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
     {
         if (fields == null || nameOrAlias.Length == 0)
         {
@@ -135,7 +135,7 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ExtractVariablesFromFields(SortedDictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromFields(Dictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
     {
         foreach (var field in fields.Values)
         {

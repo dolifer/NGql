@@ -245,7 +245,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void PreserveFields(
-        SortedDictionary<string, FieldDefinition>? nodeFields,
+        Dictionary<string, FieldDefinition>? nodeFields,
         HashSet<string> fieldsToPreserve,
         string basePathStr)
     {
@@ -274,7 +274,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void PreserveNestedField(SortedDictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
+    private void PreserveNestedField(Dictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
     {
         if (QueryDefinitionExtensions.NavigatePath(nodeFields, field.AsSpan(), out var resolvedPath, basePathStr) != null)
         {
@@ -303,7 +303,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void PreserveRecursiveMatches(SortedDictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
+    private void PreserveRecursiveMatches(Dictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
     {
         var recursiveMatches = QueryDefinitionExtensions.FindFieldRecursively(nodeFields, field, "");
         foreach (var recursivePath in recursiveMatches)

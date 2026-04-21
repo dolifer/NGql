@@ -120,12 +120,14 @@ public sealed class QueryBlock
         _arguments = new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
     }
 
+    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
+
     /// <summary>
     /// Gets the string representation of the query.
     /// </summary>
     /// <returns>The GraphQL Query String</returns>
     /// <throws>ArgumentException</throws>
-    public override string ToString() => new QueryTextBuilder().Build(this, prefix: _prefix);
+    public override string ToString() => _builderCache.Value!.Build(this, prefix: _prefix);
 
     private void HandleAddField(object value)
     {

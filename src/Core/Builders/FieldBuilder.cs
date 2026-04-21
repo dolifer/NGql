@@ -444,7 +444,7 @@ public sealed class FieldBuilder
     /// <param name="metadata">The metadata for the field.</param>
     /// <returns>A new FieldBuilder instance.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static FieldBuilder Create(SortedDictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
+    public static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, SortedDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
         // FAIL-FAST: Use empty arguments if null or empty
         var argumentsToUse = arguments is { Count: > 0 } ? arguments : null;
@@ -478,7 +478,7 @@ public sealed class FieldBuilder
     /// </summary>
     /// <param name="fields">Target field collection</param>
     /// <param name="fieldDefinition">Field definition to create/merge</param>
-    private static void RecursiveCreateField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    private static void RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition);
 
@@ -489,7 +489,7 @@ public sealed class FieldBuilder
         }
     }
 
-    internal static void Include(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static void Include(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
         => RecursiveCreateField(fields, fieldDefinition);
 
     /// <summary>

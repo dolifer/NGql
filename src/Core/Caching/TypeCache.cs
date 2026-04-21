@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -9,6 +10,8 @@ namespace NGql.Core.Caching;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class TypeCache
 {
+    private static readonly ConcurrentDictionary<string, string> CustomTypes = new();
+
     // Pre-intern the most common GraphQL types (ordered by frequency)
     private static readonly string[] CommonTypes =
     [
@@ -54,7 +57,9 @@ internal static class TypeCache
         }
 
         // Standard path for other types
-        return type.ToString();
+        var typeString = type.ToString();
+        return CustomTypes.GetOrAdd(typeString, typeString);
+
     }
 
     /// <summary>

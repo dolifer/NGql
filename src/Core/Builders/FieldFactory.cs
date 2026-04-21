@@ -15,7 +15,7 @@ internal static class FieldFactory
     /// Gets or adds a field to the collection, handling all field path complexities.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, SortedDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+    internal static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, SortedDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
     {
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
 
@@ -39,7 +39,7 @@ internal static class FieldFactory
     /// Gets or adds a dotted field (contains dots for nested access).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldPath.IsEmpty)
         {
@@ -62,7 +62,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes dotted fields without arguments or metadata for optimal performance.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldFastPath(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
     {
         var currentFields = fieldDefinitions;
         FieldDefinition? result = null;
@@ -94,7 +94,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes dotted fields with arguments and metadata.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldWithMetadata(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition ProcessDottedFieldWithMetadata(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var currentFields = fieldDefinitions;
         var parentPathSpan = parentPath.AsSpan();
@@ -132,7 +132,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes individual segments of a dotted field path.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldSegments(SortedDictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    private static FieldDefinition ProcessDottedFieldSegments(Dictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
     {
         FieldDefinition? result = null;
 
@@ -169,7 +169,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes a single dotted segment with arguments and metadata.
     /// </summary>
-    private static FieldDefinition ProcessDottedSegment(SortedDictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
+    private static FieldDefinition ProcessDottedSegment(Dictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
     {
         if (!currentFields.TryGetValue(segment, out var field))
         {
@@ -200,7 +200,7 @@ internal static class FieldFactory
     /// <summary>
     /// Gets or adds a complex field with type parsing and alias handling.
     /// </summary>
-    private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         // FAIL-FAST: Empty path check
         if (fieldPath.IsEmpty)
@@ -247,7 +247,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes a field segment for complex field creation.
     /// </summary>
-    private static FieldDefinition ProcessFieldSegment(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition ProcessFieldSegment(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
         if (!currentFields.TryGetValue(segment.Name.ToString(), out var field))
         {
@@ -260,7 +260,7 @@ internal static class FieldFactory
     /// <summary>
     /// Creates a new field for complex field processing.
     /// </summary>
-    private static FieldDefinition CreateNewField(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
         // Guard: field names should not contain spaces (type info should be consumed)
         if (segment.Name.Contains(' '))
@@ -290,7 +290,7 @@ internal static class FieldFactory
     /// <summary>
     /// Updates an existing field during complex field processing.
     /// </summary>
-    private static FieldDefinition UpdateExistingField(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
+    private static FieldDefinition UpdateExistingField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
         if (segment.HasAlias && field._alias == null)
         {
@@ -325,7 +325,7 @@ internal static class FieldFactory
     /// <summary>
     /// Creates or merges a field definition into the target collection.
     /// </summary>
-    internal static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition CreateOrMergeField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         // Try to find existing field to merge with
         var existingField = Helpers.FindExistingField(fields, fieldDefinition);

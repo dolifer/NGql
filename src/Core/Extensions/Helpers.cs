@@ -63,7 +63,7 @@ internal static class Helpers
                obj is not QueryBlock &&
                obj is not IDictionary &&
                obj is not IList &&
-               !ValueFormatter.TryFormatPrimitiveType(obj, out _);
+               !ValueFormatter.IsPrimitiveType(obj);
     }
 
     private static void ExtractVariablesFromObjectProperties(object obj, SortedSet<Variable> variables)
@@ -363,7 +363,7 @@ internal static class Helpers
         }
 
         // Check if it's a primitive type that can be formatted
-        if (ValueFormatter.TryFormatPrimitiveType(value, out _))
+        if (ValueFormatter.IsPrimitiveType(value))
         {
             return value;
         }
@@ -642,7 +642,7 @@ internal static class Helpers
     /// <param name="fields">Field collection to search</param>
     /// <param name="fieldDefinition">Field definition to find</param>
     /// <returns>Existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition? FindExistingField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         // Try to find field with same name and alias
         var existingField = fields.Values.FirstOrDefault(f =>
@@ -657,7 +657,7 @@ internal static class Helpers
     /// <param name="fields">The root fields collection</param>
     /// <param name="fieldPath">The field path to search for</param>
     /// <returns>The existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
+    internal static FieldDefinition? FindExistingFieldByPath(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
         if (fieldPath.IsEmpty || fieldPath.IsWhiteSpace())
         {
@@ -672,7 +672,7 @@ internal static class Helpers
         return TraverseFieldPath(fields, fieldPath);
     }
 
-    private static FieldDefinition? TraverseFieldPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
+    private static FieldDefinition? TraverseFieldPath(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
         var currentFields = fields;
         var remainingPath = fieldPath;
@@ -708,7 +708,7 @@ internal static class Helpers
         segment = new SpanSegment(fieldName, ReadOnlySpan<char>.Empty, isLastFragment, ReadOnlySpan<char>.Empty);
     }
 
-    private static FieldDefinition? FindFieldInCollection(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    private static FieldDefinition? FindFieldInCollection(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
     {
         var fieldNameStr = fieldName.ToString();
         
@@ -720,7 +720,7 @@ internal static class Helpers
         return FindFieldWithTypeAnnotation(fields, fieldName);
     }
 
-    private static FieldDefinition? FindFieldWithTypeAnnotation(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    private static FieldDefinition? FindFieldWithTypeAnnotation(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
     {
         foreach (var field in fields.Values)
         {

@@ -11,9 +11,10 @@ namespace NGql.Core.Abstractions;
 public sealed record FieldDefinition
 {
     // Fields
-    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal Dictionary<string, FieldDefinition>? _fields;
     internal string? _type;
     internal string? _alias;
+    internal string _effectiveName;
     internal SortedDictionary<string, object?>? _arguments;
     internal Dictionary<string, object?>? _metadata;
     internal string Path { get; init; } = string.Empty;
@@ -27,13 +28,14 @@ public sealed record FieldDefinition
     {
     }
 
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, SortedDictionary<string, FieldDefinition>? fields = null)
+    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
         _alias = alias;
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
         _fields = fields?.Count > 0 ? fields : null;
+        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     // Properties
@@ -62,14 +64,18 @@ public sealed record FieldDefinition
     public string? Alias
     {
         get => _alias;
-        init => _alias = value;
+        init
+        {
+            _alias = value;
+            _effectiveName = !string.IsNullOrEmpty(value) ? value : Name;
+        }
     }
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields
+    public Dictionary<string, FieldDefinition> Fields
         => _fields ??= new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary></summary>

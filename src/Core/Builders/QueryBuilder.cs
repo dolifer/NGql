@@ -22,7 +22,8 @@ public sealed class QueryBuilder
     /// <summary>
     ///     Maps original query names to their merged definition names.
     /// </summary>
-    private readonly QueryMap _queryMap = new();
+    private QueryMap? _queryMap;
+    private QueryMap QueryMapInstance => _queryMap ??= new();
 
     private readonly QueryDefinition _definition;
 
@@ -269,7 +270,7 @@ public sealed class QueryBuilder
         var builder = FieldBuilder.Create(Definition.Fields, field, fieldType, arguments, metadata);
         fieldBuilder(builder);
 
-        _queryMap.UpdateRootMapping(_definition);
+        QueryMapInstance.UpdateRootMapping(_definition);
         return this;
     }
 
@@ -326,7 +327,7 @@ public sealed class QueryBuilder
         // FAST PATH: Early return if no subfields to process
         if (!hasSubFields)
         {
-            _queryMap.UpdateRootMapping(_definition);
+            QueryMapInstance.UpdateRootMapping(_definition);
             return this;
         }
 
@@ -336,7 +337,7 @@ public sealed class QueryBuilder
             builder.AddField(subField);
         }
 
-        _queryMap.UpdateRootMapping(_definition);
+        QueryMapInstance.UpdateRootMapping(_definition);
         return this;
     }
 
@@ -347,7 +348,7 @@ public sealed class QueryBuilder
     /// <returns>Current QueryBuilder instance for method chaining</returns>
     private QueryBuilder IncludeImpl(in QueryDefinition queryDefinition)
     {
-        QueryMerger.MergeQuery(_definition, _queryMap, in queryDefinition);
+        QueryMerger.MergeQuery(_definition, QueryMapInstance, in queryDefinition);
         return this;
     }
 
@@ -366,7 +367,7 @@ public sealed class QueryBuilder
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
     public string[] GetPathTo(string queryName, string? nodePath = null)
-        => _queryMap.GetPathTo(queryName, nodePath, _definition);
+        => QueryMapInstance.GetPathTo(queryName, nodePath, _definition);
 
     /// <summary>
     /// Gets the count of fields in the QueryDefinition.
@@ -377,7 +378,7 @@ public sealed class QueryBuilder
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString()
     {
-        _queryMap.UpdateRootMapping(_definition);
+        QueryMapInstance.UpdateRootMapping(_definition);
         return Definition.ToString();
     }
 

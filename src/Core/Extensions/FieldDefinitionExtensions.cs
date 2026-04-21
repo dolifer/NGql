@@ -11,16 +11,6 @@ namespace NGql.Core.Extensions;
 internal static class FieldDefinitionExtensions
 {
     /// <summary>
-    /// Gets the effective name for the field, preferring an alias over name.
-    /// This method is already optimized - no span version is needed as it returns existing strings without manipulation.
-    /// </summary>
-    /// <param name="field">The field definition</param>
-    /// <returns>The alias if available, otherwise the field name</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static string GetEffectiveName(this FieldDefinition field)
-        => !string.IsNullOrEmpty(field._alias) ? field._alias : field.Name;
-
-    /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
     /// </summary>
     /// <param name="existingField">The existing field definition</param>
@@ -116,7 +106,7 @@ internal static class FieldDefinitionExtensions
         }
 
         // Create a merged field definition
-        var mergedFields = new SortedDictionary<string, FieldDefinition>(existing.Fields, StringComparer.OrdinalIgnoreCase);
+        var mergedFields = new Dictionary<string, FieldDefinition>(existing.Fields, StringComparer.OrdinalIgnoreCase);
 
         // Merge nested fields recursively
         foreach (var (key, incomingNestedField) in incoming.Fields)
@@ -129,18 +119,15 @@ internal static class FieldDefinitionExtensions
             }
             else
             {
-                // Check for alias conflicts at a nested level
-                var effectiveName = incomingNestedField.GetEffectiveName();
-
                 // Check if any existing field has the same effective name
                 var conflictingField = mergedFields.Values.FirstOrDefault(f =>
-                    string.Equals(f.GetEffectiveName(), effectiveName, StringComparison.OrdinalIgnoreCase));
+                    string.Equals(f._effectiveName, incomingNestedField._effectiveName, StringComparison.OrdinalIgnoreCase));
 
                 if (conflictingField != null)
                 {
                     // Generate unique alias to resolve conflict
-                    var existingEffectiveNames = mergedFields.Values.Select(f => f.GetEffectiveName());
-                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(effectiveName, existingEffectiveNames);
+                    var existingEffectiveNames = mergedFields.Values.Select(f => f._effectiveName);
+                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingNestedField._effectiveName, existingEffectiveNames);
 
                     var fieldToAdd = incomingNestedField with { Alias = uniqueAlias };
                     mergedFields[key] = fieldToAdd;

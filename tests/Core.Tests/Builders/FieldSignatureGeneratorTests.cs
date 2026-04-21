@@ -12,7 +12,7 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_EmptyFields_ShouldReturnZero()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var signature = FieldSignatureGenerator.GenerateSignature(fields);
@@ -25,19 +25,19 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_SameFieldsNoArguments_ShouldReturnSameSignature()
     {
         // Arrange
-        var fields1 = new SortedDictionary<string, FieldDefinition>
+        var fields1 = new Dictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
-                new SortedDictionary<string, FieldDefinition>
+                new Dictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
                 })
         };
 
-        var fields2 = new SortedDictionary<string, FieldDefinition>
+        var fields2 = new Dictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
-                new SortedDictionary<string, FieldDefinition>
+                new Dictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
                 })
@@ -57,14 +57,14 @@ public class FieldSignatureGeneratorTests
         // Arrange
         var args = new SortedDictionary<string, object?> { ["filter"] = "value" };
 
-        var fields1 = new SortedDictionary<string, FieldDefinition>
+        var fields1 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args, new SortedDictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args, new Dictionary<string, FieldDefinition>())
         };
 
-        var fields2 = new SortedDictionary<string, FieldDefinition>
+        var fields2 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args, new SortedDictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args, new Dictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -82,14 +82,14 @@ public class FieldSignatureGeneratorTests
         var args1 = new SortedDictionary<string, object?> { ["filter"] = "value1" };
         var args2 = new SortedDictionary<string, object?> { ["filter"] = "value2" };
 
-        var fields1 = new SortedDictionary<string, FieldDefinition>
+        var fields1 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args1, new SortedDictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args1, new Dictionary<string, FieldDefinition>())
         };
 
-        var fields2 = new SortedDictionary<string, FieldDefinition>
+        var fields2 = new Dictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args2, new SortedDictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args2, new Dictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -104,12 +104,12 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_DifferentFields_ShouldReturnDifferentSignatures()
     {
         // Arrange
-        var fields1 = new SortedDictionary<string, FieldDefinition>
+        var fields1 = new Dictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles")
         };
 
-        var fields2 = new SortedDictionary<string, FieldDefinition>
+        var fields2 = new Dictionary<string, FieldDefinition>
         {
             ["users"] = new("users")
         };
@@ -129,21 +129,21 @@ public class FieldSignatureGeneratorTests
         var nestedArgs1 = new SortedDictionary<string, object?> { ["email"] = "test1@test.com" };
         var nestedArgs2 = new SortedDictionary<string, object?> { ["email"] = "test2@test.com" };
 
-        var fields1 = new SortedDictionary<string, FieldDefinition>
+        var fields1 = new Dictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
-                new SortedDictionary<string, FieldDefinition>
+                new Dictionary<string, FieldDefinition>
                 {
-                    ["node"] = new("node", "object", null, nestedArgs1, new SortedDictionary<string, FieldDefinition>())
+                    ["node"] = new("node", "object", null, nestedArgs1, new Dictionary<string, FieldDefinition>())
                 })
         };
 
-        var fields2 = new SortedDictionary<string, FieldDefinition>
+        var fields2 = new Dictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new SortedDictionary<string, object?>(),
-                new SortedDictionary<string, FieldDefinition>
+                new Dictionary<string, FieldDefinition>
                 {
-                    ["node"] = new("node", "object", null, nestedArgs2, new SortedDictionary<string, FieldDefinition>())
+                    ["node"] = new("node", "object", null, nestedArgs2, new Dictionary<string, FieldDefinition>())
                 })
         };
 
