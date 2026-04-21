@@ -4,14 +4,14 @@ using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Jobs;
-using BenchmarkDotNet.Toolchains.InProcess.Emit;
 using NGql.Core.Builders;
 
 namespace Benchmarks.Benchmarks;
 
 /// <summary>
-/// Compares performance between local (current) and published package versions
-/// Run with: dotnet run -c Release -- --filter "*VersionComparison*"
+/// Compares performance between local (current) and published package versions.
+/// Uses out-of-process execution so the NuGet reference is genuinely loaded for the Published job.
+/// Run with: dotnet run -c Release -- --filter "*VersionComparison*SimpleQuery*"
 /// </summary>
 [Config(typeof(Config))]
 [MemoryDiagnoser]
@@ -20,27 +20,21 @@ public class VersionComparisonBenchmark
     private sealed class Config : ManualConfig
     {
 #pragma warning disable S1144
-#pragma warning disable CS0618 // Type or member is obsolete
         public Config()
         {
-            // Compare local version vs published version
-            AddJob(Job.Default
-                .WithToolchain(InProcessEmitToolchain.Instance)
-                .WithId("Local"));
-
-            AddJob(Job.Default
-                .WithNuGet("NGql.Core", "1.5.0")
-                .WithToolchain(InProcessEmitToolchain.Instance)
-                .WithId("Published")
-                .AsBaseline()
-            );
+            // Single out-of-process job — track absolute numbers over time.
+            // Comparing against the NuGet-published version via WithNuGet() is not possible
+            // once the AssemblyVersion changes (the compiled benchmark binary can only reference
+            // one assembly version). Compare absolute results against the v1.5.0 baseline instead:
+            //   SimpleQuery            v1.5.0: ~722 ns / 3.13 KB
+            //   ArgumentsPoolStress    v1.5.0: ~17,829 ns / 82.08 KB
+            //   ComplexQueryWithMerging v1.5.0: ~3,397 ns / 13.4 KB
+            AddJob(Job.ShortRun.WithId("Local"));
 
             AddColumn(StatisticColumn.P95);
             AddDiagnoser(MemoryDiagnoser.Default);
             WithOption(ConfigOptions.JoinSummary, true);
-            WithOption(ConfigOptions.DisableOptimizationsValidator, true);
         }
-#pragma warning restore CS0618 // Type or member is obsolete
 #pragma warning restore S1144
     }
 
