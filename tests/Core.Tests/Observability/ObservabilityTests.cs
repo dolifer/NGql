@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
@@ -188,4 +189,275 @@ public class ObservabilityTests
 
         recordingAction.Should().NotThrow();
     }
+
+    #region NGqlTelemetry Comprehensive Tests
+
+    [Fact]
+    public void NGqlTelemetry_RecordQueryBuilt_NoFields_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordQueryBuilt("EmptyQuery", 0, 0.0001);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordQueryBuilt_ManyFields_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordQueryBuilt("LargeQuery", 100, 0.5);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordQueryBuilt_NullQueryName_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordQueryBuilt(null, 10, 0.01);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordQueryBuilt_VariousDurations_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () =>
+        {
+            NGqlTelemetry.RecordQueryBuilt("FastQuery", 5, 0.0001);
+            NGqlTelemetry.RecordQueryBuilt("SlowQuery", 50, 2.5);
+            NGqlTelemetry.RecordQueryBuilt("MediumQuery", 25, 0.1);
+        };
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordFieldAdded_SimpleField_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordFieldAdded("name", false, false);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordFieldAdded_FieldWithArguments_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordFieldAdded("users", true, false);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordFieldAdded_FieldWithMetadata_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordFieldAdded("profile", false, true);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordFieldAdded_NestedField_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordFieldAdded("user.profile.address", true, true);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordFieldAdded_DeepNestedField_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordFieldAdded("a.b.c.d.e.f.g", false, false);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_SmallOutput_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordSerialization(0.0001, 256); // Small < 1KB
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_MediumOutput_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordSerialization(0.001, 5120); // Medium < 10KB
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_LargeOutput_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordSerialization(0.01, 50000); // Large < 100KB
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_VeryLargeOutput_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordSerialization(0.05, 500000); // Very large >= 100KB
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_EdgeCaseSizes_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () =>
+        {
+            NGqlTelemetry.RecordSerialization(0.0001, 1023);     // Just under 1KB boundary
+            NGqlTelemetry.RecordSerialization(0.0001, 1024);     // Exactly 1KB boundary
+            NGqlTelemetry.RecordSerialization(0.001, 10240);     // Exactly 10KB boundary
+            NGqlTelemetry.RecordSerialization(0.01, 102400);     // Exactly 100KB boundary
+        };
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordActiveQueryChange_SingleIncrement_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordActiveQueryChange(1);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordActiveQueryChange_SingleDecrement_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordActiveQueryChange(-1);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordActiveQueryChange_MultipleChanges_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () =>
+        {
+            NGqlTelemetry.RecordActiveQueryChange(1);
+            NGqlTelemetry.RecordActiveQueryChange(1);
+            NGqlTelemetry.RecordActiveQueryChange(1);
+            NGqlTelemetry.RecordActiveQueryChange(-2);
+            NGqlTelemetry.RecordActiveQueryChange(-1);
+        };
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordActiveQueryChange_LargeDeltas_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () =>
+        {
+            NGqlTelemetry.RecordActiveQueryChange(100);
+            NGqlTelemetry.RecordActiveQueryChange(-50);
+            NGqlTelemetry.RecordActiveQueryChange(1000);
+        };
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordPoolOperation_StringBuilderPool_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordPoolOperation("stringbuilder", "get", "hit", 10);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordPoolOperation_ArgumentsPool_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordPoolOperation("arguments", "return", "miss", 5);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordPoolOperation_DifferentCacheLevels_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () =>
+        {
+            NGqlTelemetry.RecordPoolOperation("pool1", "get", "thread_local_hit", 20);
+            NGqlTelemetry.RecordPoolOperation("pool2", "get", "global_hit", 15);
+            NGqlTelemetry.RecordPoolOperation("pool3", "get", "miss", 0);
+        };
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordPoolOperation_LargePoolSize_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordPoolOperation("largepool", "operation", "hit", 10000);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_CreateTimedScope_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () =>
+        {
+            using var scope = NGqlTelemetry.CreateTimedScope("test_operation", default);
+        };
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_CreateTimedScope_Serialize_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () =>
+        {
+            using var scope = NGqlTelemetry.CreateTimedScope("ngql.serialize", default);
+        };
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_CreateTimedScope_MultipleScopes_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () =>
+        {
+            using (var scope1 = NGqlTelemetry.CreateTimedScope("op1", default))
+            {
+                using (var scope2 = NGqlTelemetry.CreateTimedScope("op2", default))
+                {
+                    // Nested scopes
+                }
+            }
+        };
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_DisposeResources_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () => NGqlTelemetry.DisposeResources();
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordQueryBuilt_ZeroDuration_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordQueryBuilt("ZeroDurationQuery", 5, 0);
+        recordAction.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_RecordSerialization_ZeroOutput_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var recordAction = () => NGqlTelemetry.RecordSerialization(0, 0);
+        recordAction.Should().NotThrow();
+    }
+
+    #endregion
 }

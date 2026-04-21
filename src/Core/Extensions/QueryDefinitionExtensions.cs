@@ -21,7 +21,7 @@ public static class QueryDefinitionExtensions
     /// <returns>The final field definition, or null if not found</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition? NavigatePath(
-        SortedDictionary<string, FieldDefinition>? fields,
+        IReadOnlyDictionary<string, FieldDefinition>? fields,
         ReadOnlySpan<char> path,
         out string? resolvedPath,
         string? prependPath = null)
@@ -32,7 +32,7 @@ public static class QueryDefinitionExtensions
             return null;
         }
         
-        var currentFields = fields;
+        IReadOnlyDictionary<string, FieldDefinition>? currentFields = fields;
         FieldDefinition? currentField = null;
         List<string>? pathSegments = null;
 
@@ -56,7 +56,7 @@ public static class QueryDefinitionExtensions
                 break; // Last segment
 
             // Navigate to next level (but allow last segment to be a leaf)
-            if (currentField._fields == null)
+            if (currentField._children == null)
             {
                 resolvedPath = null;
                 return null;
@@ -86,7 +86,7 @@ public static class QueryDefinitionExtensions
     /// Returns all matching paths.
     /// </summary>
     internal static List<string> FindFieldRecursively(
-        SortedDictionary<string, FieldDefinition> fields,
+        IReadOnlyDictionary<string, FieldDefinition> fields,
         string fieldName,
         string basePath)
     {
@@ -96,7 +96,7 @@ public static class QueryDefinitionExtensions
     }
 
     private static void FindFieldRecursivelyCore(
-        SortedDictionary<string, FieldDefinition> fields,
+        IReadOnlyDictionary<string, FieldDefinition> fields,
         string fieldName,
         string basePath,
         List<string> results)
@@ -115,7 +115,7 @@ public static class QueryDefinitionExtensions
             // Recursively search child fields
             if (fieldDef.HasFields)
             {
-                FindFieldRecursivelyCore(fieldDef._fields!, fieldName, currentPath, results);
+                FindFieldRecursivelyCore(fieldDef._children!, fieldName, currentPath, results);
             }
         }
     }

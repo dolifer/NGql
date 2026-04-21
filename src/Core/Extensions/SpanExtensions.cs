@@ -12,7 +12,7 @@ internal static class SpanExtensions
     /// Try to get value from a dictionary using a span key without allocating string
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryGetValue(this SortedDictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, out FieldDefinition? value)
+    public static bool TryGetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, out FieldDefinition? value)
     {
         value = null;
         
@@ -36,16 +36,63 @@ internal static class SpanExtensions
     /// Set value in a dictionary using a span key, converting to string only when needed
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void SetValue(this SortedDictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, FieldDefinition value)
+    public static void SetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, FieldDefinition value)
     {
         var keyString = key.ToString();
         dictionary[keyString] = value;
     }
     
     /// <summary>
+    /// Get or add a simple field using a span key with optimized path building — FieldChildren variant
+    /// </summary>
+    public static FieldDefinition GetOrAddSimpleField(this FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
+        if (children.TryGetValue(fieldName, out var existingField) && existingField != null)
+        {
+            if (arguments is { Count: > 0 })
+                existingField = existingField.MergeFieldArguments(arguments);
+
+            if (metadata is { Count: > 0 })
+            {
+                var mergedMetadata = Helpers.MergeNullableMetadata(existingField._metadata, metadata);
+                existingField = existingField with { Metadata = mergedMetadata };
+            }
+
+            children.Set(fieldName, existingField);
+            return existingField;
+        }
+
+        if (string.IsNullOrWhiteSpace(parentPath))
+        {
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldName, metadata);
+            children.Append(field);
+            return field;
+        }
+
+        var estimatedLength = parentPath.Length + 1 + fieldName.Length;
+        if (estimatedLength <= 256)
+        {
+            Span<char> pathBuffer = stackalloc char[estimatedLength];
+            var pathBuilder = new SpanPathBuilder(pathBuffer);
+            pathBuilder.Append(parentPath.AsSpan());
+            pathBuilder.Append(fieldName);
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, pathBuilder.AsSpan(), metadata);
+            children.Append(field);
+            return field;
+        }
+        else
+        {
+            var fieldPath = $"{parentPath}.{fieldName}";
+            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldPath.AsSpan(), metadata);
+            children.Append(field);
+            return field;
+        }
+    }
+
+    /// <summary>
     /// Get or add a simple field using a span key with optimized path building
     /// </summary>
-    public static FieldDefinition GetOrAddSimpleField(this SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, SortedDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    public static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField != null)
         {

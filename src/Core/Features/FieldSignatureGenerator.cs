@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Text;
 using NGql.Core.Abstractions;
@@ -14,12 +15,16 @@ public static class FieldSignatureGenerator
     // Pre-allocated StringBuilder for signature generation to avoid repeated allocations
     private static readonly ThreadLocal<StringBuilder> SignatureBuilder = new(() => new StringBuilder(256));
 
+    // Singleton comparer for sorting by Name for deterministic signature generation.
+    private static readonly IComparer<FieldDefinition> FieldNameComparer =
+        Comparer<FieldDefinition>.Create(static (a, b) => StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name));
+
     /// <summary>
     /// Generates a unique hash signature for a collection of field definitions.
     /// </summary>
     /// <param name="fields">The field definitions to generate signature for.</param>
     /// <returns>A unique hash representing the filter signature of the fields.</returns>
-    public static int GenerateSignature(SortedDictionary<string, FieldDefinition> fields)
+    public static int GenerateSignature(Dictionary<string, FieldDefinition> fields)
     {
         if (fields.Count == 0)
         {
@@ -29,13 +34,23 @@ public static class FieldSignatureGenerator
         var builder = SignatureBuilder.Value!;
         builder.Clear();
 
-        foreach (var field in fields.Values.OrderBy(f => f.Name))
+        foreach (var field in fields.Values)
         {
             AppendFieldSignature(builder, field, ReadOnlySpan<char>.Empty);
         }
 
-        var signature = builder.ToString();
-        return string.IsNullOrEmpty(signature) ? 0 : signature.GetHashCode(StringComparison.InvariantCulture);
+        if (builder.Length == 0) return 0;
+        // Hash directly over StringBuilder chunks — avoids allocating a temporary string.
+        unchecked
+        {
+            int hash = 5381;
+            foreach (var chunk in builder.GetChunks())
+            {
+                foreach (var c in chunk.Span)
+                    hash = (hash << 5) + hash + c; // djb2: hash*33 + c
+            }
+            return hash;
+        }
     }
 
     /// <summary>
@@ -92,7 +107,8 @@ public static class FieldSignatureGenerator
         if (field._arguments is { Count: > 0 })
         {
             builder.Append('[');
-            foreach (var arg in field._arguments.OrderBy(a => a.Key))
+            // _arguments is SortedDictionary — already ordered by key, no OrderBy needed.
+            foreach (var arg in field._arguments)
             {
                 builder.Append(arg.Key);
                 builder.Append(':');
@@ -104,12 +120,22 @@ public static class FieldSignatureGenerator
 
         builder.Append('|');
 
-        // Recursively process child fields
-        if (field._fields != null)
+        // Recursively process child fields sorted by Name for a deterministic hash.
+        // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
+        if (field._children is { Count: > 0 })
         {
-            foreach (var childField in field._fields.Values.OrderBy(f => f.Name))
+            var fieldCount = field._children.Count;
+            var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
+            try
             {
-                AppendFieldSignature(builder, childField, currentPath);
+                field._children.AsSpan().CopyTo(rented);
+                Array.Sort(rented, 0, fieldCount, FieldNameComparer);
+                for (var i = 0; i < fieldCount; i++)
+                    AppendFieldSignature(builder, rented[i], currentPath);
+            }
+            finally
+            {
+                ArrayPool<FieldDefinition>.Shared.Return(rented, clearArray: false);
             }
         }
     }
@@ -123,7 +149,8 @@ public static class FieldSignatureGenerator
         if (field._arguments is { Count: > 0 })
         {
             builder.Append('[');
-            foreach (var arg in field._arguments.OrderBy(a => a.Key))
+            // _arguments is SortedDictionary — already ordered by key, no OrderBy needed.
+            foreach (var arg in field._arguments)
             {
                 builder.Append(arg.Key);
                 builder.Append(':');
@@ -135,12 +162,22 @@ public static class FieldSignatureGenerator
 
         builder.Append('|');
 
-        // Recursively process child fields
-        if (field._fields != null)
+        // Recursively process child fields sorted by Name for a deterministic hash.
+        // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
+        if (field._children is { Count: > 0 })
         {
-            foreach (var childField in field._fields.Values.OrderBy(f => f.Name))
+            var fieldCount = field._children.Count;
+            var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
+            try
             {
-                AppendFieldSignature(builder, childField, currentPath.AsSpan());
+                field._children.AsSpan().CopyTo(rented);
+                Array.Sort(rented, 0, fieldCount, FieldNameComparer);
+                for (var i = 0; i < fieldCount; i++)
+                    AppendFieldSignature(builder, rented[i], currentPath.AsSpan());
+            }
+            finally
+            {
+                ArrayPool<FieldDefinition>.Shared.Return(rented, clearArray: false);
             }
         }
     }
@@ -158,11 +195,8 @@ public static class FieldSignatureGenerator
             return;
         }
 
-        if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
-        {
-            builder.Append(formattedValue);
+        if (ValueFormatter.TryAppendPrimitive(value, builder))
             return;
-        }
 
         AppendComplexValue(builder, value);
     }
@@ -184,12 +218,18 @@ public static class FieldSignatureGenerator
     }
 
     private static void AppendDictionary(StringBuilder builder, IDictionary<string, object?> dict)
-        => Helpers.WriteCollection('{', '}', dict.OrderBy(d => d.Key), builder, (sb, item) =>
+    {
+        // SortedDictionary is already key-ordered; avoid allocating an IOrderedEnumerable.
+        IEnumerable<KeyValuePair<string, object?>> entries = dict is SortedDictionary<string, object?>
+            ? dict
+            : dict.OrderBy(d => d.Key);
+        Helpers.WriteCollection('{', '}', entries, builder, (sb, item) =>
         {
             var kvp = (KeyValuePair<string, object?>)item!;
             sb.Append(kvp.Key).Append(':');
             AppendArgumentValue(sb, kvp.Value);
         });
+    }
 
     private static void AppendEnumerable(StringBuilder builder, IEnumerable enumerable)
         => Helpers.WriteCollection('[', ']', enumerable, builder, (sb, item) => AppendArgumentValue(sb, item));

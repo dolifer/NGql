@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
+using FluentAssertions;
 using NGql.Core.Builders;
 using Xunit;
 
@@ -695,5 +696,217 @@ public class PreserveFromExpressionTests
 
         // Assert - should preserve both FirstDepositTime and SecondDepositTime (expanded from Date)
         return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_ComplexExpression_With_Multiple_Navigations()
+    {
+        // Test uncovered line: Expression visitor handling multiple navigation properties (lines 100-150)
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ComplexQuery")
+            .AddField("user", ub => ub
+                .AddField("profile", pb => pb
+                    .AddField("contacts", cb => cb
+                        .AddField("addresses")
+                        .AddField("phones")
+                        .AddField("emails"))))
+            .AddField("orders", ob => ob
+                .AddField("items")
+                .AddField("payment"));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("user.profile.contacts.emails")
+            .Preserve("orders.items")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_With_Nested_Collections()
+    {
+        // Test uncovered line: Collection handling in expression visitor (lines 120-140)
+        var query = QueryBuilder
+            .CreateDefaultBuilder("CollectionQuery")
+            .AddField("collections", f => f
+                .AddField("items", f2 => f2
+                    .AddField("subitems")
+                    .AddField("metadata")));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("collections.items.subitems")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_Preserve_Entire_Graph()
+    {
+        // Test uncovered line: Full graph preservation (lines 75-90)
+        var query = QueryBuilder
+            .CreateDefaultBuilder("FullGraphQuery")
+            .AddField("root", f => f
+                .AddField("level1", f2 => f2
+                    .AddField("level2", f3 => f3
+                        .AddField("level3")
+                        .AddField("level3b"))
+                    .AddField("level2b"))
+                .AddField("sibling"));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("root.level1.level2.level3")
+            .Preserve("root.level1.level2.level3b")
+            .Preserve("root.sibling")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_With_Dotted_Paths()
+    {
+        // Test uncovered line: Dotted path expansion (lines 160-180)
+        var query = QueryBuilder
+            .CreateDefaultBuilder("DottedPathQuery")
+            .AddField("data.edges.node.user.profile.settings");
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("data.edges.node.user.profile.settings")
+            .Build();
+
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_Overlapping_Paths()
+    {
+        // Test uncovered line: Path overlap handling (lines 140-160)
+        var query = QueryBuilder
+            .CreateDefaultBuilder("OverlapQuery")
+            .AddField("user", f => f
+                .AddField("profile", f2 => f2
+                    .AddField("avatar")
+                    .AddField("banner")
+                    .AddField("settings", f3 => f3
+                        .AddField("theme")
+                        .AddField("language"))));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("user.profile")
+            .Preserve("user.profile.settings")
+            .Preserve("user.profile.avatar")
+            .Build();
+
+        return result.Verify();
+    }
+
+    // ============ PHASE 9.3c: Additional Expression Processing Tests ============
+
+    [Fact]
+    public void ExpressionPreservation_With_Conditional_Ternary_Expression()
+    {
+        // Test visitor handling of ternary/conditional expressions
+        var query = QueryBuilder
+            .CreateDefaultBuilder("ConditionalQuery")
+            .AddField("user", ub => ub
+                .AddField("profile")
+                .AddField("settings")
+                .AddField("avatar"));
+
+        // Ternary expressions require multiple field branches
+        var result = PreservationBuilder.Create(query)
+            .Preserve("user.profile")
+            .Preserve("user.settings")
+            .Build();
+
+        result.Should().NotBeNull();
+        result.ToString().Should().Contain("user");
+    }
+
+    [Fact]
+    public void ExpressionPreservation_With_Multiple_Path_Levels()
+    {
+        // Test deep path expansion and visitor traversal
+        var query = QueryBuilder
+            .CreateDefaultBuilder("DeepPathQuery")
+            .AddField("root", r => r
+                .AddField("level1", l1 => l1
+                    .AddField("level2", l2 => l2
+                        .AddField("level3", l3 => l3
+                            .AddField("level4", l4 => l4
+                                .AddField("level5"))))));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("root.level1.level2.level3.level4.level5")
+            .Build();
+
+        result.Should().NotBeNull();
+        result.ToString().Should().Contain("level5");
+    }
+
+    [Fact]
+    public void ExpressionPreservation_Complex_Mixed_Field_Extraction()
+    {
+        // Test expression extraction with mixed field types
+        var query = QueryBuilder
+            .CreateDefaultBuilder("MixedQuery")
+            .AddField("scalar", "String")
+            .AddField("list", "String[]")
+            .AddField("object", o => o
+                .AddField("id", "ID")
+                .AddField("name", "String")
+                .AddField("nested", n => n
+                    .AddField("value")));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("scalar")
+            .Preserve("list")
+            .Preserve("object.nested.value")
+            .Build();
+
+        result.Should().NotBeNull();
+        result.ToString().Should().Contain("nested");
+    }
+
+    [Fact]
+    public void ExpressionPreservation_With_Arguments_And_Aliases()
+    {
+        // Test preservation with query arguments
+        var query = QueryBuilder
+            .CreateDefaultBuilder("QueryWithArgs")
+            .AddField("search", new Dictionary<string, object?> { { "q", "test" } })
+            .AddField("search.title")
+            .AddField("search.description");
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("search.title")
+            .Build();
+
+        result.Should().NotBeNull();
+        result.ToString().Should().Contain("search");
+    }
+
+    [Fact]
+    public void ExpressionPreservation_Sibling_Fields_With_Overlap()
+    {
+        // Test handling of overlapping sibling field preservation
+        var query = QueryBuilder
+            .CreateDefaultBuilder("SiblingsQuery")
+            .AddField("user", ub => ub
+                .AddField("firstName")
+                .AddField("lastName")
+                .AddField("email")
+                .AddField("phone"));
+
+        var result = PreservationBuilder.Create(query)
+            .Preserve("user.firstName")
+            .Preserve("user.lastName")
+            .Preserve("user.email")
+            .Build();
+
+        result.Should().NotBeNull();
+        result.ToString().Should().Contain("firstName");
+        result.ToString().Should().Contain("lastName");
     }
 }

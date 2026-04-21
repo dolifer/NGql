@@ -125,20 +125,6 @@ internal static class ThreadLocalMemoryManager
         }, "warmup_caches");
     }
 
-    /// <summary>
-    /// Forces cleanup of thread-local caches with observability
-    /// </summary>
-    internal static void CleanupThreadLocalCaches()
-    {
-        using var activity = NGqlActivity.StartQuery("cache_cleanup")
-            .WithTag("operation.type", "cleanup");
-
-        // Report final statistics before cleanup
-        ReportPoolEfficiency("all_pools");
-        
-        // Thread-local caches will be cleaned up automatically when the thread exits
-        activity.AddEvent("cleanup_scheduled");
-    }
 }
 
 /// <summary>

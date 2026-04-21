@@ -1,0 +1,13 @@
+﻿query DottedPathQuery{
+    data{
+        edges{
+            node{
+                user{
+                    profile{
+                        settings
+                    }
+                }
+            }
+        }
+    }
+}

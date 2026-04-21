@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
+using NGql.Core.Pooling;
 using Xunit;
 
 namespace NGql.Core.Tests.Pooling;
@@ -207,5 +210,219 @@ public class LockFreePoolingTests
         };
 
         action.Should().NotThrow("High frequency operations should not cause pooling issues");
+    }
+
+    /// <summary>
+    /// RED TEST: Demonstrates ThreadLocalPool<T> bug where different generic types 
+    /// corrupt each other's thread-local caches due to shared [ThreadStatic] field.
+    /// </summary>
+    [Fact]
+    public void ThreadLocalPool_Different_Generic_Types_Should_Not_Corrupt_Each_Other()
+    {
+        // ARRANGE
+        var pool1 = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            poolName: "StringBuilderPool"
+        );
+
+        var pool2 = new ThreadLocalPool<Dictionary<string, object>>(
+            factory: () => new Dictionary<string, object>(),
+            reset: dict => dict.Clear(),
+            poolName: "DictionaryPool"
+        );
+
+        var errors = new List<string>();
+
+        // ACT: Interleave operations from different pools on same thread
+        var t1 = new Thread(() =>
+        {
+            try
+            {
+                // Get from pool1
+                var sb = pool1.Get();
+                sb.Should().NotBeNull();
+                sb.Should().BeOfType<StringBuilder>();
+                sb.Append("thread1");
+                sb.ToString().Should().Be("thread1");
+
+                Thread.Yield(); // Context switch point
+
+                // Get from pool2 - should not corrupt pool1 cache
+                var dict = pool2.Get();
+                dict.Should().NotBeNull();
+                dict.Should().BeOfType<Dictionary<string, object>>();
+
+                Thread.Yield();
+
+                // Return to pool1
+                pool1.Return(sb);
+
+                Thread.Yield();
+
+                // Get from pool1 again - should still be same object with same identity (reused from pool)
+                var sb2 = pool1.Get();
+                ReferenceEquals(sb2, sb).Should().BeTrue("Should reuse same StringBuilder from pool");
+                sb2.Should().BeOfType<StringBuilder>();
+                
+                // The StringBuilder will be cleared after return, so it should be empty now
+                sb2.ToString().Should().BeEmpty("Should be cleared by reset function");
+                
+                // Verify we can use it again
+                sb2.Append("thread1_reused");
+                sb2.ToString().Should().Be("thread1_reused");
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Thread 1: {ex.Message}");
+            }
+        });
+
+        var t2 = new Thread(() =>
+        {
+            try
+            {
+                Thread.Sleep(10); // Let t1 start first
+
+                // Get from pool2
+                var dict = pool2.Get();
+                dict.Should().NotBeNull();
+                dict.Should().BeOfType<Dictionary<string, object>>();
+                dict.Add("key1", "value1");
+
+                Thread.Yield();
+
+                // Get from pool1 - should not corrupt pool2 cache
+                var sb = pool1.Get();
+                sb.Should().NotBeNull();
+                sb.Should().BeOfType<StringBuilder>();
+
+                Thread.Yield();
+
+                // Return to pool2
+                pool2.Return(dict);
+
+                Thread.Yield();
+
+                // Get from pool2 again - should still be same object (reused from pool)
+                var dict2 = pool2.Get();
+                ReferenceEquals(dict2, dict).Should().BeTrue("Should reuse same Dictionary from pool");
+                dict2.Should().BeOfType<Dictionary<string, object>>();
+                
+                // Dictionary should be cleared after return
+                dict2.Should().BeEmpty("Should be cleared by reset function");
+                
+                // Verify we can use it again
+                dict2.Add("key2", "value2");
+                dict2.Should().HaveCount(1);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Thread 2: {ex.Message}");
+            }
+        });
+
+        t1.Start();
+        t2.Start();
+
+        // ASSERT
+        t1.Join(5000);
+        t2.Join(5000);
+
+        // If there are errors, the bug is demonstrated
+        errors.Should().BeEmpty("Concurrent access to different generic pools should not cause errors");
+    }
+
+    /// <summary>
+    /// RED TEST: High contention concurrent access with multiple generic types.
+    /// </summary>
+    [Fact]
+    public async Task ThreadLocalPool_High_Contention_Multiple_Types_Should_Maintain_Integrity()
+    {
+        // ARRANGE - Create multiple pools
+        var sbPool = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            poolName: "StringBuilderPool"
+        );
+
+        var dictPool = new ThreadLocalPool<Dictionary<string, int>>(
+            factory: () => new Dictionary<string, int>(),
+            reset: dict => dict.Clear(),
+            poolName: "DictionaryPool"
+        );
+
+        var listPool = new ThreadLocalPool<List<int>>(
+            factory: () => new List<int>(),
+            reset: list => list.Clear(),
+            poolName: "ListPool"
+        );
+
+        var errors = new ConcurrentBag<string>();
+        var tasks = new List<Task>();
+
+        // ACT: High contention across threads and types
+        const int threadCount = 8;
+        const int operationsPerThread = 50;
+
+        for (int t = 0; t < threadCount; t++)
+        {
+            tasks.Add(Task.Run(() =>
+            {
+                try
+                {
+                    for (int i = 0; i < operationsPerThread; i++)
+                    {
+                        // Interleaved operations
+                        var sb = sbPool.Get();
+                        var dict = dictPool.Get();
+                        var list = listPool.Get();
+
+                        // Verify types haven't been corrupted
+                        if (sb == null || !(sb is StringBuilder))
+                            errors.Add($"SB corruption: got {sb?.GetType().Name ?? "null"}");
+                        if (dict == null || !(dict is Dictionary<string, int>))
+                            errors.Add($"Dict corruption: got {dict?.GetType().Name ?? "null"}");
+                        if (list == null || !(list is List<int>))
+                            errors.Add($"List corruption: got {list?.GetType().Name ?? "null"}");
+
+                        // Use the objects
+                        sb?.Append("test");
+                        dict?.Add("key", i);
+                        list?.Add(i);
+
+                        // Return them
+                        sbPool.Return(sb);
+                        dictPool.Return(dict);
+                        listPool.Return(list);
+
+                        // Get again
+                        var sb2 = sbPool.Get();
+                        var dict2 = dictPool.Get();
+                        var list2 = listPool.Get();
+
+                        // Verify we're getting correct types
+                        if (!(sb2 is StringBuilder))
+                            errors.Add("Second SB get returned wrong type");
+                        if (!(dict2 is Dictionary<string, int>))
+                            errors.Add("Second Dict get returned wrong type");
+                        if (!(list2 is List<int>))
+                            errors.Add("Second List get returned wrong type");
+
+                        sbPool.Return(sb2);
+                        dictPool.Return(dict2);
+                        listPool.Return(list2);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Error: {ex.Message}");
+                }
+            }));
+        }
+
+        // ASSERT
+        await Task.WhenAll(tasks);
+        errors.Should().BeEmpty("No type corruption should occur under concurrent access");
     }
 }

@@ -11,9 +11,10 @@ namespace NGql.Core.Abstractions;
 public sealed record FieldDefinition
 {
     // Fields
-    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal FieldChildren? _children;
     internal string? _type;
     internal string? _alias;
+    internal string _effectiveName;
     internal SortedDictionary<string, object?>? _arguments;
     internal Dictionary<string, object?>? _metadata;
     internal string Path { get; init; } = string.Empty;
@@ -27,13 +28,37 @@ public sealed record FieldDefinition
     {
     }
 
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, SortedDictionary<string, FieldDefinition>? fields = null)
+    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
         _alias = alias;
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
-        _fields = fields?.Count > 0 ? fields : null;
+        if (fields?.Count > 0)
+        {
+            _children = new FieldChildren();
+            foreach (var kvp in fields) _children.Append(kvp.Value);
+        }
+        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
+    }
+
+    public FieldDefinition(string name, string type, string? alias, IDictionary<string, object?>? arguments, Dictionary<string, FieldDefinition>? fields = null)
+    {
+        Name = name;
+        _alias = alias;
+        _type = type;
+        if (arguments?.Count > 0)
+        {
+            var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in arguments) sorted[kvp.Key] = kvp.Value;
+            _arguments = sorted;
+        }
+        if (fields?.Count > 0)
+        {
+            _children = new FieldChildren();
+            foreach (var kvp in fields) _children.Append(kvp.Value);
+        }
+        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     // Properties
@@ -62,20 +87,30 @@ public sealed record FieldDefinition
     public string? Alias
     {
         get => _alias;
-        init => _alias = value;
+        init
+        {
+            _alias = value;
+            _effectiveName = !string.IsNullOrEmpty(value) ? value : Name;
+        }
     }
+
+    private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyReadOnlyFields
+        = new FieldChildren();
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields
-        => _fields ??= new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, FieldDefinition> Fields
+        => _children ?? EmptyReadOnlyFields;
+
+    private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
+        = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]
-    public SortedDictionary<string, object?> Arguments
-        => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, object?> Arguments
+        => _arguments ?? EmptyReadOnlyArguments;
 
     /// <summary>
     /// Metadata associated with the field definition.
@@ -106,9 +141,26 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field has child fields.
     /// </summary>
     [JsonIgnore]
-    public bool HasFields => _fields is { Count: > 0 };
+    public bool HasFields => _children is { Count: > 0 };
+
+    [JsonIgnore]
+    public bool IsNeverMerge { get; internal set; }
 
     // Methods
+    public bool Equals(FieldDefinition? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return string.Equals(Name, other.Name, StringComparison.Ordinal)
+            && string.Equals(Path, other.Path, StringComparison.Ordinal)
+            && string.Equals(_type, other._type, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_alias, other._alias, StringComparison.OrdinalIgnoreCase)
+            && IsNeverMerge == other.IsNeverMerge;
+    }
+
+    public override int GetHashCode()
+        => HashCode.Combine(Name, Path, _type?.ToLowerInvariant(), _alias?.ToLowerInvariant(), IsNeverMerge);
+
     public override string ToString()
     {
         if (string.IsNullOrWhiteSpace(Type))
@@ -116,6 +168,6 @@ public sealed record FieldDefinition
             return string.IsNullOrWhiteSpace(Alias) ? Name : $"{Alias}:{Name}";
         }
 
-        return string.IsNullOrWhiteSpace(Alias) ? $"{Type} {Alias}:{Name}" : $"{Type} {Name}";
+        return string.IsNullOrWhiteSpace(Alias) ? $"{Type} {Name}" : $"{Type} {Alias}:{Name}";
     }
 }

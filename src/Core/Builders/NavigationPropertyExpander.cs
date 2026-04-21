@@ -46,9 +46,14 @@ internal static class NavigationPropertyExpander
                 HandleRegularProperty(fieldName, firstSegment, remainingPath, property, result);
             }
         }
-        catch
+        catch (InvalidOperationException)
         {
-            // If anything fails during reflection, just return the original field name
+            // Reflection failed due to ambiguous or invalid operation
+            result.Add(fieldName);
+        }
+        catch (AmbiguousMatchException)
+        {
+            // Multiple matches found for property - use original field name
             result.Add(fieldName);
         }
 

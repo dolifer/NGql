@@ -1,0 +1,11 @@
+﻿query OverlapQuery{
+    user{
+        profile{
+            avatar
+            settings{
+                language
+                theme
+            }
+        }
+    }
+}

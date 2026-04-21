@@ -1,0 +1,6 @@
+﻿query ConditionalQuery{
+    user{
+        profile
+        settings
+    }
+}

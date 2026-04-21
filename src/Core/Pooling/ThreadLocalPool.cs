@@ -12,10 +12,10 @@ internal sealed class ThreadLocalPool<T> where T : class
     private const int ThreadLocalCacheSize = 4;
     private const int GlobalPoolSize = 64;
 
-    // Thread-local storage for per-thread caches to eliminate contention
-    [ThreadStatic]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Minor Code Smell", "S2743:Static fields should not be used in generic types", Justification = "Intentional: Each closed generic type needs its own thread-local cache")]
-    private static ThreadLocalCache? _cache;
+    // Instance-based thread-local storage for per-thread caches to eliminate contention
+    // CRITICAL FIX: Each instance gets its own ThreadLocal<>, not a shared [ThreadStatic] field
+    // This prevents different generic types from corrupting each other's caches
+    private readonly ThreadLocal<ThreadLocalCache> _threadLocalCache;
 
     // Global lock-free fallback pool using atomic operations
     private readonly MonitoredLockFreeStack<T> _globalPool = new();
@@ -43,6 +43,8 @@ internal sealed class ThreadLocalPool<T> where T : class
         _reset = reset ?? throw new ArgumentNullException(nameof(reset));
         _validateForReturn = validateForReturn;
         _poolName = poolName;
+        // Instance-based ThreadLocal ensures each pool instance has separate per-thread caches
+        _threadLocalCache = new ThreadLocal<ThreadLocalCache>();
     }
 
     /// <summary>
@@ -83,11 +85,11 @@ internal sealed class ThreadLocalPool<T> where T : class
     /// Gets an item from thread-local cache first, then global pool, or creates new
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S2696:Instance members should not write to static fields", Justification = "[ThreadStatic] field is per-thread, lazy initialization on first access is intentional")]
     public T Get()
     {
         // ULTRA FAST PATH: Thread-local cache hit (no contention)
-        var cache = _cache ??= new ThreadLocalCache();
+        // FIXED: Use instance-based ThreadLocal instead of static [ThreadStatic] field
+        var cache = _threadLocalCache.Value ?? (_threadLocalCache.Value = new ThreadLocalCache());
         if (cache.TryGet(out var item) && item is not null)
         {
             ThreadLocalMemoryManager.RecordThreadLocalHit(_poolName);
@@ -110,7 +112,6 @@ internal sealed class ThreadLocalPool<T> where T : class
     /// Returns item to thread-local cache first, then global pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S2696:Instance members should not write to static fields", Justification = "[ThreadStatic] field is per-thread, lazy initialization on first access is intentional")]
     public void Return(T? item)
     {
         if (item == null) return;
@@ -125,7 +126,8 @@ internal sealed class ThreadLocalPool<T> where T : class
         _reset(item);
 
         // ULTRA FAST PATH: Return to thread-local cache (no contention)
-        var cache = _cache ??= new ThreadLocalCache();
+        // FIXED: Use instance-based ThreadLocal instead of static [ThreadStatic] field
+        var cache = _threadLocalCache.Value ?? (_threadLocalCache.Value = new ThreadLocalCache());
         if (cache.TryReturn(item))
         {
             return;

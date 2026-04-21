@@ -1,0 +1,9 @@
+﻿query MixedQuery{
+    list
+    object{
+        nested{
+            value
+        }
+    }
+    scalar
+}

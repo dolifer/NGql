@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 
@@ -9,6 +10,8 @@ namespace NGql.Core.Caching;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class TypeCache
 {
+    private static readonly ConcurrentDictionary<string, string> CustomTypes = new();
+
     // Pre-intern the most common GraphQL types (ordered by frequency)
     private static readonly string[] CommonTypes =
     [
@@ -35,27 +38,30 @@ internal static class TypeCache
             return Constants.DefaultFieldType;
         }
 
-        // FAST PATH: Check most common types first (ordered by frequency)
-        foreach (var common in CommonTypes)
+        // OPTIMIZED PATH: Single combined check for both common and nullable types
+        // This eliminates the O(n+m) double-loop pattern and does a single pass
+        var allTypes = CombinedCommonTypes.Value;
+        foreach (var commonType in allTypes)
         {
-            if (type.SequenceEqual(common.AsSpan()))
+            if (type.SequenceEqual(commonType.AsSpan()))
             {
-                return common; // Already interned
-            }
-        }
-
-        // FAST PATH: Check nullable variants  
-        foreach (var nullable in CommonNullableTypes)
-        {
-            if (type.SequenceEqual(nullable.AsSpan()))
-            {
-                return nullable; // Already interned
+                return commonType; // Already interned
             }
         }
 
         // Standard path for other types
-        return type.ToString();
+        var typeString = type.ToString();
+        return CustomTypes.GetOrAdd(typeString, typeString);
     }
+
+    // Lazy-initialized combined array to avoid allocation at static init time
+    private static readonly Lazy<string[]> CombinedCommonTypes = new(() =>
+    {
+        var combined = new string[CommonTypes.Length + CommonNullableTypes.Length];
+        CommonTypes.CopyTo(combined, 0);
+        CommonNullableTypes.CopyTo(combined, CommonTypes.Length);
+        return combined;
+    });
 
     /// <summary>
     /// Interns a type string for memory efficiency - alias for GetInternedType

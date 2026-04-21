@@ -56,44 +56,6 @@ internal static class PoolingObservability
     }
 
     /// <summary>
-    /// Records a return operation to thread-local cache
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void RecordThreadLocalReturn(string poolType)
-    {
-        NGqlTelemetry.RecordPoolOperation(poolType, "return", ThreadLocalCache, -1);
-    }
-
-    /// <summary>
-    /// Records a return operation to global pool
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void RecordGlobalPoolReturn(string poolType, int newPoolSize)
-    {
-        NGqlTelemetry.RecordPoolOperation(poolType, "return", GlobalPool, newPoolSize);
-    }
-
-    /// <summary>
-    /// Records when an object is discarded (pool full)
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void RecordPoolDiscard(string poolType, string reason)
-    {
-        NGqlTelemetry.RecordPoolOperation(poolType, "discard", reason, -1);
-    }
-
-    /// <summary>
-    /// Creates a detailed activity for pool operations with comprehensive tagging
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static NGqlActivity StartDetailedPoolActivity(string poolType, string operation)
-    {
-        return NGqlActivity.StartPooling(poolType, operation)
-            .WithTag("pool.implementation", "lock_free")
-            .WithTag("pool.strategy", "thread_local_fallback");
-    }
-
-    /// <summary>
     /// Records pool efficiency statistics for monitoring
     /// </summary>
     internal static void RecordPoolEfficiency(string poolType, PoolEfficiencyStats stats)

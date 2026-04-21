@@ -178,16 +178,19 @@ internal static class QueryBlockObjectExtensions
         block.AddField(subQuery);
     }
 
+    private static readonly HashSet<Type> SimpleTypes =
+    [
+        typeof(string),
+        typeof(decimal),
+        typeof(DateTime),
+        typeof(DateTimeOffset),
+        typeof(TimeSpan),
+        typeof(Guid)
+    ];
+
     private static bool IsSimpleType(Type type)
         => type.IsPrimitive ||
-            new Type[] {
-                    typeof(string),
-                    typeof(decimal),
-                    typeof(DateTime),
-                    typeof(DateTimeOffset),
-                    typeof(TimeSpan),
-                    typeof(Guid)
-            }.Contains(type) ||
+            SimpleTypes.Contains(type) ||
             Convert.GetTypeCode(type) != TypeCode.Object;
 }
 

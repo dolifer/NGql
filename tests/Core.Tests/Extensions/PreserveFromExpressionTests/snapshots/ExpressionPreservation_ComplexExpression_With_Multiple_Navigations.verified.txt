@@ -1,0 +1,12 @@
+﻿query ComplexQuery{
+    orders{
+        items
+    }
+    user{
+        profile{
+            contacts{
+                emails
+            }
+        }
+    }
+}

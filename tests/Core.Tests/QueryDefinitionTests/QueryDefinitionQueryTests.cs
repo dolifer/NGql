@@ -17,9 +17,9 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
-                                { "child", new FieldDefinition("child") }
+                                new FieldDefinition("child")
                             }
                         }
                     }
@@ -45,24 +45,20 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("child1")
                                 {
-                                    "child1", new FieldDefinition("child1")
+                                    _children = new FieldChildren
                                     {
-                                        Fields =
-                                        {
-                                            { "grandchild1", new FieldDefinition("grandchild1") }
-                                        }
+                                        new FieldDefinition("grandchild1")
                                     }
                                 },
+                                new FieldDefinition("child2")
                                 {
-                                    "child2", new FieldDefinition("child2")
+                                    _children = new FieldChildren
                                     {
-                                        Fields =
-                                        {
-                                            { "grandchild2", new FieldDefinition("grandchild2") }
-                                        }
+                                        new FieldDefinition("grandchild2")
                                     }
                                 }
                             }
@@ -116,9 +112,9 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
-                                { "child", new FieldDefinition("child") }
+                                new FieldDefinition("child")
                             }
                         }
                     }
@@ -145,21 +141,17 @@ public class QueryDefinitionQueryTests
                     {
                         "level1", new FieldDefinition("level1")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("level2")
                                 {
-                                    "level2", new FieldDefinition("level2")
+                                    _children = new FieldChildren
                                     {
-                                        Fields =
+                                        new FieldDefinition("level3")
                                         {
+                                            _children = new FieldChildren
                                             {
-                                                "level3", new FieldDefinition("level3")
-                                                {
-                                                    Fields =
-                                                    {
-                                                        { "level4", new FieldDefinition("level4") }
-                                                    }
-                                                }
+                                                new FieldDefinition("level4")
                                             }
                                         }
                                     }
@@ -194,11 +186,11 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
-                                { "child1", new FieldDefinition("child1") },
-                                { "child2", new FieldDefinition("child2") },
-                                { "child3", new FieldDefinition("child3") }
+                                new FieldDefinition("child1"),
+                                new FieldDefinition("child2"),
+                                new FieldDefinition("child3")
                             }
                         }
                     }
@@ -227,25 +219,23 @@ public class QueryDefinitionQueryTests
                     {
                         "parent1", new FieldDefinition("parent1")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
-                                { "child1", new FieldDefinition("child1") },
-                                { "child2", new FieldDefinition("child2") }
+                                new FieldDefinition("child1"),
+                                new FieldDefinition("child2")
                             }
                         }
                     },
                     {
                         "parent2", new FieldDefinition("parent2")
                         {
-                            Fields =
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("child")
                                 {
-                                    "child", new FieldDefinition("child")
+                                    _children = new FieldChildren
                                     {
-                                        Fields =
-                                        {
-                                            { "grandchild", new FieldDefinition("grandchild") }
-                                        }
+                                        new FieldDefinition("grandchild")
                                     }
                                 }
                             }

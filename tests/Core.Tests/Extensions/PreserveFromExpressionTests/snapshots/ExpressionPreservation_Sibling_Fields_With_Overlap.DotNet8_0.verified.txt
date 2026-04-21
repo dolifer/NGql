@@ -1,0 +1,7 @@
+﻿query SiblingsQuery{
+    user{
+        email
+        firstName
+        lastName
+    }
+}

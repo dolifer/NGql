@@ -179,4 +179,74 @@ public class TypeDriftEdgeCasesTests
         preservedUserField.Type.Should().Be("User", "custom type should be preserved even when original had null arguments");
         preservedUserField.Fields.Should().ContainKey("name");
     }
+
+    [Fact]
+    public void DottedPath_Field_Operations_With_Complex_Arguments()
+    {
+        // This test exercises the FieldFactory slow path (lines 85-86, 108)
+        var arguments = new System.Collections.Generic.Dictionary<string, object?>
+        {
+            { "first", 10 },
+            { "filter", new System.Collections.Generic.Dictionary<string, object?> { { "status", "active" } } }
+        };
+
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("users.profile.settings", arguments)
+            .ToString();
+
+        // Assert: Complex arguments should be preserved through dotted path
+        query.Should().Contain("settings");
+        query.Should().Contain("first:10");
+        query.Should().Contain("status:\"active\"");
+    }
+
+    [Fact]
+    public void Multiple_Dotted_Paths_With_Overlapping_Segments()
+    {
+        // This creates complex merging scenarios in FieldFactory
+        var args1 = new System.Collections.Generic.Dictionary<string, object?> { { "limit", 5 } };
+        var args2 = new System.Collections.Generic.Dictionary<string, object?> { { "offset", 10 } };
+
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("search.results.item", args1)
+            .AddField("search.results.metadata", args2)
+            .ToString();
+
+        query.Should().Contain("item(limit:5)");
+        query.Should().Contain("metadata(offset:10)");
+    }
+
+    [Fact]
+    public void Very_Deep_Dotted_Nesting_Should_Process_Recursively()
+    {
+        // Tests deep recursion in FieldFactory
+        var args = new System.Collections.Generic.Dictionary<string, object?> { { "id", 1 } };
+
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p", args)
+            .ToString();
+
+        query.Should().Contain("p");
+        query.Should().Contain("id:1");
+    }
+
+    [Fact]
+    public void DottedField_With_Arguments_And_Metadata_And_Children()
+    {
+        // Tests complex interaction of arguments, metadata, and child fields
+        var fieldArgs = new System.Collections.Generic.Dictionary<string, object?> { { "first", 20 } };
+        var fieldMetadata = new System.Collections.Generic.Dictionary<string, object?> { { "cached", true } };
+
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("connection.edges.node", fieldArgs, fieldMetadata, builder =>
+            {
+                builder.AddField("id")
+                       .AddField("name");
+            })
+            .ToString();
+
+        query.Should().Contain("node(first:20)");
+        query.Should().Contain("id");
+        query.Should().Contain("name");
+    }
 }

@@ -17,7 +17,7 @@ internal static class QueryMerger
     /// <param name="incomingQuery">Query definition to merge</param>
     /// <param name="rootStrategy">Merging strategy to use</param>
     /// <returns>Merge result containing updated mappings and fields</returns>
-    private static MergeResult MergeQuery(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery, MergingStrategy rootStrategy)
+    private static MergeResult MergeQuery(Dictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery, MergingStrategy rootStrategy)
     {
         var strategy = GetEffectiveMergingStrategy(rootStrategy, incomingQuery.MergingStrategy);
 
@@ -45,49 +45,58 @@ internal static class QueryMerger
         var targetVars = targetDefinition._variables;
         var incomingVars = incomingQuery._variables;
 
-        if (targetVars is null && incomingVars is null)
-        {
-            // Both null - no variables to merge
-            targetDefinition.Variables = new SortedSet<Variable>();
-        }
-        else if (targetVars is null)
+        if (targetVars is null && incomingVars is not null)
         {
             // Only incoming has variables
             targetDefinition.Variables = new SortedSet<Variable>(incomingVars!);
         }
-        else if (incomingVars is null)
+        else if (targetVars is not null && incomingVars is not null)
         {
-            // Only target has variables - already set, no change needed
+            // Both have variables - merge without LINQ Union() enumerable allocation
+            var mergedVars = new SortedSet<Variable>(targetVars, targetVars.Comparer);
+            foreach (var v in incomingVars)
+                mergedVars.Add(v);
+            targetDefinition.Variables = mergedVars;
         }
-        else
-        {
-            // Both have variables - need to merge
-            targetDefinition.Variables = new SortedSet<Variable>(targetVars.Union(incomingVars));
-        }
+        // else: only target has variables (targetVars not null, incomingVars null) - already set, no change needed
+        // else: both null - no variables, lazy-init will handle it if accessed
 
         // Perform the field merge
         var mergeResult = MergeQuery(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy);
 
-        // FAST PATH: Skip field updates if no changes were made
-        if (mergeResult.UpdatedFields.Count == targetDefinition.Fields.Count &&
-            mergeResult.UpdatedFields.Keys.SequenceEqual(targetDefinition.Fields.Keys))
+        // FAST PATH: Skip field updates if no changes were made.
+        // Use count + ContainsKey instead of SequenceEqual — Dictionary key order is not guaranteed.
+        if (mergeResult.UpdatedFields.Count == targetDefinition.Fields.Count)
         {
-            // Check if values are actually the same (reference equality for performance)
-            bool hasChanges = false;
-            foreach (var (key, newField) in mergeResult.UpdatedFields)
+            bool allKeysMatch = true;
+            foreach (var key in mergeResult.UpdatedFields.Keys)
             {
-                if (!ReferenceEquals(targetDefinition.Fields[key], newField))
+                if (!targetDefinition.Fields.ContainsKey(key))
                 {
-                    hasChanges = true;
+                    allKeysMatch = false;
                     break;
                 }
             }
 
-            if (!hasChanges)
+            if (allKeysMatch)
             {
-                // No actual changes - just update query map and return
-                queryMap.UpdateMappings(mergeResult.QueryMap);
-                return;
+                // Check if values are actually the same (reference equality for performance)
+                bool hasChanges = false;
+                foreach (var (key, newField) in mergeResult.UpdatedFields)
+                {
+                    if (!ReferenceEquals(targetDefinition.Fields[key], newField))
+                    {
+                        hasChanges = true;
+                        break;
+                    }
+                }
+
+                if (!hasChanges)
+                {
+                    // No actual changes - just update query map and return
+                    queryMap.UpdateMappings(mergeResult.QueryMap);
+                    return;
+                }
             }
         }
 
@@ -121,7 +130,7 @@ internal static class QueryMerger
         };
     }
 
-    private static MergeResult HandleMergeByDefault(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
+    private static MergeResult HandleMergeByDefault(Dictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
         return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
@@ -130,7 +139,7 @@ internal static class QueryMerger
         });
     }
 
-    private static MergeResult HandleNeverMerge(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
+    private static MergeResult HandleNeverMerge(Dictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
         return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
@@ -140,7 +149,7 @@ internal static class QueryMerger
         });
     }
 
-    private static MergeResult HandleMergeByFieldPath(SortedDictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
+    private static MergeResult HandleMergeByFieldPath(Dictionary<string, FieldDefinition> existingFields, QueryDefinition incomingQuery)
     {
         return ProcessFieldMerge(existingFields, incomingQuery, (updatedFields, originalFieldKey, incomingField, queryMap) =>
         {
@@ -167,11 +176,11 @@ internal static class QueryMerger
     }
 
     private static MergeResult ProcessFieldMerge(
-        SortedDictionary<string, FieldDefinition> existingFields,
+        Dictionary<string, FieldDefinition> existingFields,
         QueryDefinition incomingQuery,
-        Action<SortedDictionary<string, FieldDefinition>, string, FieldDefinition, Dictionary<string, string>> fieldProcessor)
+        Action<Dictionary<string, FieldDefinition>, string, FieldDefinition, Dictionary<string, string>> fieldProcessor)
     {
-        var updatedFields = new SortedDictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
+        var updatedFields = new Dictionary<string, FieldDefinition>(existingFields, StringComparer.OrdinalIgnoreCase);
         var queryMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
@@ -183,24 +192,23 @@ internal static class QueryMerger
     }
 
     private static void AddFieldWithUniqueKey(
-        SortedDictionary<string, FieldDefinition> updatedFields,
+        Dictionary<string, FieldDefinition> updatedFields,
         string originalFieldKey,
         FieldDefinition incomingField,
         Dictionary<string, string> queryMap,
         string queryName)
     {
-        var mappingTarget = incomingField.GetEffectiveName();
-        var uniqueKey = KeyGenerator.GenerateUniqueKey(mappingTarget, updatedFields.Keys);
+        var uniqueKey = KeyGenerator.GenerateUniqueKey(incomingField._effectiveName, updatedFields.Keys);
 
         var fieldToAdd = !string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase)
-            ? incomingField with { Alias = uniqueKey }
+            ? incomingField with { Alias = uniqueKey, _effectiveName = uniqueKey}
             : incomingField;
 
         updatedFields[uniqueKey] = fieldToAdd;
         queryMap[queryName] = uniqueKey;
     }
 
-    private static (string Key, FieldDefinition Field)? FindMergeTarget(SortedDictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
+    private static (string Key, FieldDefinition Field)? FindMergeTarget(Dictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
     {
         foreach (var (key, existingField) in existingFields)
         {
@@ -231,25 +239,11 @@ internal static class QueryMerger
     /// This prevents other queries from merging into this field.
     /// </summary>
     private static FieldDefinition MarkAsNeverMerge(FieldDefinition field)
-    {
-        if (field._metadata == null || !field._metadata.ContainsKey("NeverMerge"))
-        {
-            return field with
-            {
-                Metadata = new Dictionary<string, object?>(field._metadata ?? new Dictionary<string, object?>())
-                {
-                    ["NeverMerge"] = true
-                }
-            };
-        }
-        return field;
-    }
+        => field.IsNeverMerge ? field : field with { IsNeverMerge = true };
 
     /// <summary>
     /// Checks if a field is marked as coming from a NeverMerge query.
     /// </summary>
     private static bool IsMarkedAsNeverMerge(FieldDefinition field)
-    {
-        return field._metadata?.TryGetValue("NeverMerge", out var value) == true && value is true;
-    }
+        => field.IsNeverMerge;
 }

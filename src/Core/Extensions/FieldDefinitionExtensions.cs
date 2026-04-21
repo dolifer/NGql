@@ -10,15 +10,7 @@ namespace NGql.Core.Extensions;
 /// </summary>
 internal static class FieldDefinitionExtensions
 {
-    /// <summary>
-    /// Gets the effective name for the field, preferring an alias over name.
-    /// This method is already optimized - no span version is needed as it returns existing strings without manipulation.
-    /// </summary>
-    /// <param name="field">The field definition</param>
-    /// <returns>The alias if available, otherwise the field name</returns>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static string GetEffectiveName(this FieldDefinition field)
-        => !string.IsNullOrEmpty(field._alias) ? field._alias : field.Name;
+    private const int MaxFieldDepth = 200;
 
     /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
@@ -28,75 +20,52 @@ internal static class FieldDefinitionExtensions
     /// <returns>True if fields can be merged, false otherwise</returns>
     internal static bool CanMergeFields(FieldDefinition existingField, FieldDefinition incomingField)
     {
-        // For MergeByFieldPath strategy, fields can merge if:
-        // 1. They have the same root field name
-        // 2. Arguments at each segment of a path must match exactly
-
-        // First, check if arguments at the root level are compatible
         if (!Helpers.AreArgumentsEqual(existingField._arguments, incomingField._arguments))
-        {
             return false;
-        }
-
-        // Then check if nested field structures are compatible
-        return AreNestedFieldsCompatible(existingField, incomingField);
+        return AreNestedFieldsCompatible(existingField, incomingField, 0);
     }
 
-    /// <summary>
-    /// Checks if nested field structures are compatible for merging.
-    /// </summary>
-    /// <param name="existingField">The existing field definition</param>
-    /// <param name="incomingField">The incoming field definition</param>
-    /// <returns>True if nested fields are compatible, false otherwise</returns>
-    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
+    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField, int depth)
     {
-        // Rule: At each segment of a path, the arguments must match exactly
-        // This means if one field has arguments at any level and the other doesn't have that path,
-        // or has different arguments at the same path, they cannot merge.
+        if (depth > MaxFieldDepth)
+            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}. Possible circular reference in field definitions.");
 
-        // Check all incoming nested fields
-        foreach (var (incomingKey, incomingNestedField) in incomingField.Fields)
+        foreach (var (incomingKey, incomingNestedField) in incomingField._children ?? (IEnumerable<KeyValuePair<string, FieldDefinition>>)[])
         {
-            if (existingField.Fields.TryGetValue(incomingKey, out var existingNestedField))
+            if (existingField._children?.TryGetValue(incomingKey, out var existingNestedField) == true)
             {
-                // If the nested field exists in both, their arguments must match exactly
                 if (!Helpers.AreArgumentsEqual(existingNestedField._arguments, incomingNestedField._arguments))
-                {
                     return false;
-                }
-
-                // Recursively check deeper levels
-                if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField))
-                {
+                if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField, depth + 1))
                     return false;
-                }
             }
             else
             {
-                // Incoming field has a path that doesn't exist in an existing field
-                // If the incoming nested field (or any of its descendants) has arguments,
-                // then these fields are incompatible because we can't match arguments
-                // at the same path segments
-                if (HasAnyArguments(incomingNestedField))
-                {
+                if (HasAnyArguments(incomingNestedField, depth + 1))
                     return false;
-                }
             }
         }
 
-        // Check existing nested fields
-        foreach (var (existingKey, existingNestedField) in existingField.Fields)
+        foreach (var (existingKey, existingNestedField) in existingField._children ?? (IEnumerable<KeyValuePair<string, FieldDefinition>>)[])
         {
-            // Existing field has a path that doesn't exist in an incoming field
-            if (!incomingField.Fields.ContainsKey(existingKey) && HasAnyArguments(existingNestedField))
-            {
-                // If the existing nested field (or any of its descendants) has arguments,
-                // then these fields are incompatible
+            if (incomingField._children?.Find(existingKey.AsSpan()) == null && HasAnyArguments(existingNestedField, depth + 1))
                 return false;
-            }
         }
 
         return true;
+    }
+
+    private static bool HasAnyArguments(FieldDefinition field, int depth)
+    {
+        if (depth > MaxFieldDepth)
+            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}.");
+        if (field._arguments is { Count: > 0 }) return true;
+        if (field._children is null) return false;
+        foreach (var child in field._children.AsSpan())
+        {
+            if (HasAnyArguments(child, depth + 1)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -116,61 +85,60 @@ internal static class FieldDefinitionExtensions
         }
 
         // Create a merged field definition
-        var mergedFields = new SortedDictionary<string, FieldDefinition>(existing.Fields, StringComparer.OrdinalIgnoreCase);
+        // Create a merged FieldChildren — clone existing then merge incoming on top
+        var mergedChildren = existing._children?.Clone() ?? new FieldChildren();
 
         // Merge nested fields recursively
-        foreach (var (key, incomingNestedField) in incoming.Fields)
+        var incomingSpan = incoming._children != null ? incoming._children.AsSpan() : ReadOnlySpan<FieldDefinition>.Empty;
+        foreach (var incomingNestedField in incomingSpan)
         {
-            if (mergedFields.TryGetValue(key, out var existingNestedField))
+            if (mergedChildren.TryGetValue(incomingNestedField.Name, out var existingNestedField))
             {
                 // Recursive merge for nested fields
-                var mergedNestedField = MergeFields(existingNestedField, incomingNestedField);
-                mergedFields[key] = mergedNestedField;
+                var mergedNestedField = MergeFields(existingNestedField!, incomingNestedField);
+                mergedChildren.Set(incomingNestedField.Name, mergedNestedField);
             }
             else
             {
-                // Check for alias conflicts at a nested level
-                var effectiveName = incomingNestedField.GetEffectiveName();
-
                 // Check if any existing field has the same effective name
-                var conflictingField = mergedFields.Values.FirstOrDefault(f =>
-                    string.Equals(f.GetEffectiveName(), effectiveName, StringComparison.OrdinalIgnoreCase));
+                FieldDefinition? conflictingField = null;
+                foreach (var f in mergedChildren.AsSpan())
+                {
+                    if (string.Equals(f._effectiveName, incomingNestedField._effectiveName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        conflictingField = f;
+                        break;
+                    }
+                }
 
                 if (conflictingField != null)
                 {
-                    // Generate unique alias to resolve conflict
-                    var existingEffectiveNames = mergedFields.Values.Select(f => f.GetEffectiveName());
-                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(effectiveName, existingEffectiveNames);
+                    // Generate unique alias to resolve conflict — span overload avoids ToArray allocation
+                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingNestedField._effectiveName, mergedChildren.AsSpan());
 
                     var fieldToAdd = incomingNestedField with { Alias = uniqueAlias };
-                    mergedFields[key] = fieldToAdd;
+                    mergedChildren.Append(fieldToAdd);
                 }
                 else
                 {
-                    mergedFields[key] = incomingNestedField;
+                    mergedChildren.Append(incomingNestedField);
                 }
             }
         }
 
-        return new FieldDefinition(
+        var result = new FieldDefinition(
             existing.Name,
             existing._type ?? incoming._type ?? Constants.DefaultFieldType,
             existing._alias,
-            existing.Arguments,
-            mergedFields
-        ).MergeFieldArguments(incoming.Arguments);
+            existing._arguments)
+        {
+            _children = mergedChildren
+        };
+        return result.MergeFieldArguments(incoming._arguments);
     }
 
-    /// <summary>
-    /// Checks if a field or any of its nested fields have arguments.
-    /// </summary>
-    /// <param name="field">The field definition to check</param>
-    /// <returns>True if the field or any nested field has arguments, false otherwise</returns>
-    private static bool HasAnyArguments(FieldDefinition field)
-        => field.Arguments is { Count: > 0 } || field.Fields.Values.Any(HasAnyArguments);
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, SortedDictionary<string, object?>? newArguments)
+    internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, IDictionary<string, object?>? newArguments)
     {
         // FAST PATH: If no new arguments to merge, return as-is
         if (newArguments is not { Count: > 0 })
@@ -181,7 +149,10 @@ internal static class FieldDefinitionExtensions
         // FAST PATH: If an existing field has no arguments, just set the new arguments
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {
-            return existingField with { _arguments = newArguments };
+            var sortedNew = newArguments is SortedDictionary<string, object?> sd
+                ? sd
+                : new SortedDictionary<string, object?>(newArguments, StringComparer.OrdinalIgnoreCase);
+            return existingField with { _arguments = sortedNew };
         }
 
         // MERGE PATH: Create a completely new case-insensitive dictionary to ensure proper behavior

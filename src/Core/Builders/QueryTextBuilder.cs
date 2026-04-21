@@ -1,4 +1,7 @@
-﻿using System.Collections;
+﻿using System.Buffers;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -7,11 +10,32 @@ namespace NGql.Core.Builders;
 
 internal sealed class QueryTextBuilder
 {
-    private readonly StringBuilder _stringBuilder = new();
+    private readonly StringBuilder _stringBuilder;
+    
+    // Constructor for creating new instances
+    private QueryTextBuilder()
+    {
+        _stringBuilder = new StringBuilder();
+    }
+
     private const int IndentSize = 4;
+    private const int MaxBuilderCapacity = 256 * 1024;  // 256KB threshold before reset
 
     // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
     private static readonly string[] PaddingCache = new string[20];
+
+    // Singleton comparer — Dictionary<string,FieldDefinition> is unordered, so we sort at render time.
+    // Static readonly avoids any per-call allocation; the static lambda is stored as a cached delegate.
+    private static readonly IComparer<FieldDefinition> FieldSortComparer =
+        Comparer<FieldDefinition>.Create(static (a, b) =>
+            StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name));
+
+    // SHARED thread-local builder pool used by both QueryBlock and QueryDefinition
+    // This consolidates the pooling strategy and prevents duplicate ThreadLocal instances
+    private static readonly ThreadLocal<Stack<QueryTextBuilder>> SharedBuilderStack =
+        new(() => new Stack<QueryTextBuilder>());
+
+    private const int MaxPooledBuilders = 4;
 
     static QueryTextBuilder()
     {
@@ -19,6 +43,38 @@ internal sealed class QueryTextBuilder
         {
             PaddingCache[i] = new string(' ', i * IndentSize);
         }
+    }
+
+    /// <summary>
+    /// Gets a builder instance from the thread-local pool or creates a new one.
+    /// Caller must return the builder via <see cref="ReturnToPool(QueryTextBuilder)"/>.
+    /// </summary>
+    internal static QueryTextBuilder GetFromPool()
+    {
+        var stack = SharedBuilderStack.Value!;
+        return stack.Count > 0 ? stack.Pop() : new QueryTextBuilder();
+    }
+
+    /// <summary>
+    /// Returns a builder to the thread-local pool for reuse.
+    /// Clears the builder and checks capacity to prevent unbounded memory growth.
+    /// </summary>
+    internal static void ReturnToPool(QueryTextBuilder builder)
+    {
+        builder._stringBuilder.Clear();
+
+        // Don't repool builders that have grown too large (prevents memory leak)
+        if (builder._stringBuilder.Capacity > MaxBuilderCapacity)
+        {
+            return;
+        }
+
+        var stack = SharedBuilderStack.Value!;
+        if (stack.Count < MaxPooledBuilders)
+        {
+            stack.Push(builder);
+        }
+        // If pool is full, let GC handle it
     }
 
     /// <summary>
@@ -36,6 +92,9 @@ internal sealed class QueryTextBuilder
 
     public string Build(QueryBlock queryBlock, int indent = 0, string? prefix = null)
     {
+        // Clear only at the top-level call; recursive sub-query calls (indent > 0) accumulate.
+        if (indent == 0) _stringBuilder.Clear();
+
         var pad = GetPadding(indent);
         var prevPad = pad;
 
@@ -98,17 +157,18 @@ internal sealed class QueryTextBuilder
         return _stringBuilder.ToString();
     }
 
-    private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
+    private void BuildFieldDefinitions(FieldChildren children, int indent)
     {
         var padding = GetPadding(indent);
+        var count = children.Count;
 
-        // Sort fields by both alias and name to maintain consistent ordering
-        var orderedFields = fields.Values
-            .OrderBy(f => f.Alias ?? f.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(f => f.Name, StringComparer.OrdinalIgnoreCase);
+        var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
+        children.AsSpan().CopyTo(arr);
+        Array.Sort(arr, 0, count, FieldSortComparer);
 
-        foreach (var field in orderedFields)
+        for (int j = 0; j < count; j++)
         {
+            var field = arr[j];
             _stringBuilder.Append(padding);
 
             if (field.Alias != null)
@@ -124,10 +184,10 @@ internal sealed class QueryTextBuilder
                 BuildFieldArguments(field._arguments);
             }
 
-            if (field._fields?.Count > 0)
+            if (field._children is { Count: > 0 })
             {
                 _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field._fields, indent + IndentSize);
+                BuildFieldDefinitions(field._children, indent + IndentSize);
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }
@@ -136,6 +196,57 @@ internal sealed class QueryTextBuilder
                 _stringBuilder.AppendLine();
             }
         }
+
+        Array.Clear(arr, 0, count);
+        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
+    }
+
+    private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
+    {
+        var padding = GetPadding(indent);
+        var count = fields.Count;
+
+        // Rent an array, sort it via the singleton comparer, render, then return to pool.
+        // Dictionary<TKey,TValue> is insertion-ordered (not alphabetically), so explicit sort
+        // is always required for deterministic query output.
+        var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
+        int i = 0;
+        foreach (var f in fields.Values) arr[i++] = f;
+        Array.Sort(arr, 0, count, FieldSortComparer);
+
+        for (int j = 0; j < count; j++)
+        {
+            var field = arr[j];
+            _stringBuilder.Append(padding);
+
+            if (field.Alias != null)
+            {
+                _stringBuilder.Append(field.Alias);
+                _stringBuilder.Append(':');
+            }
+
+            _stringBuilder.Append(field.Name);
+
+            if (field._arguments is { Count: > 0 })
+            {
+                BuildFieldArguments(field._arguments);
+            }
+
+            if (field._children is { Count: > 0 })
+            {
+                _stringBuilder.AppendLine("{");
+                BuildFieldDefinitions(field._children, indent + IndentSize);
+                _stringBuilder.Append(padding);
+                _stringBuilder.AppendLine("}");
+            }
+            else
+            {
+                _stringBuilder.AppendLine();
+            }
+        }
+
+        Array.Clear(arr, 0, count);
+        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
     }
 
     private void BuildFieldArguments(IReadOnlyDictionary<string, object?> arguments)
@@ -160,6 +271,11 @@ internal sealed class QueryTextBuilder
         _stringBuilder.Append(')');
     }
 
+    // Caches PropertyInfo pairs (Key, Value) for KeyValuePair<,> generic types.
+    private static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)?> KvpPropertyCache = new();
+    // Caches PropertyInfo[] per object type for the default WriteObject branch.
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
+
     internal static void WriteObject(StringBuilder builder, object? value)
     {
         if (value is null)
@@ -168,20 +284,40 @@ internal sealed class QueryTextBuilder
             return;
         }
 
-        if (ValueFormatter.TryFormatPrimitiveType(value, out var formattedValue))
-        {
-            builder.Append(formattedValue);
+        if (ValueFormatter.TryAppendPrimitive(value, builder))
             return;
-        }
 
         var valueType = value.GetType();
         if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
         {
-            var kvp = (dynamic)value;
-            builder.Append(kvp.Key);
-            builder.Append(':');
+            var kvpProps = KvpPropertyCache.GetOrAdd(
+                valueType,
+                static t =>
+                {
+                    var keyProp = t.GetProperty("Key");
+                    var valueProp = t.GetProperty("Value");
+                    
+                    // Defensive: Validate that KeyValuePair has the expected properties
+                    // This should never happen for real KeyValuePair<,>, but protects against
+                    // reflection caching issues or corrupted type metadata
+                    if (keyProp is null || valueProp is null)
+                    {
+                        return null;
+                    }
+                    return (keyProp, valueProp);
+                });
 
-            WriteObject(builder, kvp.Value);
+            // If we couldn't get the properties, fall through to default object handling
+            if (kvpProps is null)
+            {
+                WriteObjectReflection(builder, value, valueType);
+                return;
+            }
+
+            var (keyProp, valueProp) = kvpProps.Value;
+            builder.Append(keyProp.GetValue(value));
+            builder.Append(':');
+            WriteObject(builder, valueProp.GetValue(value));
             return;
         }
 
@@ -201,13 +337,26 @@ internal sealed class QueryTextBuilder
 
             default:
                 {
-                    var values = valueType
-                        .GetProperties()
-                        .ToDictionary(x => x.Name, x => x.GetValue(value));
-                    Helpers.WriteCollection('{', '}', values, builder, WriteObject);
+                    WriteObjectReflection(builder, value, valueType);
                     break;
                 }
         }
+    }
+
+    private static void WriteObjectReflection(StringBuilder builder, object value, Type valueType)
+    {
+        var props = ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
+        builder.Append('{');
+        bool first = true;
+        foreach (var prop in props)
+        {
+            if (!first) builder.Append(", ");
+            first = false;
+            builder.Append(prop.Name);
+            builder.Append(':');
+            WriteObject(builder, prop.GetValue(value));
+        }
+        builder.Append('}');
     }
 
     private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
@@ -238,8 +387,8 @@ internal sealed class QueryTextBuilder
                     _stringBuilder.AppendLine(strValue);
                     break;
                 case QueryBlock subQuery:
-                    QueryTextBuilder builder = new();
-                    _stringBuilder.AppendLine(builder.Build(subQuery, indent));
+                    this.Build(subQuery, indent); 
+                    _stringBuilder.AppendLine();
                     break;
             }
         }

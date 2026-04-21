@@ -11,6 +11,11 @@ internal static class Helpers
 {
     internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
+        ExtractVariablesFromValueCore(value, variables, null);
+    }
+
+    private static void ExtractVariablesFromValueCore(object? value, SortedSet<Variable> variables, HashSet<object>? visited)
+    {
         if (value == null)
         {
             return;
@@ -24,35 +29,41 @@ internal static class Helpers
 
         if (value is IDictionary dict)
         {
-            ExtractVariablesFromDictionary(dict, variables);
+            ExtractVariablesFromDictionary(dict, variables, visited);
             return;
         }
 
         if (value is IList list)
         {
-            ExtractVariablesFromList(list, variables);
+            ExtractVariablesFromList(list, variables, visited);
             return;
         }
 
         if (ShouldExtractFromObjectProperties(value))
         {
-            ExtractVariablesFromObjectProperties(value, variables);
+            ExtractVariablesFromObjectProperties(value, variables, visited);
         }
     }
 
-    private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (!visited.Add(dict)) return; // cycle detected
+        
         foreach (var val in dict.Values)
         {
-            ExtractVariablesFromValue(val, variables);
+            ExtractVariablesFromValueCore(val, variables, visited);
         }
     }
 
-    private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (!visited.Add(list)) return; // cycle detected
+        
         foreach (var item in list)
         {
-            ExtractVariablesFromValue(item, variables);
+            ExtractVariablesFromValueCore(item, variables, visited);
         }
     }
 
@@ -63,18 +74,20 @@ internal static class Helpers
                obj is not QueryBlock &&
                obj is not IDictionary &&
                obj is not IList &&
-               !ValueFormatter.TryFormatPrimitiveType(obj, out _);
+               !ValueFormatter.IsPrimitiveType(obj);
     }
 
-    private static void ExtractVariablesFromObjectProperties(object obj, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromObjectProperties(object obj, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+        if (!visited.Add(obj)) return; // cycle detected
         var properties = obj.GetType().GetProperties();
         foreach (var property in properties)
         {
             var propertyValue = property.GetValue(obj);
             if (propertyValue != null)
             {
-                ExtractVariablesFromValue(propertyValue, variables);
+                ExtractVariablesFromValueCore(propertyValue, variables, visited);
             }
         }
     }
@@ -155,20 +168,6 @@ internal static class Helpers
         }
 
         return result;
-    }
-
-    /// <summary>
-    /// Merges two non-nullable dictionaries by delegating to the core generic implementation.
-    /// </summary>
-    internal static SortedDictionary<string, object> MergeDictionaries(
-        IDictionary<string, object> existing,
-        IDictionary<string, object> update)
-    {
-        return MergeDictionariesCore<SortedDictionary<string, object>, object>(
-            existing, 
-            update,
-            () => new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-            (e, u) => MergeDictionaries(e, u));
     }
 
     /// <summary>
@@ -363,7 +362,7 @@ internal static class Helpers
         }
 
         // Check if it's a primitive type that can be formatted
-        if (ValueFormatter.TryFormatPrimitiveType(value, out _))
+        if (ValueFormatter.IsPrimitiveType(value))
         {
             return value;
         }
@@ -377,7 +376,8 @@ internal static class Helpers
                     comparer: StringComparer.OrdinalIgnoreCase),
                 comparer: StringComparer.OrdinalIgnoreCase),
 
-            IEnumerable<object> list when !value.GetType().IsArray => list.Select(SortArgumentValue).ToList(),
+            IEnumerable<object> list when !value.GetType().IsArray =>
+                SortListItems(list),
             Array arr => arr.Cast<object>().Select(SortArgumentValue).ToArray(),
 
             // Handle objects by decomposing them into dictionaries
@@ -397,6 +397,21 @@ internal static class Helpers
 
             _ => value
         };
+    }
+
+    /// <summary>
+    /// Efficiently sorts list items in a single pass without double allocations.
+    /// Avoids: .Select().ToList() which creates intermediate IEnumerable + List allocations.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static List<object> SortListItems(IEnumerable<object> list)
+    {
+        var result = new List<object>();
+        foreach (var item in list)
+        {
+            result.Add(SortArgumentValue(item));
+        }
+        return result;
     }
 
     /// <summary>
@@ -604,7 +619,7 @@ internal static class Helpers
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
     /// </summary>
-    internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, SortedDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
+    internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
     {
         // Use type interning for memory efficiency
         var nameStr = name.ToString();
@@ -642,13 +657,28 @@ internal static class Helpers
     /// <param name="fields">Field collection to search</param>
     /// <param name="fieldDefinition">Field definition to find</param>
     /// <returns>Existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition? FindExistingField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        // Try to find field with same name and alias
-        var existingField = fields.Values.FirstOrDefault(f =>
-            f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias);
-
+        FieldDefinition? existingField = null;
+        foreach (var f in fields.Values)
+        {
+            if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)
+            {
+                existingField = f;
+                break;
+            }
+        }
         return existingField ?? fields.GetValueOrDefault(fieldDefinition.Path);
+    }
+
+    internal static FieldDefinition? FindExistingField(FieldChildren children, FieldDefinition fieldDefinition)
+    {
+        foreach (var f in children.AsSpan())
+        {
+            if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)
+                return f;
+        }
+        return children.Find(fieldDefinition.Path.AsSpan());
     }
 
     /// <summary>
@@ -657,7 +687,7 @@ internal static class Helpers
     /// <param name="fields">The root fields collection</param>
     /// <param name="fieldPath">The field path to search for</param>
     /// <returns>The existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingFieldByPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
+    internal static FieldDefinition? FindExistingFieldByPath(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
         if (fieldPath.IsEmpty || fieldPath.IsWhiteSpace())
         {
@@ -672,28 +702,27 @@ internal static class Helpers
         return TraverseFieldPath(fields, fieldPath);
     }
 
-    private static FieldDefinition? TraverseFieldPath(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
+    private static FieldDefinition? TraverseFieldPath(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
-        var currentFields = fields;
-        var remainingPath = fieldPath;
-        FieldDefinition? lastField = null;
+        // First segment: look up in the root Dictionary.
+        ExtractPathSegment(fieldPath, out var firstSegment, out var nextPath);
+        var currentField = FindFieldInCollection(fields, firstSegment.Name);
+        if (currentField == null) return null;
 
+        var remainingPath = nextPath;
+
+        // Subsequent segments: traverse via _children.
         while (!remainingPath.IsEmpty)
         {
-            ExtractPathSegment(remainingPath, out var segment, out var nextPath);
-            
-            var currentField = FindFieldInCollection(currentFields, segment.Name);
-            if (currentField == null)
-            {
-                return null;
-            }
+            ExtractPathSegment(remainingPath, out var segment, out var nextSegmentPath);
 
-            lastField = currentField;
-            currentFields = currentField.Fields;
-            remainingPath = nextPath;
+            currentField = currentField._children?.Find(segment.Name);
+            if (currentField == null) return null;
+
+            remainingPath = nextSegmentPath;
         }
 
-        return lastField;
+        return currentField;
     }
 
     private static void ExtractPathSegment(ReadOnlySpan<char> path, out SpanSegment segment, out ReadOnlySpan<char> nextPath)
@@ -708,8 +737,9 @@ internal static class Helpers
         segment = new SpanSegment(fieldName, ReadOnlySpan<char>.Empty, isLastFragment, ReadOnlySpan<char>.Empty);
     }
 
-    private static FieldDefinition? FindFieldInCollection(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    private static FieldDefinition? FindFieldInCollection(Dictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> fieldName)
     {
+        if (fields == null) return null;
         var fieldNameStr = fieldName.ToString();
         
         if (fields.TryGetValue(fieldNameStr, out var field))
@@ -720,8 +750,9 @@ internal static class Helpers
         return FindFieldWithTypeAnnotation(fields, fieldName);
     }
 
-    private static FieldDefinition? FindFieldWithTypeAnnotation(SortedDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldName)
+    private static FieldDefinition? FindFieldWithTypeAnnotation(Dictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> fieldName)
     {
+        if (fields == null) return null;
         foreach (var field in fields.Values)
         {
             var nameSpan = field.Name.AsSpan();
@@ -735,6 +766,56 @@ internal static class Helpers
         }
         return null;
     }
+
+    /// <summary>
+    /// Validates that a field name conforms to GraphQL identifier rules: [_A-Za-z][_0-9A-Za-z]*
+    /// Handles type-annotation prefixes (e.g. "[User!]! user" → validates "user") and
+    /// alias prefixes (e.g. "alias:name" → validates both "alias" and "name").
+    /// For dotted paths, validate each segment individually before calling this method.
+    /// </summary>
+    internal static void ValidateFieldName(ReadOnlySpan<char> name)
+    {
+        if (name.IsEmpty)
+            throw new ArgumentException("Field name cannot be empty.");
+
+        // Strip type annotation prefix: take identifier part after the last space
+        var spaceIndex = name.LastIndexOf(' ');
+        var identifier = spaceIndex >= 0 ? name[(spaceIndex + 1)..].Trim() : name.Trim();
+
+        // Handle alias:name syntax
+        var colonIndex = identifier.IndexOf(':');
+        if (colonIndex >= 0)
+        {
+            var alias = identifier[..colonIndex].Trim();
+            var fieldName = identifier[(colonIndex + 1)..].Trim();
+            if (!alias.IsEmpty) ValidateIdentifier(alias);
+            if (!fieldName.IsEmpty) ValidateIdentifier(fieldName);
+            return;
+        }
+
+        ValidateIdentifier(identifier);
+    }
+
+    private static void ValidateIdentifier(ReadOnlySpan<char> name)
+    {
+        if (name.IsEmpty)
+            throw new ArgumentException("Field name cannot be empty.");
+
+        if (!IsValidGraphQlNameStart(name[0]))
+            throw new ArgumentException($"Invalid GraphQL field name '{name.ToString()}': must start with a letter or underscore.");
+
+        for (int i = 1; i < name.Length; i++)
+        {
+            if (!IsValidGraphQlNameChar(name[i]))
+                throw new ArgumentException($"Invalid GraphQL field name '{name.ToString()}': contains invalid character '{name[i]}' at position {i}.");
+        }
+    }
+
+    private static bool IsValidGraphQlNameStart(char c)
+        => c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+
+    private static bool IsValidGraphQlNameChar(char c)
+        => c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
 
     /// <summary>
     /// Writes a collection with specified prefix/suffix characters and custom item writer

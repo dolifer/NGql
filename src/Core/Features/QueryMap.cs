@@ -1,5 +1,4 @@
 using NGql.Core.Abstractions;
-using NGql.Core.Extensions;
 
 namespace NGql.Core.Features;
 
@@ -48,8 +47,7 @@ internal sealed class QueryMap
 
             // If we don't have a valid mapping, use the first field
             var firstField = definition.Fields.Values.First();
-            var fieldKey = firstField.GetEffectiveName();
-            _mappings[definition.Name] = fieldKey;
+            _mappings[definition.Name] = firstField._effectiveName;
         }
     }
 
@@ -92,10 +90,9 @@ internal sealed class QueryMap
     private static string[] BuildPathToNode(FieldDefinition rootField, string nodePath)
     {
         var targetNode = GetTargetNodeName(nodePath);
-        var initialPath = rootField.GetEffectiveName();
 
         // Use List for efficient path building without allocations on each recursion
-        var pathBuilder = new List<string>(capacity: 8) { initialPath };
+        var pathBuilder = new List<string>(capacity: 8) { rootField._effectiveName };
 
         if (FindPathToNodeOptimized(rootField, targetNode, pathBuilder))
         {
@@ -107,17 +104,17 @@ internal sealed class QueryMap
             return pathBuilder.ToArray();
         }
 
-        return [rootField.GetEffectiveName()];
+        return [rootField._effectiveName];
     }
 
-    private static string GetTargetNodeName(string nodePath)
+    private static ReadOnlySpan<char> GetTargetNodeName(string nodePath)
     {
         var nodePathSpan = nodePath.AsSpan();
         var lastDotIndex = nodePathSpan.LastIndexOf('.');
 
         return lastDotIndex == -1
-            ? nodePathSpan.ToString()
-            : nodePathSpan[(lastDotIndex + 1)..].ToString();
+            ? nodePathSpan
+            : nodePathSpan[(lastDotIndex + 1)..];
     }
 
     /// <summary>
@@ -128,26 +125,28 @@ internal sealed class QueryMap
     /// <param name="targetNode">The target node name to find</param>
     /// <param name="pathBuilder">Shared list for building the path (modified in-place)</param>
     /// <returns>True if a target node was found, false otherwise</returns>
-    private static bool FindPathToNodeOptimized(FieldDefinition field, string targetNode, List<string> pathBuilder)
+    private static bool FindPathToNodeOptimized(FieldDefinition field, ReadOnlySpan<char> targetNode, List<string> pathBuilder)
     {
         // Check if any direct child matches the target node
         foreach (var childField in field.Fields.Values)
         {
-            var fieldIdentifier = childField.GetEffectiveName();
+            // Optimization: Use the pre-calculated effective name for the primary match.
+            // This covers Name (if no alias) or Alias (if it exists).
+            var effectiveName = childField._effectiveName;
+                
+            // If it doesn't match the effective name, we only need to check the base Name 
+            // if the effective name was actually an alias (i.e., they aren't the same reference).
+            var isMatch = targetNode.Equals(effectiveName.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
+                          (!ReferenceEquals(effectiveName, childField.Name) && targetNode.Equals(childField.Name.AsSpan(), StringComparison.OrdinalIgnoreCase));
 
-            // Check if the target matches either the field name or the alias
-            var isMatch = childField.Name.Equals(targetNode, StringComparison.OrdinalIgnoreCase) ||
-                         (!string.IsNullOrEmpty(childField.Alias) && childField.Alias.Equals(targetNode, StringComparison.OrdinalIgnoreCase));
-
+            pathBuilder.Add(effectiveName);
             if (isMatch)
             {
-                // Found the target node, add it to a path
-                pathBuilder.Add(fieldIdentifier);
+                // Found the target node
                 return true;
             }
 
             // Try searching in nested fields
-            pathBuilder.Add(fieldIdentifier);
             if (FindPathToNodeOptimized(childField, targetNode, pathBuilder))
             {
                 return true;

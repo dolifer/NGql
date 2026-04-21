@@ -8,11 +8,9 @@ namespace NGql.Core.Abstractions;
 /// </summary>
 public sealed record QueryDefinition(string Name, string Description = "")
 {
-    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal Dictionary<string, FieldDefinition>? _fields;
     internal SortedSet<Variable>? _variables;
     internal Dictionary<string, object?>? _metadata;
-
-    private static readonly ThreadLocal<QueryTextBuilder> _builderCache = new(() => new QueryTextBuilder());
 
     /// <summary>
     /// The name of the query.
@@ -30,10 +28,10 @@ public sealed record QueryDefinition(string Name, string Description = "")
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields
+    public Dictionary<string, FieldDefinition> Fields
     {
         get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
-        set => _fields = value;
+        internal set => _fields = value;
     }
 
     /// <summary>
@@ -66,7 +64,18 @@ public sealed record QueryDefinition(string Name, string Description = "")
     public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
-    public override string ToString() => _builderCache.Value!.Build(this);
+    public override string ToString()
+    {
+        var builder = QueryTextBuilder.GetFromPool();
+        try
+        {
+            return builder.Build(this);
+        }
+        finally
+        {
+            QueryTextBuilder.ReturnToPool(builder);
+        }
+    }
 
     public static implicit operator string(QueryDefinition query) => query.ToString();
 }

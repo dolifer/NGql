@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -490,4 +491,143 @@ public class QueryTests
     prop3
 }");
     }
+
+    // ValueFormatter coverage tests - testing various primitive types
+    // These tests ensure all TryAppendPrimitive code paths are exercised
+
+    [Fact]
+    public void Query_With_DateTime_Arguments_Should_Format_Correctly()
+    {
+        // Test DateTime formatting with TryFormat (lines 82-88 coverage)
+        var createdDate = new DateTime(2025, 01, 15, 10, 30, 45, 123);
+        
+        var query = new Query("UserQuery")
+            .Select("users")
+            .Where("createdAfter", createdDate);
+        
+        var output = query.ToString();
+        output.Should().Contain("createdAfter");
+        output.Should().Contain("2025-01-15");
+    }
+
+    [Fact]
+    public void Query_With_DateTimeOffset_Arguments_Should_Format_Correctly()
+    {
+        // Test DateTimeOffset formatting with TryFormat (lines 90-98 coverage)
+        var eventTime = new DateTimeOffset(2025, 06, 20, 14, 30, 00, TimeSpan.FromHours(2));
+        
+        var query = new Query("EventQuery")
+            .Select("events")
+            .Where("occurringAt", eventTime);
+        
+        var output = query.ToString();
+        output.Should().Contain("occurringAt");
+        output.Should().Contain("2025-06-20");
+    }
+
+    [Fact]
+    public void Query_With_Various_Numeric_Types_Should_Format_Correctly()
+    {
+        // Test numeric types (int, long, float, double, decimal, etc.)
+        var args = new Dictionary<string, object?>
+        {
+            { "intVal", 42 },
+            { "longVal", 9223372036854775807L },
+            { "uintVal", 4294967295U },
+            { "ulongVal", 18446744073709551615UL },
+            { "shortVal", (short)32767 },
+            { "ushortVal", (ushort)65535 },
+            { "byteVal", (byte)255 },
+            { "sbyteVal", (sbyte)-128 },
+            { "floatVal", 3.14f },
+            { "doubleVal", 2.71828 },
+            { "decimalVal", 9999.99m }
+        };
+
+        var query = new Query("NumericQuery")
+            .Select("data")
+            .Where(args);
+
+        var output = query.ToString();
+        output.Should().Contain("intVal");
+        output.Should().Contain("42");
+    }
+
+    [Fact]
+    public void Query_With_Enum_And_EnumValue_Should_Format_Correctly()
+    {
+        // Test Enum and EnumValue types (lines 101-110)
+        var args = new Dictionary<string, object?>
+        {
+            { "status", TestStatus.Active },
+            { "enumValue", new EnumValue("CUSTOM_VALUE") }
+        };
+
+        var query = new Query("EnumQuery")
+            .Select("search")
+            .Where(args);
+
+        var output = query.ToString();
+        output.Should().Contain("status");
+        output.Should().Contain("enumValue");
+    }
+
+    [Fact]
+    public void Query_With_Variable_Should_Format_Correctly()
+    {
+        // Test Variable type (line 110)
+        var variable = new Variable("$userId", "ID");
+        
+        var query = new Query("VariableQuery")
+            .Select("user")
+            .Where("id", variable);
+
+        var output = query.ToString();
+        output.Should().Contain("userId");
+    }
+
+    [Fact]
+    public void Query_With_Boolean_Values_Should_Format_Correctly()
+    {
+        // Test boolean formatting (lines 42-44)
+        var args = new Dictionary<string, object?>
+        {
+            { "active", true },
+            { "archived", false }
+        };
+
+        var query = new Query("BoolQuery")
+            .Select("users")
+            .Where(args);
+
+        var output = query.ToString();
+        output.Should().Contain("active:true");
+        output.Should().Contain("archived:false");
+    }
+
+    [Fact]
+    public void Query_With_String_Arguments_Should_Format_Correctly()
+    {
+        // Test string formatting (lines 38-40)
+        var args = new Dictionary<string, object?>
+        {
+            { "name", "John" },
+            { "email", "john@example.com" }
+        };
+
+        var query = new Query("StringQuery")
+            .Select("users")
+            .Where(args);
+
+        var output = query.ToString();
+        output.Should().Contain("name");
+        output.Should().Contain("John");
+    }
+}
+
+// Helper enum for testing
+internal enum TestStatus
+{
+    Inactive = 0,
+    Active = 1
 }

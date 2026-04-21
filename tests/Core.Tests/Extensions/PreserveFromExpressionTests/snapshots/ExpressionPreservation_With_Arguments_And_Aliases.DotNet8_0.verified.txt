@@ -1,0 +1,5 @@
+﻿query QueryWithArgs{
+    search(q:"test"){
+        title
+    }
+}
