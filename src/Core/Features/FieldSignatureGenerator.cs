@@ -122,13 +122,13 @@ public static class FieldSignatureGenerator
 
         // Recursively process child fields sorted by Name for a deterministic hash.
         // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
-        if (field._fields != null)
+        if (field._children is { Count: > 0 })
         {
-            var fieldCount = field._fields.Count;
+            var fieldCount = field._children.Count;
             var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
             try
             {
-                field._fields.Values.CopyTo(rented, 0);
+                field._children.AsSpan().CopyTo(rented);
                 Array.Sort(rented, 0, fieldCount, FieldNameComparer);
                 for (var i = 0; i < fieldCount; i++)
                     AppendFieldSignature(builder, rented[i], currentPath);
@@ -164,13 +164,13 @@ public static class FieldSignatureGenerator
 
         // Recursively process child fields sorted by Name for a deterministic hash.
         // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
-        if (field._fields != null)
+        if (field._children is { Count: > 0 })
         {
-            var fieldCount = field._fields.Count;
+            var fieldCount = field._children.Count;
             var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
             try
             {
-                field._fields.Values.CopyTo(rented, 0);
+                field._children.AsSpan().CopyTo(rented);
                 Array.Sort(rented, 0, fieldCount, FieldNameComparer);
                 for (var i = 0; i < fieldCount; i++)
                     AppendFieldSignature(builder, rented[i], currentPath.AsSpan());

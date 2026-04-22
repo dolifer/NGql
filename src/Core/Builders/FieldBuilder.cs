@@ -26,7 +26,7 @@ public sealed class FieldBuilder
         var arguments = fieldDefinition._arguments ?? null;
 
         // Use FieldFactory for field creation
-        FieldFactory.GetOrAddField(_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase), fieldDefinition.Name, fieldDefinition._type ?? Constants.DefaultFieldType, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        FieldFactory.GetOrAddField(_fieldDefinition, fieldDefinition.Name, fieldDefinition._type ?? Constants.DefaultFieldType, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         return this;
     }
 
@@ -340,14 +340,14 @@ public sealed class FieldBuilder
     {
         ValidateFieldNameSegments(fieldName.AsSpan());
         var fieldType = type ?? Constants.DefaultFieldType;
-        var field = FieldFactory.GetOrAddField(_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase), fieldName, fieldType, arguments, _fieldDefinition.Path, metadata);
+        var field = FieldFactory.GetOrAddField(_fieldDefinition, fieldName, fieldType, arguments, _fieldDefinition.Path, metadata);
 
         // FAST PATH: Skip subFields processing if array is null or empty
         if (subFields?.Length > 0)
         {
             foreach (var subField in subFields)
             {
-                FieldFactory.GetOrAddField(field._fields ??= new(StringComparer.OrdinalIgnoreCase), subField, Constants.DefaultFieldType, null, field.Path);
+                FieldFactory.GetOrAddField(field, subField, Constants.DefaultFieldType, null, field.Path);
             }
         }
 
@@ -356,7 +356,7 @@ public sealed class FieldBuilder
         {
             var fieldBuilder = new FieldBuilder(field);
             action(fieldBuilder);
-            (_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase))[field.Name] = fieldBuilder._fieldDefinition;
+            (_fieldDefinition._children ??= new FieldChildren()).Set(field.Name, fieldBuilder._fieldDefinition);
         }
 
         return this;
@@ -413,7 +413,17 @@ public sealed class FieldBuilder
         // Recursively process all child fields
         foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
         {
-            RecursiveCreateField(parentField._fields ??= new(StringComparer.OrdinalIgnoreCase), childFieldDefinition);
+            RecursiveCreateField(parentField._children ??= new FieldChildren(), childFieldDefinition);
+        }
+    }
+
+    private static void RecursiveCreateField(FieldChildren children, FieldDefinition fieldDefinition)
+    {
+        var parentField = FieldFactory.CreateOrMergeField(children, fieldDefinition);
+
+        foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
+        {
+            RecursiveCreateField(parentField._children ??= new FieldChildren(), childFieldDefinition);
         }
     }
 

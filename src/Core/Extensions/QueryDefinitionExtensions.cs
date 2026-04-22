@@ -56,7 +56,7 @@ public static class QueryDefinitionExtensions
                 break; // Last segment
 
             // Navigate to next level (but allow last segment to be a leaf)
-            if (currentField._fields == null)
+            if (currentField._children == null)
             {
                 resolvedPath = null;
                 return null;
@@ -115,7 +115,7 @@ public static class QueryDefinitionExtensions
             // Recursively search child fields
             if (fieldDef.HasFields)
             {
-                FindFieldRecursivelyCore(fieldDef._fields!, fieldName, currentPath, results);
+                FindFieldRecursivelyCore(fieldDef._children!, fieldName, currentPath, results);
             }
         }
     }

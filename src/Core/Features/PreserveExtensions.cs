@@ -44,6 +44,48 @@ internal static class PreserveExtensions
         return newQuery;
     }
 
+    private static void ExtractMatchingFields(FieldChildren sourceFields,
+        FieldChildren targetFields, ReadOnlySpan<char> path)
+    {
+        var dotIndex = path.IndexOf('.');
+        var isLeafPath = dotIndex == -1;
+        var currentSegment = isLeafPath ? path : path[..dotIndex];
+
+        FieldDefinition? fieldDef = null;
+        string? fieldKey = null;
+        foreach (var f in sourceFields.AsSpan())
+        {
+            var name = f.Name.AsSpan();
+            var alias = f.Alias != null ? f.Alias.AsSpan() : ReadOnlySpan<char>.Empty;
+            if (name.Equals(currentSegment, StringComparison.OrdinalIgnoreCase) ||
+                (!alias.IsEmpty && alias.Equals(currentSegment, StringComparison.OrdinalIgnoreCase)))
+            {
+                fieldDef = f;
+                fieldKey = f.Name;
+                break;
+            }
+        }
+        if (fieldDef == null) return;
+
+        if (isLeafPath)
+        {
+            targetFields.Set(fieldKey!, fieldDef);
+            return;
+        }
+
+        if (fieldDef._children == null) return;
+
+        if (!targetFields.TryGetValue(fieldKey!, out var existingField) || existingField == null)
+        {
+            existingField = CloneFieldWithoutChildren(fieldDef);
+            targetFields.Set(fieldKey!, existingField);
+        }
+
+        existingField._children ??= new FieldChildren();
+        var remainingPath = path[(dotIndex + 1)..];
+        ExtractMatchingFields(fieldDef._children!, existingField._children, remainingPath);
+    }
+
     private static void ExtractMatchingFields(Dictionary<string, FieldDefinition> sourceFields,
         Dictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
     {
@@ -69,7 +111,7 @@ internal static class PreserveExtensions
         }
 
         // SLOW PATH: Intermediate node - ensure field exists in target and recurse
-        if (fieldDef._fields == null)
+        if (fieldDef._children == null)
         {
             return;
         }
@@ -80,8 +122,9 @@ internal static class PreserveExtensions
             targetFields[fieldKey] = existingField;
         }
 
+        existingField._children ??= new FieldChildren();
         var remainingPath = path[(dotIndex + 1)..];
-        ExtractMatchingFields(fieldDef._fields!, existingField._fields!, remainingPath);
+        ExtractMatchingFields(fieldDef._children!, existingField._children, remainingPath);
     }
 
     /// <summary>
@@ -94,11 +137,7 @@ internal static class PreserveExtensions
             source.Name,
             source.Type ?? Constants.DefaultFieldType,
             source.Alias,
-            source._arguments,
-            new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase))
-        {
-            _fields = []
-        };
+            source._arguments);
 
         // Copy metadata if present
         if (source._metadata != null)
@@ -135,6 +174,23 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ExtractVariablesFromFields(FieldChildren children, SortedSet<Variable> variables)
+    {
+        foreach (var field in children.AsSpan())
+        {
+            if (field._arguments?.Count > 0)
+            {
+                Helpers.ExtractVariablesFromValue(field._arguments, variables);
+            }
+
+            if (field._children is { Count: > 0 })
+            {
+                ExtractVariablesFromFields(field._children, variables);
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ExtractVariablesFromFields(Dictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
     {
         foreach (var field in fields.Values)
@@ -146,9 +202,9 @@ internal static class PreserveExtensions
             }
 
             // Recursively extract from nested fields
-            if (field._fields?.Count > 0)
+            if (field._children is { Count: > 0 })
             {
-                ExtractVariablesFromFields(field._fields, variables);
+                ExtractVariablesFromFields(field._children, variables);
             }
         }
     }

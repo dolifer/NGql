@@ -110,6 +110,50 @@ internal sealed class QueryTextBuilder
         return _stringBuilder.ToString();
     }
 
+    private void BuildFieldDefinitions(FieldChildren children, int indent)
+    {
+        var padding = GetPadding(indent);
+        var count = children.Count;
+
+        var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
+        children.AsSpan().CopyTo(arr);
+        Array.Sort(arr, 0, count, FieldSortComparer);
+
+        for (int j = 0; j < count; j++)
+        {
+            var field = arr[j];
+            _stringBuilder.Append(padding);
+
+            if (field.Alias != null)
+            {
+                _stringBuilder.Append(field.Alias);
+                _stringBuilder.Append(':');
+            }
+
+            _stringBuilder.Append(field.Name);
+
+            if (field._arguments is { Count: > 0 })
+            {
+                BuildFieldArguments(field._arguments);
+            }
+
+            if (field._children is { Count: > 0 })
+            {
+                _stringBuilder.AppendLine("{");
+                BuildFieldDefinitions(field._children, indent + IndentSize);
+                _stringBuilder.Append(padding);
+                _stringBuilder.AppendLine("}");
+            }
+            else
+            {
+                _stringBuilder.AppendLine();
+            }
+        }
+
+        Array.Clear(arr, 0, count);
+        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
+    }
+
     private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
     {
         var padding = GetPadding(indent);
@@ -141,10 +185,10 @@ internal sealed class QueryTextBuilder
                 BuildFieldArguments(field._arguments);
             }
 
-            if (field._fields?.Count > 0)
+            if (field._children is { Count: > 0 })
             {
                 _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field._fields, indent + IndentSize);
+                BuildFieldDefinitions(field._children, indent + IndentSize);
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }

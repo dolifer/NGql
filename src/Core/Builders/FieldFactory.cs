@@ -13,6 +13,7 @@ internal static class FieldFactory
 {
     /// <summary>
     /// Gets or adds a field to the collection, handling all field path complexities.
+    /// This overload operates on the root-level <see cref="QueryDefinition.Fields"/> dictionary.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
@@ -36,7 +37,33 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Gets or adds a dotted field (contains dots for nested access).
+    /// Gets or adds a field as a child of the given parent node, handling all field path complexities.
+    /// This overload is for per-node child access (not root-level dictionary access).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static FieldDefinition GetOrAddField(FieldDefinition parent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+    {
+        var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
+        var children = parent._children ??= new FieldChildren();
+
+        // FAST PATH: Simple field name
+        if (fieldPath.IsSimpleField())
+        {
+            return children.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata);
+        }
+
+        // MEDIUM PATH: Dotted field
+        if (fieldPath.IsDottedField())
+        {
+            return GetOrAddDottedField(parent, fieldPath, fieldType, arguments, parentPath, metadata);
+        }
+
+        // SLOW PATH: Complex field processing
+        return GetOrAddComplexField(parent, fieldPath, fieldType, arguments, parentPath, metadata);
+    }
+
+    /// <summary>
+    /// Gets or adds a dotted field (contains dots for nested access) — root-level variant.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
@@ -60,43 +87,117 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Processes dotted fields without arguments or metadata for optimal performance.
+    /// Gets or adds a dotted field (contains dots for nested access) — per-node variant.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition GetOrAddDottedField(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        var currentFields = fieldDefinitions;
-        FieldDefinition? result = null;
+        if (fieldPath.IsEmpty)
+        {
+            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
+        }
+
+        var hasNoArguments = arguments == null;
+        var hasNoMetadata = metadata == null;
+
+        if (hasNoArguments && hasNoMetadata)
+        {
+            return ProcessDottedFieldFastPath(rootParent, fieldPath, fieldType);
+        }
+
+        return ProcessDottedFieldWithMetadata(rootParent, fieldPath, fieldType, arguments, parentPath, metadata);
+    }
+
+    /// <summary>
+    /// Processes dotted fields without arguments or metadata for optimal performance — root-level variant.
+    /// The first segment uses the root dictionary; subsequent segments use <see cref="FieldDefinition._children"/>.
+    /// </summary>
+    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    {
+        // parentField == null means we are still at the root dictionary level.
+        FieldDefinition? parentField = null;
         var pathStart = 0;
 
         while (pathStart < fieldPath.Length)
         {
             ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
             var segmentName = spanSegment.Name.ToString();
+            FieldDefinition field;
 
-            if (!currentFields.TryGetValue(segmentName, out var field))
+            if (parentField == null)
             {
-                field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
-                currentFields[segmentName] = field;
+                // Root level — look up / insert in the root Dictionary.
+                if (!rootFields.TryGetValue(segmentName, out field!))
+                {
+                    field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+                    rootFields[segmentName] = field;
+                }
+                else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
+                {
+                    field._type = Constants.ObjectFieldType;
+                }
             }
-            else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
+            else
             {
-                field = currentFields[segmentName] = field with { Type = Constants.ObjectFieldType };
+                // Nested level — look up / insert in parent._children.
+                var children = parentField._children ??= new FieldChildren();
+                if (!children.TryGetValue(spanSegment.Name, out field!))
+                {
+                    field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+                    children.Append(field);
+                }
+                else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
+                {
+                    field._type = Constants.ObjectFieldType;
+                }
             }
 
-            result = field;
-            currentFields = field._fields ??= new(StringComparer.OrdinalIgnoreCase);
+            parentField = field;
             pathStart = nextStart;
         }
 
-        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return parentField ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
     }
 
     /// <summary>
-    /// Processes dotted fields with arguments and metadata.
+    /// Processes dotted fields without arguments or metadata — per-node variant.
+    /// All segments use <see cref="FieldDefinition._children"/>.
+    /// </summary>
+    private static FieldDefinition ProcessDottedFieldFastPath(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    {
+        var currentParent = rootParent;
+        var pathStart = 0;
+
+        while (pathStart < fieldPath.Length)
+        {
+            ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
+            var children = currentParent._children ??= new FieldChildren();
+            FieldDefinition field;
+
+            if (!children.TryGetValue(spanSegment.Name, out field!))
+            {
+                field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+                children.Append(field);
+            }
+            else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
+            {
+                field._type = Constants.ObjectFieldType;
+            }
+
+            currentParent = field;
+            pathStart = nextStart;
+        }
+
+        return currentParent == rootParent
+            ? throw new InvalidOperationException("Failed to create field: no valid segments found")
+            : currentParent;
+    }
+
+    /// <summary>
+    /// Processes dotted fields with arguments and metadata — root-level variant.
     /// </summary>
     private static FieldDefinition ProcessDottedFieldWithMetadata(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        var currentFields = fieldDefinitions;
         var parentPathSpan = parentPath.AsSpan();
         
         // Use stack allocation for small paths, pooled resources for larger ones
@@ -112,7 +213,7 @@ internal static class FieldFactory
                 pathBuilder.Append(parentPathSpan);
             }
 
-            return ProcessDottedFieldSegments(currentFields, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+            return ProcessDottedFieldSegments(fieldDefinitions, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
         }
         else
         {
@@ -125,21 +226,46 @@ internal static class FieldFactory
                 pathBuilder.Append(parentPathSpan);
             }
 
-            return ProcessDottedFieldSegments(currentFields, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+            return ProcessDottedFieldSegments(fieldDefinitions, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
         }
     }
 
     /// <summary>
-    /// Processes individual segments of a dotted field path.
+    /// Processes dotted fields with arguments and metadata — per-node variant.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldSegments(Dictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    private static FieldDefinition ProcessDottedFieldWithMetadata(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
+        var parentPathSpan = parentPath.AsSpan();
+        var estimatedPathLength = parentPathSpan.Length + fieldPath.Length + 10;
+
+        if (estimatedPathLength <= 512)
+        {
+            Span<char> pathBuffer = stackalloc char[512];
+            var pathBuilder = new SpanPathBuilder(pathBuffer);
+            if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+            return ProcessDottedFieldSegments(rootParent, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+        }
+        else
+        {
+            using var pooledArray = CharArrayPool.GetPooled(estimatedPathLength);
+            var pathBuilder = new SpanPathBuilder(pooledArray.AsSpan());
+            if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+            return ProcessDottedFieldSegments(rootParent, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Processes individual segments of a dotted field path — root-level variant.
+    /// </summary>
+    private static FieldDefinition ProcessDottedFieldSegments(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    {
+        FieldDefinition? parentField = null;
         FieldDefinition? result = null;
 
         while (fieldPath.Length > 0)
         {
             ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
-            
+
             if (spanSegment.Name.IsWhiteSpace())
             {
                 fieldPath = remainingPath;
@@ -147,8 +273,48 @@ internal static class FieldFactory
             }
 
             pathBuilder.Append(spanSegment.Name);
-            result = ProcessDottedSegment(currentFields, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
-            currentFields = result._fields ??= new(StringComparer.OrdinalIgnoreCase);
+
+            if (parentField == null)
+            {
+                // Root level — use the root Dictionary.
+                result = ProcessDottedSegment(rootFields, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
+            }
+            else
+            {
+                // Nested level — use FieldChildren.
+                var children = parentField._children ??= new FieldChildren();
+                result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
+            }
+
+            parentField = result;
+            fieldPath = remainingPath;
+        }
+
+        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+    }
+
+    /// <summary>
+    /// Processes individual segments of a dotted field path — per-node variant.
+    /// </summary>
+    private static FieldDefinition ProcessDottedFieldSegments(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    {
+        var currentParent = rootParent;
+        FieldDefinition? result = null;
+
+        while (fieldPath.Length > 0)
+        {
+            ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
+
+            if (spanSegment.Name.IsWhiteSpace())
+            {
+                fieldPath = remainingPath;
+                continue;
+            }
+
+            pathBuilder.Append(spanSegment.Name);
+            var children = currentParent._children ??= new FieldChildren();
+            result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
+            currentParent = result;
             fieldPath = remainingPath;
         }
 
@@ -167,7 +333,7 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Processes a single dotted segment with arguments and metadata.
+    /// Processes a single dotted segment with arguments and metadata — root-Dict variant.
     /// </summary>
     private static FieldDefinition ProcessDottedSegment(Dictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
     {
@@ -198,7 +364,37 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Gets or adds a complex field with type parsing and alias handling.
+    /// Processes a single dotted segment with arguments and metadata — FieldChildren variant.
+    /// </summary>
+    private static FieldDefinition ProcessDottedSegment(FieldChildren children, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
+    {
+        if (!children.TryGetValue(segment, out var field))
+        {
+            var segmentArgs = isLastSegment ? arguments : null;
+            var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
+            var segmentMetadata = isLastSegment ? metadata : null;
+
+            field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
+            children.Append(field);
+            return field;
+        }
+
+        if (isLastSegment && arguments?.Count > 0)
+        {
+            field = field.MergeFieldArguments(arguments);
+            children.Set(segment, field);
+        }
+
+        if (!isLastSegment && field.ShouldConvertToObjectType())
+        {
+            field._type = Constants.ObjectFieldType;
+        }
+
+        return field;
+    }
+
+    /// <summary>
+    /// Gets or adds a complex field with type parsing and alias handling — root-level variant.
     /// </summary>
     private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
@@ -208,7 +404,6 @@ internal static class FieldFactory
             throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
         }
 
-        var currentFields = fieldDefinitions;
         var parentPathSpan = parentPath.AsSpan();
         Span<char> pathBuffer = stackalloc char[512];
         var pathBuilder = new SpanPathBuilder(pathBuffer);
@@ -220,32 +415,77 @@ internal static class FieldFactory
 
         fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
+        FieldDefinition? parentField = null;
         FieldDefinition? result = null;
 
         while (fieldPath.Length > 0)
         {
             var segment = ExtractNextSegment(ref fieldPath);
 
-            // FAIL-FAST: Skip empty segment names immediately using span check
             if (segment.Name.IsWhiteSpace())
-            {
                 continue;
-            }
 
-            // Add segment to path builder
             pathBuilder.Append(segment.Name);
-
             var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
 
-            result = ProcessFieldSegment(currentFields, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
-            currentFields = result._fields ??= new(StringComparer.OrdinalIgnoreCase);
+            if (parentField == null)
+            {
+                // Root level
+                result = ProcessFieldSegment(fieldDefinitions, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+            }
+            else
+            {
+                // Nested level
+                var children = parentField._children ??= new FieldChildren();
+                result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+            }
+
+            parentField = result;
         }
 
         return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
     }
 
     /// <summary>
-    /// Processes a field segment for complex field creation.
+    /// Gets or adds a complex field with type parsing and alias handling — per-node variant.
+    /// </summary>
+    private static FieldDefinition GetOrAddComplexField(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    {
+        if (fieldPath.IsEmpty)
+        {
+            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
+        }
+
+        var parentPathSpan = parentPath.AsSpan();
+        Span<char> pathBuffer = stackalloc char[512];
+        var pathBuilder = new SpanPathBuilder(pathBuffer);
+
+        if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+
+        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
+
+        var currentParent = rootParent;
+        FieldDefinition? result = null;
+
+        while (fieldPath.Length > 0)
+        {
+            var segment = ExtractNextSegment(ref fieldPath);
+
+            if (segment.Name.IsWhiteSpace())
+                continue;
+
+            pathBuilder.Append(segment.Name);
+            var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
+            var children = currentParent._children ??= new FieldChildren();
+            result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+            currentParent = result;
+        }
+
+        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+    }
+
+    /// <summary>
+    /// Processes a field segment for complex field creation — root-Dict variant.
     /// </summary>
     private static FieldDefinition ProcessFieldSegment(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
@@ -258,7 +498,20 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Creates a new field for complex field processing.
+    /// Processes a field segment for complex field creation — FieldChildren variant.
+    /// </summary>
+    private static FieldDefinition ProcessFieldSegment(FieldChildren children, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    {
+        if (!children.TryGetValue(segment.Name, out var field))
+        {
+            return CreateNewField(children, segment, arguments, parsedFieldType, fullPath, metadata);
+        }
+
+        return UpdateExistingField(children, segment, field, arguments, parsedFieldType);
+    }
+
+    /// <summary>
+    /// Creates a new field for complex field processing — root-Dict variant.
     /// </summary>
     private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
@@ -288,7 +541,35 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Updates an existing field during complex field processing.
+    /// Creates a new field for complex field processing — FieldChildren variant.
+    /// </summary>
+    private static FieldDefinition CreateNewField(FieldChildren children, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    {
+        if (segment.Name.Contains(' '))
+        {
+            throw new InvalidOperationException($"Field name '{segment.Name}' contains spaces. Type information should be consumed during parsing.");
+        }
+
+        var fieldArgs = segment.IsLastFragment ? arguments : null;
+        var fieldMetadata = segment.IsLastFragment ? metadata : null;
+
+        ReadOnlySpan<char> computedFieldTypeSpan;
+        if (segment.IsLastFragment)
+        {
+            computedFieldTypeSpan = segment.HasParsedType ? segment.ParsedType : parsedFieldType;
+        }
+        else
+        {
+            computedFieldTypeSpan = segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan) ? Constants.ArrayTypeMarkerSpan : Constants.ObjectFieldTypeSpan;
+        }
+
+        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldTypeSpan, segment.Alias, fieldArgs, fullPath, fieldMetadata);
+        children.Append(field);
+        return field;
+    }
+
+    /// <summary>
+    /// Updates an existing field during complex field processing — root-Dict variant.
     /// </summary>
     private static FieldDefinition UpdateExistingField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
@@ -323,7 +604,42 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Creates or merges a field definition into the target collection.
+    /// Updates an existing field during complex field processing — FieldChildren variant.
+    /// </summary>
+    private static FieldDefinition UpdateExistingField(FieldChildren children, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
+    {
+        if (segment.HasAlias && field._alias == null)
+        {
+            field._alias = segment.Alias.IsEmpty ? null : segment.Alias.ToString();
+        }
+
+        if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
+        {
+            field._type = Constants.ObjectFieldType;
+        }
+
+        if (!segment.IsLastFragment)
+        {
+            return field;
+        }
+
+        if (arguments?.Count > 0)
+        {
+            field = field.MergeFieldArguments(arguments);
+            children.Set(segment.Name, field);
+        }
+
+        if (!parsedFieldType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase) &&
+            !field._type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
+        {
+            field._type = parsedFieldType.ToString();
+        }
+
+        return field;
+    }
+
+    /// <summary>
+    /// Creates or merges a field definition into the target collection — root-Dict variant.
     /// </summary>
     internal static FieldDefinition CreateOrMergeField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
@@ -348,6 +664,33 @@ internal static class FieldFactory
             fieldDefinition.Path.AsSpan(),
             fieldDefinition.Metadata);
         fields[fieldDefinition.Name] = newField;
+        return newField;
+    }
+
+    /// <summary>
+    /// Creates or merges a field definition into the target collection — FieldChildren variant.
+    /// </summary>
+    internal static FieldDefinition CreateOrMergeField(FieldChildren children, FieldDefinition fieldDefinition)
+    {
+        var existingField = Helpers.FindExistingField(children, fieldDefinition);
+        if (existingField != null)
+        {
+            var mergedField = existingField.MergeFieldArguments(fieldDefinition._arguments);
+            children.Set(existingField.Name, mergedField);
+            return mergedField;
+        }
+
+        var fieldType = string.IsNullOrWhiteSpace(fieldDefinition._type) ? Span<char>.Empty : fieldDefinition._type.AsSpan();
+        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
+
+        var newField = Helpers.CreateFieldDefinition(
+            fieldDefinition.Name.AsSpan(),
+            fieldType,
+            fieldAlias,
+            fieldDefinition._arguments,
+            fieldDefinition.Path.AsSpan(),
+            fieldDefinition.Metadata);
+        children.Append(newField);
         return newField;
     }
 

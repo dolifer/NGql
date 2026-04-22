@@ -663,6 +663,16 @@ internal static class Helpers
         return existingField ?? fields.GetValueOrDefault(fieldDefinition.Path);
     }
 
+    internal static FieldDefinition? FindExistingField(FieldChildren children, FieldDefinition fieldDefinition)
+    {
+        foreach (var f in children.AsSpan())
+        {
+            if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)
+                return f;
+        }
+        return children.Find(fieldDefinition.Path.AsSpan());
+    }
+
     /// <summary>
     /// Finds an existing field by traversing the field path.
     /// </summary>
@@ -686,26 +696,25 @@ internal static class Helpers
 
     private static FieldDefinition? TraverseFieldPath(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> fieldPath)
     {
-        var currentFields = fields;
-        var remainingPath = fieldPath;
-        FieldDefinition? lastField = null;
+        // First segment: look up in the root Dictionary.
+        ExtractPathSegment(fieldPath, out var firstSegment, out var nextPath);
+        var currentField = FindFieldInCollection(fields, firstSegment.Name);
+        if (currentField == null) return null;
 
+        var remainingPath = nextPath;
+
+        // Subsequent segments: traverse via _children.
         while (!remainingPath.IsEmpty)
         {
-            ExtractPathSegment(remainingPath, out var segment, out var nextPath);
-            
-            var currentField = FindFieldInCollection(currentFields, segment.Name);
-            if (currentField == null)
-            {
-                return null;
-            }
+            ExtractPathSegment(remainingPath, out var segment, out var nextSegmentPath);
 
-            lastField = currentField;
-            currentFields = currentField._fields;
-            remainingPath = nextPath;
+            currentField = currentField._children?.Find(segment.Name);
+            if (currentField == null) return null;
+
+            remainingPath = nextSegmentPath;
         }
 
-        return lastField;
+        return currentField;
     }
 
     private static void ExtractPathSegment(ReadOnlySpan<char> path, out SpanSegment segment, out ReadOnlySpan<char> nextPath)

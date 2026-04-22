@@ -30,9 +30,9 @@ internal static class FieldDefinitionExtensions
         if (depth > MaxFieldDepth)
             throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}. Possible circular reference in field definitions.");
 
-        foreach (var (incomingKey, incomingNestedField) in incomingField._fields ?? [])
+        foreach (var (incomingKey, incomingNestedField) in incomingField._children ?? (IEnumerable<KeyValuePair<string, FieldDefinition>>)[])
         {
-            if (existingField._fields?.TryGetValue(incomingKey, out var existingNestedField) == true)
+            if (existingField._children?.TryGetValue(incomingKey, out var existingNestedField) == true)
             {
                 if (!Helpers.AreArgumentsEqual(existingNestedField._arguments, incomingNestedField._arguments))
                     return false;
@@ -46,9 +46,9 @@ internal static class FieldDefinitionExtensions
             }
         }
 
-        foreach (var (existingKey, existingNestedField) in existingField._fields ?? [])
+        foreach (var (existingKey, existingNestedField) in existingField._children ?? (IEnumerable<KeyValuePair<string, FieldDefinition>>)[])
         {
-            if (incomingField._fields?.ContainsKey(existingKey) != true && HasAnyArguments(existingNestedField, depth + 1))
+            if (incomingField._children?.Find(existingKey.AsSpan()) == null && HasAnyArguments(existingNestedField, depth + 1))
                 return false;
         }
 
@@ -60,8 +60,8 @@ internal static class FieldDefinitionExtensions
         if (depth > MaxFieldDepth)
             throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}.");
         if (field._arguments is { Count: > 0 }) return true;
-        if (field._fields is null) return false;
-        foreach (var child in field._fields.Values)
+        if (field._children is null) return false;
+        foreach (var child in field._children.AsSpan())
         {
             if (HasAnyArguments(child, depth + 1)) return true;
         }
@@ -85,46 +85,57 @@ internal static class FieldDefinitionExtensions
         }
 
         // Create a merged field definition
-        var mergedFields = new Dictionary<string, FieldDefinition>(existing._fields ?? [], StringComparer.OrdinalIgnoreCase);
+        // Create a merged FieldChildren — clone existing then merge incoming on top
+        var mergedChildren = existing._children?.Clone() ?? new FieldChildren();
 
         // Merge nested fields recursively
-        foreach (var (key, incomingNestedField) in incoming._fields ?? [])
+        var incomingSpan = incoming._children != null ? incoming._children.AsSpan() : ReadOnlySpan<FieldDefinition>.Empty;
+        foreach (var incomingNestedField in incomingSpan)
         {
-            if (mergedFields.TryGetValue(key, out var existingNestedField))
+            if (mergedChildren.TryGetValue(incomingNestedField.Name, out var existingNestedField))
             {
                 // Recursive merge for nested fields
-                var mergedNestedField = MergeFields(existingNestedField, incomingNestedField);
-                mergedFields[key] = mergedNestedField;
+                var mergedNestedField = MergeFields(existingNestedField!, incomingNestedField);
+                mergedChildren.Set(incomingNestedField.Name, mergedNestedField);
             }
             else
             {
                 // Check if any existing field has the same effective name
-                var conflictingField = mergedFields.Values.FirstOrDefault(f =>
-                    string.Equals(f._effectiveName, incomingNestedField._effectiveName, StringComparison.OrdinalIgnoreCase));
+                FieldDefinition? conflictingField = null;
+                foreach (var f in mergedChildren.AsSpan())
+                {
+                    if (string.Equals(f._effectiveName, incomingNestedField._effectiveName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        conflictingField = f;
+                        break;
+                    }
+                }
 
                 if (conflictingField != null)
                 {
                     // Generate unique alias to resolve conflict
-                    var existingEffectiveNames = mergedFields.Values.Select(f => f._effectiveName);
+                    var existingEffectiveNames = mergedChildren.AsSpan().ToArray().Select(f => f._effectiveName);
                     var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingNestedField._effectiveName, existingEffectiveNames);
 
                     var fieldToAdd = incomingNestedField with { Alias = uniqueAlias };
-                    mergedFields[key] = fieldToAdd;
+                    mergedChildren.Append(fieldToAdd);
                 }
                 else
                 {
-                    mergedFields[key] = incomingNestedField;
+                    mergedChildren.Append(incomingNestedField);
                 }
             }
         }
 
-        return new FieldDefinition(
+        var result = new FieldDefinition(
             existing.Name,
             existing._type ?? incoming._type ?? Constants.DefaultFieldType,
             existing._alias,
-            existing._arguments,
-            mergedFields
-        ).MergeFieldArguments(incoming._arguments);
+            existing._arguments)
+        {
+            _children = mergedChildren
+        };
+        return result.MergeFieldArguments(incoming._arguments);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

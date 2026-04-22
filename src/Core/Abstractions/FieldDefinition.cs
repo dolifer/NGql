@@ -11,7 +11,7 @@ namespace NGql.Core.Abstractions;
 public sealed record FieldDefinition
 {
     // Fields
-    internal Dictionary<string, FieldDefinition>? _fields;
+    internal FieldChildren? _children;
     internal string? _type;
     internal string? _alias;
     internal string _effectiveName;
@@ -34,7 +34,11 @@ public sealed record FieldDefinition
         _alias = alias;
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
-        _fields = fields?.Count > 0 ? fields : null;
+        if (fields?.Count > 0)
+        {
+            _children = new FieldChildren();
+            foreach (var kvp in fields) _children.Append(kvp.Value);
+        }
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
@@ -49,7 +53,11 @@ public sealed record FieldDefinition
             foreach (var kvp in arguments) sorted[kvp.Key] = kvp.Value;
             _arguments = sorted;
         }
-        _fields = fields?.Count > 0 ? fields : null;
+        if (fields?.Count > 0)
+        {
+            _children = new FieldChildren();
+            foreach (var kvp in fields) _children.Append(kvp.Value);
+        }
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
@@ -87,14 +95,14 @@ public sealed record FieldDefinition
     }
 
     private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyReadOnlyFields
-        = new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase);
+        = new FieldChildren();
 
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
     public IReadOnlyDictionary<string, FieldDefinition> Fields
-        => _fields ?? EmptyReadOnlyFields;
+        => _children ?? EmptyReadOnlyFields;
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -133,10 +141,10 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field has child fields.
     /// </summary>
     [JsonIgnore]
-    public bool HasFields => _fields is { Count: > 0 };
+    public bool HasFields => _children is { Count: > 0 };
 
     [JsonIgnore]
-    internal bool IsNeverMerge { get; init; }
+    public bool IsNeverMerge { get; internal set; }
 
     // Methods
     public bool Equals(FieldDefinition? other)

@@ -98,7 +98,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             if (nodeField == null || !nodeField.HasFields) continue;
 
             var fieldsToPreserve = CollectFields(extractedPaths, paramsForPath, parameterTypes, alwaysPreserveFields);
-            PreserveFields(nodeField._fields, fieldsToPreserve, fullPath);
+            PreserveFields(nodeField._children, fieldsToPreserve, fullPath);
         }
     }
 
@@ -245,7 +245,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void PreserveFields(
-        Dictionary<string, FieldDefinition>? nodeFields,
+        IReadOnlyDictionary<string, FieldDefinition>? nodeFields,
         HashSet<string> fieldsToPreserve,
         string basePathStr)
     {
@@ -274,7 +274,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void PreserveNestedField(Dictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
+    private void PreserveNestedField(IReadOnlyDictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
     {
         if (QueryDefinitionExtensions.NavigatePath(nodeFields, field.AsSpan(), out var resolvedPath, basePathStr) != null)
         {
@@ -303,7 +303,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void PreserveRecursiveMatches(Dictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
+    private void PreserveRecursiveMatches(IReadOnlyDictionary<string, FieldDefinition> nodeFields, string field, string basePathStr)
     {
         var recursiveMatches = QueryDefinitionExtensions.FindFieldRecursively(nodeFields, field, "");
         foreach (var recursivePath in recursiveMatches)
@@ -340,7 +340,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             foreach (var field in fieldsToPreserve)
             {
                 // Try path navigation first (handles both simple and nested paths)
-                if (QueryDefinitionExtensions.NavigatePath(nodeField._fields, field.AsSpan(), out var resolvedPath, fullNodePath) != null)
+                if (QueryDefinitionExtensions.NavigatePath(nodeField.Fields, field.AsSpan(), out var resolvedPath, fullNodePath) != null)
                 {
                     preserveCallback(resolvedPath!);
                 }

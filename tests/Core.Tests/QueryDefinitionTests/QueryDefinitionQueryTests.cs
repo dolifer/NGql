@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using FluentAssertions;
 using NGql.Core.Abstractions;
 using Xunit;
@@ -19,9 +18,9 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
-                                { "child", new FieldDefinition("child") }
+                                new FieldDefinition("child")
                             }
                         }
                     }
@@ -47,24 +46,20 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("child1")
                                 {
-                                    "child1", new FieldDefinition("child1")
+                                    _children = new FieldChildren
                                     {
-                                        _fields = new(StringComparer.OrdinalIgnoreCase)
-                                        {
-                                            { "grandchild1", new FieldDefinition("grandchild1") }
-                                        }
+                                        new FieldDefinition("grandchild1")
                                     }
                                 },
+                                new FieldDefinition("child2")
                                 {
-                                    "child2", new FieldDefinition("child2")
+                                    _children = new FieldChildren
                                     {
-                                        _fields = new(StringComparer.OrdinalIgnoreCase)
-                                        {
-                                            { "grandchild2", new FieldDefinition("grandchild2") }
-                                        }
+                                        new FieldDefinition("grandchild2")
                                     }
                                 }
                             }
@@ -118,9 +113,9 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
-                                { "child", new FieldDefinition("child") }
+                                new FieldDefinition("child")
                             }
                         }
                     }
@@ -147,21 +142,17 @@ public class QueryDefinitionQueryTests
                     {
                         "level1", new FieldDefinition("level1")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("level2")
                                 {
-                                    "level2", new FieldDefinition("level2")
+                                    _children = new FieldChildren
                                     {
-                                        _fields = new(StringComparer.OrdinalIgnoreCase)
+                                        new FieldDefinition("level3")
                                         {
+                                            _children = new FieldChildren
                                             {
-                                                "level3", new FieldDefinition("level3")
-                                                {
-                                                    _fields = new(StringComparer.OrdinalIgnoreCase)
-                                                    {
-                                                        { "level4", new FieldDefinition("level4") }
-                                                    }
-                                                }
+                                                new FieldDefinition("level4")
                                             }
                                         }
                                     }
@@ -196,11 +187,11 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
-                                { "child1", new FieldDefinition("child1") },
-                                { "child2", new FieldDefinition("child2") },
-                                { "child3", new FieldDefinition("child3") }
+                                new FieldDefinition("child1"),
+                                new FieldDefinition("child2"),
+                                new FieldDefinition("child3")
                             }
                         }
                     }
@@ -229,25 +220,23 @@ public class QueryDefinitionQueryTests
                     {
                         "parent1", new FieldDefinition("parent1")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
-                                { "child1", new FieldDefinition("child1") },
-                                { "child2", new FieldDefinition("child2") }
+                                new FieldDefinition("child1"),
+                                new FieldDefinition("child2")
                             }
                         }
                     },
                     {
                         "parent2", new FieldDefinition("parent2")
                         {
-                            _fields = new(StringComparer.OrdinalIgnoreCase)
+                            _children = new FieldChildren
                             {
+                                new FieldDefinition("child")
                                 {
-                                    "child", new FieldDefinition("child")
+                                    _children = new FieldChildren
                                     {
-                                        _fields = new(StringComparer.OrdinalIgnoreCase)
-                                        {
-                                            { "grandchild", new FieldDefinition("grandchild") }
-                                        }
+                                        new FieldDefinition("grandchild")
                                     }
                                 }
                             }
