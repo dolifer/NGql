@@ -113,9 +113,8 @@ internal static class FieldDefinitionExtensions
 
                 if (conflictingField != null)
                 {
-                    // Generate unique alias to resolve conflict
-                    var existingEffectiveNames = mergedChildren.AsSpan().ToArray().Select(f => f._effectiveName);
-                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingNestedField._effectiveName, existingEffectiveNames);
+                    // Generate unique alias to resolve conflict — span overload avoids ToArray allocation
+                    var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingNestedField._effectiveName, mergedChildren.AsSpan());
 
                     var fieldToAdd = incomingNestedField with { Alias = uniqueAlias };
                     mergedChildren.Append(fieldToAdd);

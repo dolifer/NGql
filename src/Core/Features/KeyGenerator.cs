@@ -1,3 +1,4 @@
+using NGql.Core.Abstractions;
 using NGql.Core.Pooling;
 
 namespace NGql.Core.Features;
@@ -23,6 +24,31 @@ internal static class KeyGenerator
             return baseKey;
         }
 
+        return GenerateUniqueKeyCore(baseKey, existingKeySet);
+    }
+
+    /// <summary>
+    /// Generates a unique key from field definitions' effective names (zero-alloc for span iteration).
+    /// </summary>
+    internal static string GenerateUniqueKey(string baseKey, ReadOnlySpan<FieldDefinition> fields)
+    {
+        using var pooledSet = LockFreeHashSetPool.GetPooled();
+        var existingKeySet = pooledSet.Set;
+
+        // Populate set with effective names from span — zero-alloc iteration
+        for (int i = 0; i < fields.Length; i++)
+            existingKeySet.Add(fields[i]._effectiveName);
+
+        if (!existingKeySet.Contains(baseKey))
+        {
+            return baseKey;
+        }
+
+        return GenerateUniqueKeyCore(baseKey, existingKeySet);
+    }
+
+    private static string GenerateUniqueKeyCore(string baseKey, HashSet<string> existingKeySet)
+    {
         var counter = 1;
         Span<char> buffer = stackalloc char[baseKey.Length + 16]; // Reserve space for "_" + counter
         baseKey.AsSpan().CopyTo(buffer);

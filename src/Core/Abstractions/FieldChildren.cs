@@ -137,21 +137,18 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// <summary>
     /// Creates a shallow clone (array copy) for use during merge operations.
     /// The clone shares the same <see cref="FieldDefinition"/> references as the original.
+    /// Note: Index is NOT copied; it rebuilds lazily on next insertion if needed.
     /// </summary>
     internal FieldChildren Clone()
     {
         if (_items == null) return new FieldChildren();
 
-        var clone = new FieldChildren
+        return new FieldChildren
         {
             _items = _items[.._count],
             _count = _count,
+            _index = null  // Skip index copy — will rebuild lazily if needed
         };
-
-        if (_index != null)
-            clone._index = new Dictionary<string, FieldDefinition>(_index, StringComparer.OrdinalIgnoreCase);
-
-        return clone;
     }
 
     // ── IReadOnlyDictionary (Keys / Values / Enumerator) ─────────────────────
@@ -174,15 +171,18 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         }
     }
 
+    /// <summary>
+    /// Returns a zero-alloc struct enumerator for this collection.
+    /// C# foreach will prefer this over the interface implementation, avoiding allocations.
+    /// </summary>
+    public FieldChildrenEnumerator GetEnumerator() => new FieldChildrenEnumerator(this);
+
+    // Explicit interface implementation — provides fallback for code that uses IEnumerable<T> directly
     IEnumerator<KeyValuePair<string, FieldDefinition>> IEnumerable<KeyValuePair<string, FieldDefinition>>.GetEnumerator()
-    {
-        if (_items == null) yield break;
-        for (int i = 0; i < _count; i++)
-            yield return new KeyValuePair<string, FieldDefinition>(_items[i].Name, _items[i]);
-    }
+        => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator()
-        => ((IEnumerable<KeyValuePair<string, FieldDefinition>>)this).GetEnumerator();
+        => GetEnumerator();
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -192,4 +192,44 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         for (int i = 0; i < _count; i++)
             _index[_items![i].Name] = _items[i];
     }
+}
+
+/// <summary>
+/// Zero-allocation struct enumerator for <see cref="FieldChildren"/>.
+/// Implements IEnumerator to support foreach without heap allocation.
+/// </summary>
+internal struct FieldChildrenEnumerator : IEnumerator<KeyValuePair<string, FieldDefinition>>
+{
+    private readonly FieldChildren? _children;
+    private int _index;
+
+    internal FieldChildrenEnumerator(FieldChildren children)
+    {
+        _children = children;
+        _index = -1;
+    }
+
+    public KeyValuePair<string, FieldDefinition> Current
+    {
+        get
+        {
+            if (_children?._items == null || _index < 0 || _index >= _children._count)
+                throw new InvalidOperationException("Enumeration has not started or has ended.");
+            var item = _children._items[_index];
+            return new KeyValuePair<string, FieldDefinition>(item.Name, item);
+        }
+    }
+
+    object System.Collections.IEnumerator.Current => Current;
+
+    public bool MoveNext()
+    {
+        if (_children == null) return false;
+        _index++;
+        return _index < _children._count;
+    }
+
+    public void Reset() => _index = -1;
+
+    public void Dispose() { }
 }
