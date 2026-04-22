@@ -51,7 +51,10 @@ public sealed class PreservationBuilder
             var pathToNode = _sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
             if (pathToNode.Length == 0) continue;
 
-            var fullNodePath = string.Join(".", pathToNode) + "." + nodePath.Split('.')[^1];
+            // Extract last segment of nodePath without allocating array
+            var lastIndex = nodePath.LastIndexOf('.');
+            var lastSegment = lastIndex == -1 ? nodePath : nodePath[(lastIndex + 1)..];
+            var fullNodePath = string.Join(".", pathToNode) + "." + lastSegment;
             var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
             if (nodeField == null || !nodeField.HasFields) continue;
 

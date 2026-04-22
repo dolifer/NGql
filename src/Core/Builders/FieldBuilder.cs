@@ -410,10 +410,14 @@ public sealed class FieldBuilder
     {
         var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition);
 
-        // Recursively process all child fields
-        foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
+        // Recursively process all child fields using direct span iteration (zero-alloc)
+        if (fieldDefinition._children != null)
         {
-            RecursiveCreateField(parentField._children ??= new FieldChildren(), childFieldDefinition);
+            var childrenSpan = fieldDefinition._children.AsSpan();
+            for (int i = 0; i < childrenSpan.Length; i++)
+            {
+                RecursiveCreateField(parentField._children ??= new FieldChildren(), childrenSpan[i]);
+            }
         }
     }
 
@@ -421,9 +425,14 @@ public sealed class FieldBuilder
     {
         var parentField = FieldFactory.CreateOrMergeField(children, fieldDefinition);
 
-        foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
+        // Recursively process all child fields using direct span iteration (zero-alloc)
+        if (fieldDefinition._children != null)
         {
-            RecursiveCreateField(parentField._children ??= new FieldChildren(), childFieldDefinition);
+            var childrenSpan = fieldDefinition._children.AsSpan();
+            for (int i = 0; i < childrenSpan.Length; i++)
+            {
+                RecursiveCreateField(parentField._children ??= new FieldChildren(), childrenSpan[i]);
+            }
         }
     }
 
