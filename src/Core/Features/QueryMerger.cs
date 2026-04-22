@@ -52,8 +52,11 @@ internal static class QueryMerger
         }
         else if (targetVars is not null && incomingVars is not null)
         {
-            // Both have variables - need to merge
-            targetDefinition.Variables = new SortedSet<Variable>(targetVars.Union(incomingVars));
+            // Both have variables - merge without LINQ Union() enumerable allocation
+            var mergedVars = new SortedSet<Variable>(targetVars, targetVars.Comparer);
+            foreach (var v in incomingVars)
+                mergedVars.Add(v);
+            targetDefinition.Variables = mergedVars;
         }
         // else: only target has variables (targetVars not null, incomingVars null) - already set, no change needed
         // else: both null - no variables, lazy-init will handle it if accessed

@@ -58,6 +58,9 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         Dictionary<string, Type> parameterTypes,
         string[]? alwaysPreserveFields)
     {
+        // Cache string.Join results to avoid duplicate allocations for repeated base paths
+        var basePathCache = new Dictionary<object, string>();  // Using object for array reference identity
+        
         // Group parameters by base path (minimal allocation)
         var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -65,7 +68,13 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         {
             if (!localMap.TryGetValue(paramName, out var basePath)) continue;
 
-            var basePathKey = string.Join(".", basePath);
+            // Cache the joined string to avoid re-joining same array multiple times
+            if (!basePathCache.TryGetValue(basePath, out var basePathKey))
+            {
+                basePathKey = string.Join(".", basePath);
+                basePathCache[basePath] = basePathKey;
+            }
+            
             if (!paramsByBasePath.TryGetValue(basePathKey, out var list))
             {
                 list = new List<string>();
@@ -79,7 +88,12 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         {
             foreach (var (_, basePath) in localMap)
             {
-                var basePathKey = string.Join(".", basePath);
+                if (!basePathCache.TryGetValue(basePath, out var basePathKey))
+                {
+                    basePathKey = string.Join(".", basePath);
+                    basePathCache[basePath] = basePathKey;
+                }
+                    
                 if (!paramsByBasePath.ContainsKey(basePathKey))
                 {
                     paramsByBasePath[basePathKey] = new List<string>();
