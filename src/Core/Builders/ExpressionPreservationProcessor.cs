@@ -115,11 +115,14 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         var hasParameterPrefixes = false;
         foreach (var p in extractedPaths)
         {
-            if (paramsForPath.Any(param => p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase)))
+            foreach (var param in paramsForPath)
             {
-                hasParameterPrefixes = true;
+                if (p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase))
+                {
+                    hasParameterPrefixes = true;
+                    break;
+                }
             }
-
             if (hasParameterPrefixes) break;
         }
 
@@ -142,11 +145,14 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             {
                 // Filter paths for this parameter
                 HashSet<string>? parameterPaths = null;
-                foreach (var p in extractedPaths.Where(p => string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
-                                                            p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)))
+                foreach (var p in extractedPaths)
                 {
-                    parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    parameterPaths.Add(p);
+                    if (string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
+                        p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
+                    {
+                        parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        parameterPaths.Add(p);
+                    }
                 }
 
                 // Fallback: if no paths matched with prefix but we have paths and one parameter
@@ -213,24 +219,17 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         // Apply "most specific wins" if we have multiple paths
         if (result.Count > 1)
         {
-            // Remove broader paths inline (avoids allocation)
-            var toRemove = new List<string>();
-            foreach (var path in result)
+            // Remove broader paths when a more-specific child path exists
+            result.RemoveWhere(path =>
             {
                 var prefix = path + ".";
                 foreach (var other in result)
                 {
                     if (other.Length > path.Length && other.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        toRemove.Add(path);
-                        break;
-                    }
+                        return true;
                 }
-            }
-            foreach (var path in toRemove)
-            {
-                result.Remove(path);
-            }
+                return false;
+            });
         }
 
         // Greedy: if only parameter name was checked, preserve all type fields
@@ -294,11 +293,11 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             return;
         }
 
-        // Object field: preserve all sub-fields
+        // Object field: preserve all sub-fields using fast span iteration
         var objectPath = $"{basePathStr}.{matchingKey}";
-        foreach (var (key, _) in match.Value.Fields)
+        foreach (var child in match.Value._children!.AsSpan())
         {
-            preserveCallback($"{objectPath}.{key}");
+            preserveCallback($"{objectPath}.{child.Name}");
         }
     }
 
@@ -321,17 +320,18 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         var fieldsToPreserve = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AddFieldsToPreserve(extractedPaths, paramName, parameterType, fieldsToPreserve);
 
+        // Hoist last-segment computation — nodePath is constant across roots
+        var nodePathSpan = nodePath.AsSpan();
+        var lastSegmentStart = nodePathSpan.LastIndexOf('.');
+        var lastSegment = (lastSegmentStart >= 0 ? nodePathSpan[(lastSegmentStart + 1)..] : nodePathSpan).ToString();
+
         // For merged queries with multiple roots, preserve in all of them
         foreach (var rootField in sourceQuery.Definition.Fields.Values)
         {
             var pathToNode = sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
             if (pathToNode.Length == 0) continue;
 
-            // Build full node path once (avoid repeated string.Split)
-            ReadOnlySpan<char> nodePathSpan = nodePath.AsSpan();
-            var lastSegmentStart = nodePathSpan.LastIndexOf('.');
-            var lastSegment = lastSegmentStart >= 0 ? nodePathSpan[(lastSegmentStart + 1)..] : nodePathSpan;
-            var fullNodePath = $"{string.Join(".", pathToNode)}.{lastSegment.ToString()}";
+            var fullNodePath = $"{string.Join(".", pathToNode)}.{lastSegment}";
 
             var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullNodePath.AsSpan(), out _);
             if (nodeField is not { HasFields: true }) continue;
@@ -350,9 +350,19 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static string[]? GetParameterNames(Expression expression)
-        => expression is LambdaExpression { Parameters.Count: > 0 } lambda
-            ? lambda.Parameters.Where(n => n.Name != null).Select(p => p.Name!).ToArray()
-            : null;
+    {
+        if (expression is not LambdaExpression { Parameters.Count: > 0 } lambda)
+            return null;
+
+        var names = new List<string>(lambda.Parameters.Count);
+        foreach (var p in lambda.Parameters)
+        {
+            if (p.Name != null)
+                names.Add(p.Name);
+        }
+
+        return names.Count > 0 ? names.ToArray() : null;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static Dictionary<string, Type> GetParameterTypes(Expression expression)
@@ -360,8 +370,13 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         if (expression is not LambdaExpression lambda || lambda.Parameters.Count == 0)
             return new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
 
-        return lambda.Parameters
-            .Where(p => p.Name != null)
-            .ToDictionary(p => p.Name!, p => p.Type, StringComparer.OrdinalIgnoreCase);
+        var dict = new Dictionary<string, Type>(lambda.Parameters.Count, StringComparer.OrdinalIgnoreCase);
+        foreach (var p in lambda.Parameters)
+        {
+            if (p.Name != null)
+                dict[p.Name] = p.Type;
+        }
+
+        return dict;
     }
 }

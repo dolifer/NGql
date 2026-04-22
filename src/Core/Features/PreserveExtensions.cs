@@ -137,9 +137,13 @@ internal static class PreserveExtensions
             source.Name,
             source.Type ?? Constants.DefaultFieldType,
             source.Alias,
-            source._arguments);
+            source._arguments)
+        {
+            Path = source.Path
+        };
 
-        // Copy metadata if present
+        cloned.IsNeverMerge = source.IsNeverMerge;
+
         if (source._metadata != null)
         {
             foreach (var meta in source._metadata)
