@@ -76,5 +76,7 @@ public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable
 
     public bool Equals(Variable other) => CompareTo(other) == 0;
 
-    public override int GetHashCode() => HashCode.Combine(Name, Type);
+    public override int GetHashCode() => HashCode.Combine(
+        Name?.ToUpperInvariant(),
+        Type?.ToUpperInvariant());
 }
