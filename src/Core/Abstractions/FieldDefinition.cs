@@ -86,12 +86,15 @@ public sealed record FieldDefinition
         }
     }
 
+    private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyReadOnlyFields
+        = new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     ///     The collection of fields related to <see cref="FieldDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public Dictionary<string, FieldDefinition> Fields
-        => _fields ??= new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyDictionary<string, FieldDefinition> Fields
+        => _fields ?? EmptyReadOnlyFields;
 
     /// <summary></summary>
     [JsonPropertyName("arguments")]
@@ -133,6 +136,20 @@ public sealed record FieldDefinition
     internal bool IsNeverMerge { get; init; }
 
     // Methods
+    public bool Equals(FieldDefinition? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return string.Equals(Name, other.Name, StringComparison.Ordinal)
+            && string.Equals(Path, other.Path, StringComparison.Ordinal)
+            && string.Equals(_type, other._type, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_alias, other._alias, StringComparison.OrdinalIgnoreCase)
+            && IsNeverMerge == other.IsNeverMerge;
+    }
+
+    public override int GetHashCode()
+        => HashCode.Combine(Name, Path, _type?.ToLowerInvariant(), _alias?.ToLowerInvariant(), IsNeverMerge);
+
     public override string ToString()
     {
         if (string.IsNullOrWhiteSpace(Type))
@@ -140,6 +157,6 @@ public sealed record FieldDefinition
             return string.IsNullOrWhiteSpace(Alias) ? Name : $"{Alias}:{Name}";
         }
 
-        return string.IsNullOrWhiteSpace(Alias) ? $"{Type} {Alias}:{Name}" : $"{Type} {Name}";
+        return string.IsNullOrWhiteSpace(Alias) ? $"{Type} {Name}" : $"{Type} {Alias}:{Name}";
     }
 }

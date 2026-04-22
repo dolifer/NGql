@@ -1,4 +1,6 @@
-﻿using FluentAssertions;
+﻿using System;
+using System.Collections.Generic;
+using FluentAssertions;
 using NGql.Core.Abstractions;
 using Xunit;
 
@@ -17,7 +19,7 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 { "child", new FieldDefinition("child") }
                             }
@@ -45,12 +47,12 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 {
                                     "child1", new FieldDefinition("child1")
                                     {
-                                        Fields =
+                                        _fields = new(StringComparer.OrdinalIgnoreCase)
                                         {
                                             { "grandchild1", new FieldDefinition("grandchild1") }
                                         }
@@ -59,7 +61,7 @@ public class QueryDefinitionQueryTests
                                 {
                                     "child2", new FieldDefinition("child2")
                                     {
-                                        Fields =
+                                        _fields = new(StringComparer.OrdinalIgnoreCase)
                                         {
                                             { "grandchild2", new FieldDefinition("grandchild2") }
                                         }
@@ -116,7 +118,7 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 { "child", new FieldDefinition("child") }
                             }
@@ -145,17 +147,17 @@ public class QueryDefinitionQueryTests
                     {
                         "level1", new FieldDefinition("level1")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 {
                                     "level2", new FieldDefinition("level2")
                                     {
-                                        Fields =
+                                        _fields = new(StringComparer.OrdinalIgnoreCase)
                                         {
                                             {
                                                 "level3", new FieldDefinition("level3")
                                                 {
-                                                    Fields =
+                                                    _fields = new(StringComparer.OrdinalIgnoreCase)
                                                     {
                                                         { "level4", new FieldDefinition("level4") }
                                                     }
@@ -194,7 +196,7 @@ public class QueryDefinitionQueryTests
                     {
                         "parent", new FieldDefinition("parent")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 { "child1", new FieldDefinition("child1") },
                                 { "child2", new FieldDefinition("child2") },
@@ -227,7 +229,7 @@ public class QueryDefinitionQueryTests
                     {
                         "parent1", new FieldDefinition("parent1")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 { "child1", new FieldDefinition("child1") },
                                 { "child2", new FieldDefinition("child2") }
@@ -237,12 +239,12 @@ public class QueryDefinitionQueryTests
                     {
                         "parent2", new FieldDefinition("parent2")
                         {
-                            Fields =
+                            _fields = new(StringComparer.OrdinalIgnoreCase)
                             {
                                 {
                                     "child", new FieldDefinition("child")
                                     {
-                                        Fields =
+                                        _fields = new(StringComparer.OrdinalIgnoreCase)
                                         {
                                             { "grandchild", new FieldDefinition("grandchild") }
                                         }

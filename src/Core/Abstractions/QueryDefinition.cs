@@ -33,7 +33,7 @@ public sealed record QueryDefinition(string Name, string Description = "")
     public Dictionary<string, FieldDefinition> Fields
     {
         get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
-        set => _fields = value;
+        internal set => _fields = value;
     }
 
     /// <summary>

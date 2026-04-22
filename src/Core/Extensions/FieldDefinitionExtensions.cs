@@ -10,6 +10,8 @@ namespace NGql.Core.Extensions;
 /// </summary>
 internal static class FieldDefinitionExtensions
 {
+    private const int MaxFieldDepth = 200;
+
     /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
     /// </summary>
@@ -18,75 +20,52 @@ internal static class FieldDefinitionExtensions
     /// <returns>True if fields can be merged, false otherwise</returns>
     internal static bool CanMergeFields(FieldDefinition existingField, FieldDefinition incomingField)
     {
-        // For MergeByFieldPath strategy, fields can merge if:
-        // 1. They have the same root field name
-        // 2. Arguments at each segment of a path must match exactly
-
-        // First, check if arguments at the root level are compatible
         if (!Helpers.AreArgumentsEqual(existingField._arguments, incomingField._arguments))
-        {
             return false;
-        }
-
-        // Then check if nested field structures are compatible
-        return AreNestedFieldsCompatible(existingField, incomingField);
+        return AreNestedFieldsCompatible(existingField, incomingField, 0);
     }
 
-    /// <summary>
-    /// Checks if nested field structures are compatible for merging.
-    /// </summary>
-    /// <param name="existingField">The existing field definition</param>
-    /// <param name="incomingField">The incoming field definition</param>
-    /// <returns>True if nested fields are compatible, false otherwise</returns>
-    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
+    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField, int depth)
     {
-        // Rule: At each segment of a path, the arguments must match exactly
-        // This means if one field has arguments at any level and the other doesn't have that path,
-        // or has different arguments at the same path, they cannot merge.
+        if (depth > MaxFieldDepth)
+            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}. Possible circular reference in field definitions.");
 
-        // Check all incoming nested fields
         foreach (var (incomingKey, incomingNestedField) in incomingField._fields ?? [])
         {
             if (existingField._fields?.TryGetValue(incomingKey, out var existingNestedField) == true)
             {
-                // If the nested field exists in both, their arguments must match exactly
                 if (!Helpers.AreArgumentsEqual(existingNestedField._arguments, incomingNestedField._arguments))
-                {
                     return false;
-                }
-
-                // Recursively check deeper levels
-                if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField))
-                {
+                if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField, depth + 1))
                     return false;
-                }
             }
             else
             {
-                // Incoming field has a path that doesn't exist in an existing field
-                // If the incoming nested field (or any of its descendants) has arguments,
-                // then these fields are incompatible because we can't match arguments
-                // at the same path segments
-                if (HasAnyArguments(incomingNestedField))
-                {
+                if (HasAnyArguments(incomingNestedField, depth + 1))
                     return false;
-                }
             }
         }
 
-        // Check existing nested fields
         foreach (var (existingKey, existingNestedField) in existingField._fields ?? [])
         {
-            // Existing field has a path that doesn't exist in an incoming field
-            if (incomingField._fields?.ContainsKey(existingKey) != true && HasAnyArguments(existingNestedField))
-            {
-                // If the existing nested field (or any of its descendants) has arguments,
-                // then these fields are incompatible
+            if (incomingField._fields?.ContainsKey(existingKey) != true && HasAnyArguments(existingNestedField, depth + 1))
                 return false;
-            }
         }
 
         return true;
+    }
+
+    private static bool HasAnyArguments(FieldDefinition field, int depth)
+    {
+        if (depth > MaxFieldDepth)
+            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}.");
+        if (field._arguments is { Count: > 0 }) return true;
+        if (field._fields is null) return false;
+        foreach (var child in field._fields.Values)
+        {
+            if (HasAnyArguments(child, depth + 1)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -146,25 +125,6 @@ internal static class FieldDefinitionExtensions
             existing._arguments,
             mergedFields
         ).MergeFieldArguments(incoming._arguments);
-    }
-
-    /// <summary>
-    /// Checks if a field or any of its nested fields have arguments.
-    /// </summary>
-    /// <param name="field">The field definition to check</param>
-    /// <returns>True if the field or any nested field has arguments, false otherwise</returns>
-    private static bool HasAnyArguments(FieldDefinition field)
-    {
-        if (field._arguments is { Count: > 0 })
-            return true;
-        if (field._fields is null)
-            return false;
-        foreach (var child in field._fields.Values)
-        {
-            if (HasAnyArguments(child))
-                return true;
-        }
-        return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

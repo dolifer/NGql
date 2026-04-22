@@ -13,13 +13,17 @@ internal ref struct SpanPathBuilder(Span<char> buffer)
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Append(ReadOnlySpan<char> segment)
     {
-        if (_length > 0 && _length < _buffer.Length)
+        if (_length > 0)
         {
+            if (_length >= _buffer.Length)
+                throw new InvalidOperationException($"SpanPathBuilder buffer overflow: cannot append separator, buffer length {_buffer.Length}.");
             _buffer[_length++] = '.';
         }
         
-        if (segment.Length > 0 && _length + segment.Length <= _buffer.Length)
+        if (segment.Length > 0)
         {
+            if (_length + segment.Length > _buffer.Length)
+                throw new InvalidOperationException($"SpanPathBuilder buffer overflow: cannot append segment of length {segment.Length}, remaining capacity {_buffer.Length - _length}.");
             segment.CopyTo(_buffer[_length..]);
             _length += segment.Length;
         }

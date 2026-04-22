@@ -22,10 +22,11 @@ public sealed class FieldBuilder
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
+        Helpers.ValidateFieldName(fieldDefinition.Name.AsSpan());
         var arguments = fieldDefinition._arguments ?? null;
 
         // Use FieldFactory for field creation
-        FieldFactory.GetOrAddField(_fieldDefinition.Fields, fieldDefinition.Name, fieldDefinition._type ?? Constants.DefaultFieldType, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        FieldFactory.GetOrAddField(_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase), fieldDefinition.Name, fieldDefinition._type ?? Constants.DefaultFieldType, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         return this;
     }
 
@@ -337,15 +338,16 @@ public sealed class FieldBuilder
     private FieldBuilder AddFieldCore(string fieldName, string? type = null, Dictionary<string, object?>? arguments = null, 
         string[]? subFields = null, Dictionary<string, object?>? metadata = null, Action<FieldBuilder>? action = null)
     {
+        ValidateFieldNameSegments(fieldName.AsSpan());
         var fieldType = type ?? Constants.DefaultFieldType;
-        var field = FieldFactory.GetOrAddField(_fieldDefinition.Fields, fieldName, fieldType, arguments, _fieldDefinition.Path, metadata);
+        var field = FieldFactory.GetOrAddField(_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase), fieldName, fieldType, arguments, _fieldDefinition.Path, metadata);
 
         // FAST PATH: Skip subFields processing if array is null or empty
         if (subFields?.Length > 0)
         {
             foreach (var subField in subFields)
             {
-                FieldFactory.GetOrAddField(field.Fields, subField, Constants.DefaultFieldType, null, field.Path);
+                FieldFactory.GetOrAddField(field._fields ??= new(StringComparer.OrdinalIgnoreCase), subField, Constants.DefaultFieldType, null, field.Path);
             }
         }
 
@@ -354,7 +356,7 @@ public sealed class FieldBuilder
         {
             var fieldBuilder = new FieldBuilder(field);
             action(fieldBuilder);
-            _fieldDefinition.Fields[field.Name] = fieldBuilder._fieldDefinition;
+            (_fieldDefinition._fields ??= new(StringComparer.OrdinalIgnoreCase))[field.Name] = fieldBuilder._fieldDefinition;
         }
 
         return this;
@@ -411,12 +413,28 @@ public sealed class FieldBuilder
         // Recursively process all child fields
         foreach (var childFieldDefinition in fieldDefinition.Fields.Values)
         {
-            RecursiveCreateField(parentField.Fields, childFieldDefinition);
+            RecursiveCreateField(parentField._fields ??= new(StringComparer.OrdinalIgnoreCase), childFieldDefinition);
         }
     }
 
     internal static void Include(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
         => RecursiveCreateField(fields, fieldDefinition);
+
+    private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
+    {
+        if (fieldName.IsEmpty)
+            throw new ArgumentException("Field name cannot be empty.", nameof(fieldName));
+
+        // Validate each dot-separated segment individually
+        while (!fieldName.IsEmpty)
+        {
+            var dotIndex = fieldName.IndexOf('.');
+            var segment = dotIndex >= 0 ? fieldName[..dotIndex] : fieldName;
+            if (!segment.IsEmpty)
+                Helpers.ValidateFieldName(segment);
+            fieldName = dotIndex >= 0 ? fieldName[(dotIndex + 1)..] : ReadOnlySpan<char>.Empty;
+        }
+    }
 
     /// <summary>
     /// Sets an alias for the current field.

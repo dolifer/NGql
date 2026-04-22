@@ -84,7 +84,7 @@ internal static class FieldFactory
             }
 
             result = field;
-            currentFields = field.Fields;
+            currentFields = field._fields ??= new(StringComparer.OrdinalIgnoreCase);
             pathStart = nextStart;
         }
 
@@ -148,7 +148,7 @@ internal static class FieldFactory
 
             pathBuilder.Append(spanSegment.Name);
             result = ProcessDottedSegment(currentFields, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
-            currentFields = result.Fields;
+            currentFields = result._fields ??= new(StringComparer.OrdinalIgnoreCase);
             fieldPath = remainingPath;
         }
 
@@ -238,7 +238,7 @@ internal static class FieldFactory
             var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
 
             result = ProcessFieldSegment(currentFields, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
-            currentFields = result.Fields;
+            currentFields = result._fields ??= new(StringComparer.OrdinalIgnoreCase);
         }
 
         return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");

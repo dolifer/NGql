@@ -81,7 +81,7 @@ internal static class PreserveExtensions
         }
 
         var remainingPath = path[(dotIndex + 1)..];
-        ExtractMatchingFields(fieldDef.Fields, existingField.Fields, remainingPath);
+        ExtractMatchingFields(fieldDef._fields!, existingField._fields!, remainingPath);
     }
 
     /// <summary>
@@ -113,7 +113,7 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(Dictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
+    internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(IReadOnlyDictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
     {
         if (fields == null || nameOrAlias.Length == 0)
         {

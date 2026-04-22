@@ -21,7 +21,7 @@ public static class QueryDefinitionExtensions
     /// <returns>The final field definition, or null if not found</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition? NavigatePath(
-        Dictionary<string, FieldDefinition>? fields,
+        IReadOnlyDictionary<string, FieldDefinition>? fields,
         ReadOnlySpan<char> path,
         out string? resolvedPath,
         string? prependPath = null)
@@ -32,7 +32,7 @@ public static class QueryDefinitionExtensions
             return null;
         }
         
-        var currentFields = fields;
+        IReadOnlyDictionary<string, FieldDefinition>? currentFields = fields;
         FieldDefinition? currentField = null;
         List<string>? pathSegments = null;
 
@@ -86,7 +86,7 @@ public static class QueryDefinitionExtensions
     /// Returns all matching paths.
     /// </summary>
     internal static List<string> FindFieldRecursively(
-        Dictionary<string, FieldDefinition> fields,
+        IReadOnlyDictionary<string, FieldDefinition> fields,
         string fieldName,
         string basePath)
     {
@@ -96,7 +96,7 @@ public static class QueryDefinitionExtensions
     }
 
     private static void FindFieldRecursivelyCore(
-        Dictionary<string, FieldDefinition> fields,
+        IReadOnlyDictionary<string, FieldDefinition> fields,
         string fieldName,
         string basePath,
         List<string> results)
