@@ -96,10 +96,13 @@ public sealed record FieldDefinition
     public IReadOnlyDictionary<string, FieldDefinition> Fields
         => _fields ?? EmptyReadOnlyFields;
 
+    private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
+        = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary></summary>
     [JsonPropertyName("arguments")]
     public IReadOnlyDictionary<string, object?> Arguments
-        => _arguments ??= new(StringComparer.OrdinalIgnoreCase);
+        => _arguments ?? EmptyReadOnlyArguments;
 
     /// <summary>
     /// Metadata associated with the field definition.
