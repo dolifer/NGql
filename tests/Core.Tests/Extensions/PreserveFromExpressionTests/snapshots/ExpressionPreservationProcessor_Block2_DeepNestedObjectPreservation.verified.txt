@@ -1,0 +1,17 @@
+﻿query TestQuery{
+    TestQuery:data{
+        edges{
+            node{
+                Profile:profile{
+                    Address:address{
+                        City:city
+                        Street:street
+                    }
+                    Avatar:avatar
+                    Bio:bio
+                    Name:name
+                }
+            }
+        }
+    }
+}

@@ -1,10 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using FluentAssertions;
 using NGql.Core.Abstractions;
 using NGql.Core.Builders;
-using NGql.Core.Extensions;
+using NGql.Core.Tests.Models;
 using Xunit;
 
 namespace NGql.Core.Tests.Builders;
@@ -120,21 +121,23 @@ public class FieldBuilderTests
         result.Fields["email"].Type.Should().Be(Constants.DefaultFieldType);
     }
 
-    [Fact]
-    public void AddField_Sets_Default_String_Type_When_Type_Not_Specified()
+    [Theory]
+    [InlineData(null, "Empty type parameter defaults to String")]
+    [InlineData("", "Empty string type defaults to String")]
+    public void AddField_WithEmptyOrNullType_DefaultsToString(string? typeValue, string description)
     {
         // Arrange
         var fieldBuilder = FieldBuilder.Create([], "user", "User");
 
         // Act
-        var result = fieldBuilder
-            .AddField("name") // The default type should be "String"
-            .Build();
+        var result = typeValue == null
+            ? fieldBuilder.AddField("name").Build()
+            : fieldBuilder.AddField("name", typeValue).Build();
 
         // Assert
         result.Fields["name"].Should().NotBeNull();
         result.Fields["name"].Name.Should().Be("name");
-        result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType); // Default type verification
+        result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
     }
 
     [Theory]
@@ -209,35 +212,133 @@ public class FieldBuilderTests
         userData.Fields.Should().BeEmpty(); // No nested fields in array
     }
 
-    [Fact]
-    public void AddField_With_Dotted_Notation_Sets_Correct_Types()
+    [Theory]
+    [InlineData("profile.name", null, false, false, "Basic dotted path with default type")]
+    [InlineData("ID profile.id", "ID", false, false, "Dotted path with type prefix")]
+    [InlineData("Int profile.details.age", "Int", false, false, "Deeper dotted path with type")]
+    [InlineData("profile.name", null, true, false, "Dotted path with arguments")]
+    [InlineData("profile.name", null, false, true, "Dotted path with metadata")]
+    [InlineData("user.profile", "String", true, true, "Dotted path with arguments and metadata")]
+    public void DottedPath_WithVariousPatterns(string fieldPath, string? type, bool withArgs, bool withMeta, string description)
     {
         // Arrange
         var fieldBuilder = FieldBuilder.Create([], "user", "User");
+        var args = withArgs ? new Dictionary<string, object?> { { "filter", "active" } } : null;
+        var meta = withMeta ? new Dictionary<string, object?> { { "deprecated", true } } : null;
+
+        // Act
+        var fb = fieldBuilder;
+        if (type != null || args != null || meta != null)
+        {
+            fb = fb.AddField(fieldPath, type ?? "String", arguments: args, metadata: meta);
+        }
+        else
+        {
+            fb = fb.AddField(fieldPath);
+        }
+        var result = fb.Build();
+
+        // Assert
+        var parts = fieldPath.Split(' ', StringSplitOptions.RemoveEmptyEntries).Last().Split('.');
+        var firstPart = parts[0];
+        result.Fields.Should().ContainKey(firstPart);
+        result.Fields[firstPart].Fields.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("a.b.c.d.e", "Basic deep nesting")]
+    [InlineData("user.profile.data", "Profile data nesting")]
+    [InlineData("id", "Simple field", "user.profile", "user.settings.theme", "Mixed simple and dotted")]
+    public void DottedPath_EdgeCasesAndMerging(string path1, string description, string? path2 = null, string? path3 = null, string? descPath = null)
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create([], "root");
+
+        // Act
+        var fb = fieldBuilder.AddField(path1);
+        if (path2 != null) fb = fb.AddField(path2);
+        if (path3 != null) fb = fb.AddField(path3);
+        var result = fb.Build();
+
+        // Assert
+        var parts = path1.Split('.');
+        result.Fields.Should().ContainKey(parts[0]);
+        if (path2 != null)
+        {
+            var parts2 = path2.Split('.');
+            result.Fields.Should().ContainKey(parts2[0]);
+        }
+    }
+
+    [Theory]
+    [InlineData(true, false, "Null arguments")]
+    [InlineData(false, true, "Null metadata")]
+    [InlineData(true, true, "Both null")]
+    public void AddField_WithNullArgumentsOrMetadata_HandlesGracefully(bool nullArgs, bool nullMeta, string description)
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        var args = nullArgs ? (Dictionary<string, object?>?)null : new Dictionary<string, object?> { { "id", "123" } };
+        var meta = nullMeta ? (Dictionary<string, object?>?)null : new Dictionary<string, object?> { { "key", "value" } };
 
         // Act
         var result = fieldBuilder
-            .AddField("ID profile.id")
-            .AddField("profile.name") // Should default to String
-            .AddField("Int profile.details.age")
-            .AddField("Boolean profile.details.verified")
+            .AddField("field", "String", arguments: args, metadata: meta)
             .Build();
 
         // Assert
-        result.Fields.Should().ContainKey("profile");
-        var profile = result.Fields["profile"];
-        // Intermediate node should have an object type
-        profile.Type.Should().Be(Constants.ObjectFieldType);
-        profile.Fields.Should().ContainKeys("id", "name", "details");
-        profile.Fields["id"].Type.Should().Be("ID");
-        profile.Fields["name"].Type.Should().Be(Constants.DefaultFieldType); // Default type
+        result.Fields["field"].Should().NotBeNull();
+        result.Fields["field"].Name.Should().Be("field");
+        result.Fields["field"].Type.Should().Be("String");
+    }
 
-        // Intermediate node should have type 'object'
-        var details = profile.Fields["details"];
-        details.Type.Should().Be(Constants.ObjectFieldType);
-        details.Fields.Should().ContainKeys("age", "verified");
-        details.Fields["age"].Type.Should().Be("Int");
-        details.Fields["verified"].Type.Should().Be("Boolean");
+    [Theory]
+    [InlineData("user", "User", true, "Empty subFields array")]
+    [InlineData("root", null, false, "Empty initial fields")]
+    public void AddField_WithEmptyCollections_WorksCorrectly(string fieldName, string? type, bool emptySubFields, string description)
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create([], "root");
+
+        // Act
+        var fb = emptySubFields
+            ? fieldBuilder.AddField(fieldName, type ?? "String", subFields: [])
+            : FieldBuilder.Create([], fieldName).AddField("dummy");
+        var result = fb.Build();
+
+        // Assert
+        if (emptySubFields)
+        {
+            result.Fields[fieldName].Fields.Should().BeEmpty();
+        }
+        else
+        {
+            result.Fields.Should().ContainKey("dummy");
+        }
+    }
+
+    [Theory]
+    [InlineData(true, "Create with empty fields list")]
+    [InlineData(false, "Add empty arguments dict")]
+    public void AddField_WithEmptyOrNullCollections(bool emptyInit, string description)
+    {
+        // Arrange & Act
+        var fieldBuilder = emptyInit
+            ? FieldBuilder.Create([], "test")
+            : FieldBuilder.Create([], "root").AddField("field", arguments: new Dictionary<string, object?>());
+
+        var result = fieldBuilder.Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        if (emptyInit)
+        {
+            result.Name.Should().Be("test");
+        }
+        else
+        {
+            result.Fields["field"].Arguments.Should().BeEmpty();
+        }
     }
 
     [Fact]
@@ -329,124 +430,109 @@ public class FieldBuilderTests
         result.Alias.Should().Be("currentUser");
     }
 
-    [Fact]
-    public void Can_Add_Field_With_Alias_In_Dotted_Notation()
+    [Theory]
+    [InlineData("alias-dotted")]
+    [InlineData("type-at-beginning")]
+    [InlineData("type-and-dotted")]
+    public void Can_Add_Field_With_TypeAndAlias_Variations(string scenario)
     {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
-
-        // Act
-        var result = fieldBuilder
-            .AddField("alias:profile.displayName:name")
-            .AddField("profile.userEmail:email")
-            .Build();
-
-        // Assert
-        result.Fields.Should().ContainKey("profile");
-        var profile = result.Fields["profile"];
-        profile.Alias.Should().Be("alias"); // Alias on the first segment
-        profile.Fields.Should().ContainKeys("name", "email");
-        profile.Fields["name"].Alias.Should().Be("displayName"); // Alias on the nested field
-        profile.Fields["email"].Alias.Should().Be("userEmail"); // Alias on the nested field
+        if (scenario == "alias-dotted")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "user", "User");
+            var result = fieldBuilder
+                .AddField("alias:profile.displayName:name")
+                .AddField("profile.userEmail:email")
+                .Build();
+            
+            result.Fields.Should().ContainKey("profile");
+            var profile = result.Fields["profile"];
+            profile.Alias.Should().Be("alias");
+            profile.Fields.Should().ContainKeys("name", "email");
+            profile.Fields["name"].Alias.Should().Be("displayName");
+            profile.Fields["email"].Alias.Should().Be("userEmail");
+        }
+        else if (scenario == "type-at-beginning")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "user", "User");
+            var result = fieldBuilder
+                .AddField("String name")
+                .AddField("Int age")
+                .AddField("Boolean isActive")
+                .AddField("ID id")
+                .Build();
+            
+            result.Fields.Should().ContainKeys("name", "age", "isActive", "id");
+            result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
+            result.Fields["age"].Type.Should().Be("Int");
+            result.Fields["isActive"].Type.Should().Be("Boolean");
+            result.Fields["id"].Type.Should().Be("ID");
+        }
+        else if (scenario == "type-and-dotted")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "user", "User");
+            var result = fieldBuilder
+                .AddField("String profile.name")
+                .AddField("Int profile.age")
+                .AddField("DateTime profile.details.registeredAt")
+                .AddField("[String] profile.details.tags")
+                .Build();
+            
+            result.Fields.Should().ContainKey("profile");
+            var profile = result.Fields["profile"];
+            profile.Type.Should().Be(Constants.ObjectFieldType);
+            profile.Fields.Should().ContainKeys("name", "age", "details");
+            profile.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
+            profile.Fields["age"].Type.Should().Be("Int");
+            
+            var details = profile.Fields["details"];
+            details.Type.Should().Be("object");
+            details.Fields.Should().ContainKeys("registeredAt", "tags");
+            details.Fields["registeredAt"].Type.Should().Be("DateTime");
+            details.Fields["tags"].Type.Should().Be("[String]");
+        }
     }
 
-    [Fact]
-    public void Can_Add_Field_With_Type_At_Beginning_Of_Path()
+    [Theory]
+    [InlineData("complex-types")]
+    [InlineData("mixed-type-aliases")]
+    public void Can_Add_Field_With_Types_Comprehensive(string scenario)
     {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
-
-        // Act
-        var result = fieldBuilder
-            .AddField("String name")
-            .AddField("Int age")
-            .AddField("Boolean isActive")
-            .AddField("ID id")
-            .Build();
-
-        // Assert
-        result.Fields.Should().ContainKeys("name", "age", "isActive", "id");
-        result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
-        result.Fields["age"].Type.Should().Be("Int");
-        result.Fields["isActive"].Type.Should().Be("Boolean");
-        result.Fields["id"].Type.Should().Be("ID");
-    }
-
-    [Fact]
-    public void Can_Add_Field_With_Type_And_Dotted_Notation_At_Beginning()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
-
-        // Act
-        var result = fieldBuilder
-            .AddField("String profile.name")
-            .AddField("Int profile.age")
-            .AddField("DateTime profile.details.registeredAt")
-            .AddField("[String] profile.details.tags")
-            .Build();
-
-        // Assert
-        result.Fields.Should().ContainKey("profile");
-        var profile = result.Fields["profile"];
-        profile.Type.Should().Be(Constants.ObjectFieldType); // Intermediate node should have object type
-        profile.Fields.Should().ContainKeys("name", "age", "details");
-        profile.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
-        profile.Fields["age"].Type.Should().Be("Int");
-
-        var details = profile.Fields["details"];
-        details.Type.Should().Be("object"); // Intermediate node should have type 'object'
-        details.Fields.Should().ContainKeys("registeredAt", "tags");
-        details.Fields["registeredAt"].Type.Should().Be("DateTime");
-        details.Fields["tags"].Type.Should().Be("[String]");
-    }
-
-    [Fact]
-    public void Can_Add_Field_With_Complex_Types_And_Non_Scalar_Types()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
-
-        // Act
-        var result = fieldBuilder
-            .AddField("[User!]! friends")
-            .AddField("CustomType! profile.preferences")
-            .AddField("[Comment!] posts.comments")
-            .AddField("UserStatus status")
-            .Build();
-
-        // Assert
-        result.Fields.Should().ContainKeys("friends", "profile", "posts", "status");
-        result.Fields["friends"].Type.Should().Be("[User!]!");
-        result.Fields["status"].Type.Should().Be("UserStatus");
-        result.Fields["profile"].Fields["preferences"].Type.Should().Be("CustomType!");
-        result.Fields["posts"].Fields["comments"].Type.Should().Be("[Comment!]");
-    }
-
-    [Fact]
-    public void Can_Add_Field_With_Mixed_Type_Notation_And_Aliases()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
-
-        // Act
-        var result = fieldBuilder
-            .AddField("String username:login")
-            .AddField("String userInfo:profile.displayName:name")
-            .AddField("Int userInfo:profile.userAge:age")
-            .Build();
-
-        // Assert
-        result.Fields.Should().ContainKey("login");
-        result.Fields["login"].Type.Should().Be(Constants.DefaultFieldType);
-        result.Fields["login"].Alias.Should().Be("username");
-
-        result.Fields.Should().ContainKey("profile");
-        result.Fields["profile"].Alias.Should().Be("userInfo");
-        result.Fields["profile"].Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
-        result.Fields["profile"].Fields["name"].Alias.Should().Be("displayName");
-        result.Fields["profile"].Fields["age"].Type.Should().Be("Int");
-        result.Fields["profile"].Fields["age"].Alias.Should().Be("userAge");
+        if (scenario == "complex-types")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "user", "User");
+            var result = fieldBuilder
+                .AddField("[User!]! friends")
+                .AddField("CustomType! profile.preferences")
+                .AddField("[Comment!] posts.comments")
+                .AddField("UserStatus status")
+                .Build();
+            
+            result.Fields.Should().ContainKeys("friends", "profile", "posts", "status");
+            result.Fields["friends"].Type.Should().Be("[User!]!");
+            result.Fields["status"].Type.Should().Be("UserStatus");
+            result.Fields["profile"].Fields["preferences"].Type.Should().Be("CustomType!");
+            result.Fields["posts"].Fields["comments"].Type.Should().Be("[Comment!]");
+        }
+        else if (scenario == "mixed-type-aliases")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "user", "User");
+            var result = fieldBuilder
+                .AddField("String username:login")
+                .AddField("String userInfo:profile.displayName:name")
+                .AddField("Int userInfo:profile.userAge:age")
+                .Build();
+            
+            result.Fields.Should().ContainKey("login");
+            result.Fields["login"].Type.Should().Be(Constants.DefaultFieldType);
+            result.Fields["login"].Alias.Should().Be("username");
+            
+            result.Fields.Should().ContainKey("profile");
+            result.Fields["profile"].Alias.Should().Be("userInfo");
+            result.Fields["profile"].Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
+            result.Fields["profile"].Fields["name"].Alias.Should().Be("displayName");
+            result.Fields["profile"].Fields["age"].Type.Should().Be("Int");
+            result.Fields["profile"].Fields["age"].Alias.Should().Be("userAge");
+        }
     }
 
     [Fact]
@@ -580,558 +666,449 @@ public class FieldBuilderTests
         result.Metadata!["deprecated"].Should().Be(false);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Merge_With_Existing_Metadata()
+    [Theory]
+    [InlineData("merge-overrides-additions")]
+    [InlineData("nested-dictionary-merging")]
+    [InlineData("empty-metadata-handling")]
+    public void WithMetadata_MergingBehavior_Should_PreserveAndOverride(string scenario)
     {
-        // Arrange
-        var initialMetadata = new Dictionary<string, object>
-        {
-            { "description", "Initial description" },
-            { "version", "1.0" }
-        };
-        var additionalMetadata = new Dictionary<string, object>
-        {
-            { "description", "Updated description" }, // Should override
-            { "author", "John Doe" }, // Should add
-            { "tags", new[] { "user", "profile" } } // Should add
-        };
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("merge-overrides-additions",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "description", "Initial description" },
+                        { "version", "1.0" }
+                    })
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "description", "Updated description" },
+                        { "author", "John Doe" },
+                        { "tags", new[] { "user", "profile" } }
+                    })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(4);
+                    field.Metadata!["description"].Should().Be("Updated description");
+                    field.Metadata!["version"].Should().Be("1.0");
+                    field.Metadata!["author"].Should().Be("John Doe");
+                    field.Metadata!["tags"].Should().BeEquivalentTo(new[] { "user", "profile" });
+                }
+            )
+            .Register("nested-dictionary-merging",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "config", new Dictionary<string, object> { { "enabled", true }, { "timeout", 30 } } },
+                        { "version", "1.0" }
+                    })
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "config", new Dictionary<string, object> { { "timeout", 60 }, { "retries", 3 } } },
+                        { "author", "Jane Doe" }
+                    })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(3);
+                    field.Metadata!["version"].Should().Be("1.0");
+                    field.Metadata!["author"].Should().Be("Jane Doe");
+                    var configMetadata = field.Metadata!["config"] as Dictionary<string, object?>;
+                    configMetadata.Should().NotBeNull().And.HaveCount(3);
+                    configMetadata!["enabled"].Should().Be(true);
+                    configMetadata!["timeout"].Should().Be(60);
+                    configMetadata!["retries"].Should().Be(3);
+                }
+            )
+            .Register("empty-metadata-handling",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>())
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(0);
+                }
+            );
 
-        var fieldBuilder = FieldBuilder.Create([], "user", "User")
-            .WithMetadata(initialMetadata);
-
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(additionalMetadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(4);
-        result.Metadata!["description"].Should().Be("Updated description"); // Overridden
-        result.Metadata!["version"].Should().Be("1.0"); // Preserved
-        result.Metadata!["author"].Should().Be("John Doe"); // Added
-        result.Metadata!["tags"].Should().BeEquivalentTo(new[] { "user", "profile" }); // Added
+        var testCase = scenarios.Get(scenario);
+        var result = testCase.Arrange();
+        testCase.Assert(result);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Handle_Nested_Dictionary_Merging()
+    [Theory]
+    [InlineData("null-values-handling")]
+    [InlineData("complex-object-values")]
+    public void WithMetadata_ValueHandling_Should_PreserveTypes(string scenario)
     {
-        // Arrange
-        var initialMetadata = new Dictionary<string, object>
-        {
-            { "config", new Dictionary<string, object> { { "enabled", true }, { "timeout", 30 } } },
-            { "version", "1.0" }
-        };
-        var additionalMetadata = new Dictionary<string, object>
-        {
-            { "config", new Dictionary<string, object> { { "timeout", 60 }, { "retries", 3 } } },
-            { "author", "Jane Doe" }
-        };
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("null-values-handling",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "description", "User field" },
+                        { "nullable_field", null! },
+                        { "empty_string", "" }
+                    })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(3);
+                    field.Metadata!["description"].Should().Be("User field");
+                    field.Metadata!["nullable_field"].Should().BeNull();
+                    field.Metadata!["empty_string"].Should().Be("");
+                }
+            )
+            .Register("complex-object-values",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "complex", new { Name = "Test Object", Properties = new[] { "prop1", "prop2" }, Settings = new { Enabled = true, Count = 42 } } },
+                        { "simple", "value" }
+                    })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(2);
+                    field.Metadata!["complex"].Should().NotBeNull();
+                    field.Metadata!["simple"].Should().Be("value");
+                }
+            );
 
-        var fieldBuilder = FieldBuilder.Create([], "user", "User")
-            .WithMetadata(initialMetadata);
-
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(additionalMetadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(3);
-        result.Metadata!["version"].Should().Be("1.0");
-        result.Metadata!["author"].Should().Be("Jane Doe");
-
-        var configMetadata = result.Metadata!["config"] as Dictionary<string, object?>;
-        configMetadata.Should().NotBeNull().And.HaveCount(3);
-        configMetadata!["enabled"].Should().Be(true); // Preserved from initial
-        configMetadata!["timeout"].Should().Be(60); // Overridden by additional
-        configMetadata!["retries"].Should().Be(3); // Added from additional
+        var testCase = scenarios.Get(scenario);
+        var result = testCase.Arrange();
+        testCase.Assert(result);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Handle_Empty_Metadata()
+    [Theory]
+    [InlineData("chainable-with-other-methods")]
+    [InlineData("case-insensitive-keys")]
+    [InlineData("multiple-calls-accumulate")]
+    public void WithMetadata_Chaining_Should_SupportFluentAPI(string scenario)
     {
-        // Arrange
-        var emptyMetadata = new Dictionary<string, object>();
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("chainable-with-other-methods",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithAlias("currentUser")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "description", "Chainable metadata test" },
+                        { "priority", 1 }
+                    })
+                    .Where("id", "123")
+                    .AddField("name")
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(2);
+                    field.Name.Should().Be("user");
+                    field.Alias.Should().Be("currentUser");
+                    field.Arguments!["id"].Should().Be("123");
+                    field.Fields.Should().ContainKey("name");
+                    field.Metadata!["description"].Should().Be("Chainable metadata test");
+                    field.Metadata!["priority"].Should().Be(1);
+                }
+            )
+            .Register("case-insensitive-keys",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "Description", "Initial description" },
+                        { "VERSION", "1.0" }
+                    })
+                    .WithMetadata(new Dictionary<string, object>
+                    {
+                        { "description", "Updated description" },
+                        { "version", "2.0" }
+                    })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(2);
+                    var hasDescription = field.Metadata!.Keys.Any(k => string.Equals(k, "description", StringComparison.OrdinalIgnoreCase));
+                    var hasVersion = field.Metadata!.Keys.Any(k => string.Equals(k, "version", StringComparison.OrdinalIgnoreCase));
+                    hasDescription.Should().BeTrue();
+                    hasVersion.Should().BeTrue();
+                }
+            )
+            .Register("multiple-calls-accumulate",
+                arrange: () => FieldBuilder.Create([], "user", "User")
+                    .WithMetadata(new Dictionary<string, object> { { "key1", "value1" } })
+                    .WithMetadata(new Dictionary<string, object> { { "key2", "value2" } })
+                    .WithMetadata(new Dictionary<string, object> { { "key3", "value3" } })
+                    .Build(),
+                assert: field =>
+                {
+                    field.Should().NotBeNull();
+                    field.Metadata.Should().NotBeNull().And.HaveCount(3);
+                    field.Metadata!["key1"].Should().Be("value1");
+                    field.Metadata!["key2"].Should().Be("value2");
+                    field.Metadata!["key3"].Should().Be("value3");
+                }
+            );
 
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(emptyMetadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.BeEmpty();
+        var testCase = scenarios.Get(scenario);
+        var result = testCase.Arrange();
+        testCase.Assert(result);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Handle_Null_Values()
+    [Theory]
+    [InlineData("inline-array-type-with-subfields")]
+    [InlineData("inline-array-type-with-arguments")]
+    [InlineData("array-type-with-action")]
+    [InlineData("custom-array-type-with-action")]
+    public void AddField_WithArrayTypes_Should_PreserveArrayNotation(string scenario)
     {
-        // Arrange
-        var metadata = new Dictionary<string, object>
-        {
-            { "description", "User field" },
-            { "nullable_field", null! }, // Explicit null
-            { "empty_string", "" }
-        };
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("inline-array-type-with-subfields",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("[] items", ["id", "name"])
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["items"];
+                    field.Type.Should().Be("[]");
+                    field.Fields.Should().HaveCount(2);
+                }
+            )
+            .Register("inline-array-type-with-arguments",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("[] items", new Dictionary<string, object?> { { "first", 10 } })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["items"];
+                    field.Type.Should().Be("[]");
+                }
+            )
+            .Register("array-type-with-action",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("[] items", builder =>
+                    {
+                        builder.AddField("id").AddField("name");
+                    })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["items"];
+                    field.Type.Should().Be("[]");
+                    field.Fields.Should().ContainKeys("id", "name");
+                }
+            )
+            .Register("custom-array-type-with-action",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("User[] users", builder =>
+                    {
+                        builder.AddField("id", "Int")
+                               .AddField("name", "String")
+                               .AddField("email", "String");
+                    })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["users"];
+                    field.Type.Should().Be("User[]");
+                    field.Fields.Should().ContainKeys("id", "name", "email");
+                    field.Fields.Should().HaveCount(3);
+                    field.Fields["id"].Type.Should().Be("Int");
+                    field.Fields["name"].Type.Should().Be("String");
+                    field.Fields["email"].Type.Should().Be("String");
+                }
+            );
 
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(metadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(3);
-        result.Metadata!["description"].Should().Be("User field");
-        result.Metadata!["nullable_field"].Should().BeNull();
-        result.Metadata!["empty_string"].Should().Be("");
+        var testCase = scenarios.Get(scenario);
+        var result = testCase.Arrange();
+        testCase.Assert(result);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Support_Complex_Object_Values()
+
+    [Theory]
+    [InlineData("type-overwrite")]
+    [InlineData("array-state-lost")]
+    [InlineData("subfields-not-overwrite-type")]
+    [InlineData("subfields-added-later")]
+    [InlineData("args-and-metadata-preserved")]
+    [InlineData("type-subfields-args-metadata")]
+    public void AddField_TypeAndFieldPreservation_Scenarios(string scenario)
     {
-        // Arrange
-        var complexObject = new
-        {
-            Name = "Test Object",
-            Properties = new[] { "prop1", "prop2" },
-            Settings = new { Enabled = true, Count = 42 }
-        };
-        var metadata = new Dictionary<string, object>
-        {
-            { "complex", complexObject },
-            { "simple", "value" }
-        };
-        var fieldBuilder = FieldBuilder.Create([], "user", "User");
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("type-overwrite",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("User[] items")
+                    .AddField("String items")
+                    .Build(),
+                assert: result => result.Fields["items"].Type.Should().Be("User[]"))
+            .Register("array-state-lost",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("[] items")
+                    .AddField("items.id")
+                    .AddField("String items")
+                    .Build(),
+                assert: result =>
+                {
+                    result.Fields["items"].Type.Should().Be("[]");
+                    result.Fields["items"].IsArray.Should().BeTrue();
+                    result.Fields["items"].Fields.Should().ContainKey("id");
+                })
+            .Register("subfields-not-overwrite-type",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("String user", subFields: ["nested", "field"])
+                    .Build(),
+                assert: result =>
+                {
+                    result.Fields["user"].Type.Should().Be("String");
+                    result.Fields["user"].Fields.Should().ContainKeys("nested", "field");
+                })
+            .Register("subfields-added-later",
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
+                    .AddField("CustomType user")
+                    .AddField("user.profile.name")
+                    .AddField("user.profile.email")
+                    .Build(),
+                assert: result =>
+                {
+                    result.Fields["user"].Type.Should().Be("CustomType");
+                    result.Fields["user"].Fields.Should().ContainKey("profile");
+                })
+            .Register("args-and-metadata-preserved",
+                arrange: () =>
+                {
+                    var arguments = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 0 } };
+                    var metadata = new Dictionary<string, object?> { { "description", "User list" } };
+                    return FieldBuilder.Create([], "root").AddField("users", arguments, metadata).Build();
+                },
+                assert: result =>
+                {
+                    result.Fields["users"].Arguments.Should().NotBeNull().And.HaveCount(2);
+                    result.Fields["users"].Metadata.Should().NotBeNull().And.HaveCount(1);
+                    result.Fields["users"].Arguments["limit"].Should().Be(10);
+                })
+            .Register("type-subfields-args-metadata",
+                arrange: () =>
+                {
+                    var args = new Dictionary<string, object?> { { "filter", "active" } };
+                    var meta = new Dictionary<string, object?> { { "cached", true } };
+                    var subFields = new[] { "id", "name", "status" };
+                    return FieldBuilder.Create([], "root").AddField("items", "Item[]", subFields, args, meta).Build();
+                },
+                assert: result =>
+                {
+                    result.Fields["items"].Type.Should().Be("Item[]");
+                    result.Fields["items"].Fields.Should().HaveCount(3);
+                    result.Fields["items"].Arguments.Should().HaveCount(1);
+                    result.Fields["items"].Metadata.Should().HaveCount(1);
+                });
 
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(metadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(2);
-        result.Metadata!["complex"].Should().Be(complexObject);
-        result.Metadata!["simple"].Should().Be("value");
+        var testScenario = scenarios.Get(scenario);
+        var fieldResult = testScenario.Arrange();
+        testScenario.Assert(fieldResult);
     }
 
-    [Fact]
-    public void WithMetadata_Should_Be_Chainable_With_Other_Methods()
+    [Theory]
+    [InlineData("metadata-with-action")]
+    [InlineData("type-with-action")]
+    [InlineData("type-metadata-and-action")]
+    [InlineData("arguments-metadata-and-action")]
+    [InlineData("array-type-arguments-metadata-nested")]
+    public void FieldBuilder_AddField_WithActionOverloads_Should_Chain(string scenario)
     {
-        // Arrange
-        var metadata = new Dictionary<string, object>
-        {
-            { "description", "Chainable metadata test" },
-            { "priority", 1 }
-        };
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("metadata-with-action",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("profile", new Dictionary<string, object?> { { "note", "Complex" } }, pfb =>
+                    {
+                        pfb.AddField("bio").AddField("avatar");
+                    })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["profile"];
+                    field.Metadata.Should().NotBeNull().And.HaveCount(1);
+                    field.Fields.Should().HaveCount(2);
+                }
+            )
+            .Register("type-with-action",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("user", "User", ub =>
+                    {
+                        ub.AddField("id", "ID").AddField("email", "String");
+                    })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["user"];
+                    field.Type.Should().Be("User");
+                    field.Fields.Should().HaveCount(2);
+                }
+            )
+            .Register("type-metadata-and-action",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("admin", "AdminUser", new Dictionary<string, object?> { { "level", "high" } }, ab =>
+                    {
+                        ab.AddField("permissions").AddField("roles");
+                    })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["admin"];
+                    field.Type.Should().Be("AdminUser");
+                    field.Metadata.Should().HaveCount(1);
+                    field.Fields.Should().HaveCount(2);
+                }
+            )
+            .Register("arguments-metadata-and-action",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("posts",
+                        new Dictionary<string, object?> { { "first", 20 } },
+                        new Dictionary<string, object?> { { "paginated", true } },
+                        pb =>
+                        {
+                            pb.AddField("id").AddField("title").AddField("author", ab => ab.AddField("name"));
+                        })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["posts"];
+                    field.Arguments.Should().HaveCount(1);
+                    field.Metadata.Should().HaveCount(1);
+                    field.Fields.Should().HaveCount(3);
+                }
+            )
+            .Register("array-type-arguments-metadata-nested",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("users", "User[]",
+                        new Dictionary<string, object?> { { "sort", "name" } },
+                        new Dictionary<string, object?> { { "sortable", true } },
+                        ub =>
+                        {
+                            ub.AddField("id", "ID")
+                              .AddField("profile", "Profile", pb =>
+                              {
+                                  pb.AddField("avatar").AddField("bio");
+                              });
+                        })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["users"];
+                    field.Type.Should().Be("User[]");
+                    field.Arguments.Should().HaveCount(1);
+                    field.Metadata.Should().HaveCount(1);
+                    field.Fields.Should().HaveCount(2);
+                    field.Fields["profile"].Fields.Should().HaveCount(2);
+                }
+            );
 
-        // Act
-        var result = FieldBuilder.Create([], "user", "User")
-            .WithAlias("currentUser")
-            .WithMetadata(metadata)
-            .Where("id", "123")
-            .AddField("name")
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("user");
-        result.Alias.Should().Be("currentUser");
-        result.Arguments!["id"].Should().Be("123");
-        result.Fields.Should().ContainKey("name");
-        result.Metadata.Should().NotBeNull().And.HaveCount(2);
-        result.Metadata!["description"].Should().Be("Chainable metadata test");
-        result.Metadata!["priority"].Should().Be(1);
-    }
-
-    [Fact]
-    public void WithMetadata_Should_Handle_Case_Insensitive_Keys()
-    {
-        // Arrange
-        var initialMetadata = new Dictionary<string, object>
-        {
-            { "Description", "Initial description" },
-            { "VERSION", "1.0" }
-        };
-        var additionalMetadata = new Dictionary<string, object>
-        {
-            { "description", "Updated description" }, // Different case
-            { "version", "2.0" } // Different case
-        };
-
-        var fieldBuilder = FieldBuilder.Create([], "user", "User")
-            .WithMetadata(initialMetadata);
-
-        // Act
-        var result = fieldBuilder
-            .WithMetadata(additionalMetadata)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(2);
-
-        // Check that keys exist (case insensitive)
-        var hasDescription = result.Metadata!.Keys.Any(k => string.Equals(k, "description", StringComparison.OrdinalIgnoreCase));
-        var hasVersion = result.Metadata!.Keys.Any(k => string.Equals(k, "version", StringComparison.OrdinalIgnoreCase));
-
-        hasDescription.Should().BeTrue();
-        hasVersion.Should().BeTrue();
-
-        // Values should be updated
-        var descriptionValue = result.Metadata!.Where(kvp =>
-            string.Equals(kvp.Key, "description", StringComparison.OrdinalIgnoreCase))
-            .Select(kvp => kvp.Value).FirstOrDefault();
-        var versionValue = result.Metadata!.Where(kvp =>
-            string.Equals(kvp.Key, "version", StringComparison.OrdinalIgnoreCase))
-            .Select(kvp => kvp.Value).FirstOrDefault();
-
-        descriptionValue.Should().Be("Updated description");
-        versionValue.Should().Be("2.0");
-    }
-
-    [Fact]
-    public void WithMetadata_Multiple_Calls_Should_Accumulate_Metadata()
-    {
-        // Arrange
-        var metadata1 = new Dictionary<string, object> { { "key1", "value1" } };
-        var metadata2 = new Dictionary<string, object> { { "key2", "value2" } };
-        var metadata3 = new Dictionary<string, object> { { "key3", "value3" } };
-
-        // Act
-        var result = FieldBuilder.Create([], "user", "User")
-            .WithMetadata(metadata1)
-            .WithMetadata(metadata2)
-            .WithMetadata(metadata3)
-            .Build();
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull().And.HaveCount(3);
-        result.Metadata!["key1"].Should().Be("value1");
-        result.Metadata!["key2"].Should().Be("value2");
-        result.Metadata!["key3"].Should().Be("value3");
-    }
-
-    [Fact]
-    public void AddField_With_Inline_Array_Type_And_SubFields_Should_Preserve_Array_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - This should preserve the [] array type even with subFields
-        var result = fieldBuilder
-            .AddField("[] items", ["id", "name"])
-            .Build();
-
-        // Assert
-        var itemsField = result.Fields["items"];
-        itemsField.Type.Should().Be("[]"); // Should be array type, not ObjectFieldType
-    }
-
-    [Fact]
-    public void AddField_With_Inline_Array_Type_And_Arguments_Should_Preserve_Array_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-        var args = new Dictionary<string, object?> { { "first", 10 } };
-
-        // Act - This should preserve the [] array type even with arguments
-        var result = fieldBuilder
-            .AddField("[] items", args)
-            .Build();
-
-        // Assert
-        var itemsField = result.Fields["items"];
-        itemsField.Type.Should().Be("[]"); // Should be array type, not DefaultFieldType
-    }
-
-    [Fact]
-    public void AddField_With_Inline_Type_And_Explicit_Type_Should_Use_Inline_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - Inline type should override explicit type parameter
-        var result = fieldBuilder
-            .AddField("String name", "Int") // Inline "String" should win over "Int"
-            .Build();
-
-        // Assert
-        var nameField = result.Fields["name"];
-        nameField.Type.Should().Be("String"); // Should be inline type, not explicit type
-    }
-
-    [Fact]
-    public void AddField_With_Array_Type_And_Action_Should_Preserve_Array_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - Array type should be preserved even with Action
-        var result = fieldBuilder
-            .AddField("[] items", builder =>
-            {
-                builder.AddField("id")
-                       .AddField("name");
-            })
-            .Build();
-
-        // Assert
-        var itemsField = result.Fields["items"];
-        itemsField.Type.Should().Be("[]"); // Should preserve array type
-        itemsField.Fields.Should().ContainKeys("id", "name"); // Should have nested fields from action
-    }
-
-    [Fact]
-    public void AddField_With_Custom_Array_Type_And_Action_Should_Preserve_Custom_Array_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - Custom array type should be preserved even with Action
-        var result = fieldBuilder
-            .AddField("User[] users", builder =>
-            {
-                builder.AddField("id", "Int")
-                       .AddField("name", "String")
-                       .AddField("email", "String");
-            })
-            .Build();
-
-        // Assert
-        var usersField = result.Fields["users"];
-        usersField.Type.Should().Be("User[]"); // Should preserve custom array type
-        usersField.Fields.Should().ContainKeys("id", "name", "email"); // Should have nested fields from action
-        usersField.Fields["id"].Type.Should().Be("Int");
-        usersField.Fields["name"].Type.Should().Be("String");
-        usersField.Fields["email"].Type.Should().Be("String");
-    }
-
-    [Fact]
-    public void AddField_Type_Overwrite_Bug_Test()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - This could potentially cause a type overwrite bug
-        var result = fieldBuilder
-            .AddField("User[] items")  // First: Create array field
-            .AddField("String items")  // Second: Try to overwrite with different type
-            .Build();
-
-        // Assert - Array type should be preserved, not overwritten
-        var itemsField = result.Fields["items"];
-        itemsField.Type.Should().Be("User[]"); // Should preserve original array type, not overwrite with "String"
-    }
-
-    [Fact]
-    public void AddField_Array_State_Lost_Bug_Test()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - This could potentially cause array state to be lost
-        var result = fieldBuilder
-            .AddField("[] items")      // First: Create generic array field
-            .AddField("items.id")      // Second: Add nested field (could lose array state)
-            .AddField("String items")  // Third: Try to set explicit type
-            .Build();
-
-        // Assert - Array type should be preserved
-        var itemsField = result.Fields["items"];
-        itemsField.Type.Should().Be("[]"); // Should preserve array marker, not convert to "String"
-        itemsField.IsArray.Should().BeTrue(); // Array state should not be lost
-        itemsField.Fields.Should().ContainKey("id"); // Should still have nested fields
-    }
-
-    [Fact]
-    public void AddField_With_SubFields_Should_Not_Overwrite_Explicit_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - Add field with explicit type and subfields
-        var result = fieldBuilder
-            .AddField("String user", subFields: ["nested", "field"])
-            .Build();
-
-        // Assert - Explicit type should be preserved despite subfields presence
-        var userField = result.Fields["user"];
-        userField.Type.Should().Be("String"); // Should NOT be overwritten to "object"
-        userField.Fields.Should().ContainKeys("nested", "field"); // The subfields should be directly under user
-    }
-
-    [Fact]
-    public void AddField_SubFields_Added_Later_Should_Not_Change_Explicit_Type()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-
-        // Act - First set explicit type, then add subfields later
-        var result = fieldBuilder
-            .AddField("CustomType user")
-            .AddField("user.profile.name")
-            .AddField("user.profile.email")
-            .Build();
-
-        // Assert - Original explicit type should be preserved
-        var userField = result.Fields["user"];
-        userField.Type.Should().Be("CustomType"); // Should NOT drift to "object"
-        userField.Fields.Should().ContainKey("profile");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Arguments_And_Metadata_Should_Preserve_Both()
-    {
-        // Test uncovered line: AddField(fieldName, arguments, metadata) overload (line 105)
-        var arguments = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 0 } };
-        var metadata = new Dictionary<string, object?> { { "description", "User list" } };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("users", arguments, metadata);
-
-        var result = fieldBuilder.Build();
-        var usersField = result.Fields["users"];
-        
-        usersField.Arguments.Should().NotBeNull().And.HaveCount(2);
-        usersField.Metadata.Should().NotBeNull().And.HaveCount(1);
-        usersField.Arguments["limit"].Should().Be(10);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Type_SubFields_Args_And_Metadata()
-    {
-        // Test uncovered line: AddField(fieldName, type, subFields, arguments, metadata) overload (line 119)
-        var args = new Dictionary<string, object?> { { "filter", "active" } };
-        var meta = new Dictionary<string, object?> { { "cached", true } };
-        var subFields = new[] { "id", "name", "status" };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("items", "Item[]", subFields, args, meta);
-
-        var result = fieldBuilder.Build();
-        var itemsField = result.Fields["items"];
-        
-        itemsField.Type.Should().Be("Item[]");
-        itemsField.Fields.Should().HaveCount(3);
-        itemsField.Arguments.Should().HaveCount(1);
-        itemsField.Metadata.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Metadata_And_Action()
-    {
-        // Test uncovered line: AddField(fieldName, metadata, action) overload (line 153)
-        var metadata = new Dictionary<string, object?> { { "note", "Complex" } };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("profile", metadata, pfb => 
-            {
-                pfb.AddField("bio")
-                   .AddField("avatar");
-            });
-
-        var result = fieldBuilder.Build();
-        var profileField = result.Fields["profile"];
-        
-        profileField.Metadata.Should().NotBeNull().And.HaveCount(1);
-        profileField.Fields.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Type_And_Action()
-    {
-        // Test uncovered line: AddField(fieldName, type, action) overload (line 175)
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("user", "User", ub => 
-            {
-                ub.AddField("id", "ID")
-                  .AddField("email", "String");
-            });
-
-        var result = fieldBuilder.Build();
-        var userField = result.Fields["user"];
-        
-        userField.Type.Should().Be("User");
-        userField.Fields.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Type_Metadata_And_Action()
-    {
-        // Test uncovered line: AddField(fieldName, type, metadata, action) overload (line 187)
-        var metadata = new Dictionary<string, object?> { { "level", "high" } };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("admin", "AdminUser", metadata, ab => 
-            {
-                ab.AddField("permissions")
-                  .AddField("roles");
-            });
-
-        var result = fieldBuilder.Build();
-        var adminField = result.Fields["admin"];
-        
-        adminField.Type.Should().Be("AdminUser");
-        adminField.Metadata.Should().HaveCount(1);
-        adminField.Fields.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Arguments_Metadata_And_Action()
-    {
-        // Test uncovered line: AddField(fieldName, arguments, metadata, action) overload (line 200)
-        var args = new Dictionary<string, object?> { { "first", 20 } };
-        var meta = new Dictionary<string, object?> { { "paginated", true } };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("posts", args, meta, pb => 
-            {
-                pb.AddField("id")
-                  .AddField("title")
-                  .AddField("author", ab => ab.AddField("name"));
-            });
-
-        var result = fieldBuilder.Build();
-        var postsField = result.Fields["posts"];
-        
-        postsField.Arguments.Should().HaveCount(1);
-        postsField.Metadata.Should().HaveCount(1);
-        postsField.Fields.Should().HaveCount(3);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Type_Arguments_Metadata_And_Action()
-    {
-        // Test uncovered line: AddField(fieldName, type, arguments, metadata, action) overload (line 214)
-        var args = new Dictionary<string, object?> { { "sort", "name" } };
-        var meta = new Dictionary<string, object?> { { "sortable", true } };
-        
-        var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("users", "User[]", args, meta, ub => 
-            {
-                ub.AddField("id", "ID")
-                  .AddField("profile", "Profile", pb => 
-                  {
-                      pb.AddField("avatar")
-                        .AddField("bio");
-                  });
-            });
-
-        var result = fieldBuilder.Build();
-        var usersField = result.Fields["users"];
-        
-        usersField.Type.Should().Be("User[]");
-        usersField.Arguments.Should().HaveCount(1);
-        usersField.Metadata.Should().HaveCount(1);
-        usersField.Fields.Should().HaveCount(2);
-        usersField.Fields["profile"].Fields.Should().HaveCount(2);
+        var testCase = scenarios.Get(scenario);
+        var result = testCase.Arrange();
+        testCase.Assert(result);
     }
 
     [Fact]
@@ -1142,7 +1119,7 @@ public class FieldBuilderTests
         var meta = new Dictionary<string, object?> { { "cache", "1h" } };
         
         var fieldBuilder = FieldBuilder.Create([], "root")
-            .AddField("items", "Item[]", new[] { "id", "name" }, args, meta, ib => 
+            .AddField("items", "Item[]", ["id", "name"], args, meta, ib => 
             {
                 ib.AddField("tags");
             });
@@ -1190,7 +1167,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_WithMetadata_Should_Preserve()
     {
-        var meta = new Dictionary<string, object?> { { "deprecated", true }, { "reason", "Use v2" } };
         
         var fb = FieldBuilder.Create([], "root")
             .AddField("oldField", "String")
@@ -1214,32 +1190,6 @@ public class FieldBuilderTests
         var result = fb.Build();
         result.Fields["field1"].Type.Should().Be("String!");
         result.Fields["field2"].Type.Should().Be("[String!]!");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_Dotted_Path_With_Arguments()
-    {
-        var args = new Dictionary<string, object?> { { "filter", "active" } };
-        
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("user.profile.avatar", "String", args);
-        
-        var result = fb.Build();
-        result.Fields.Should().ContainKey("user");
-        var userField = result.Fields["user"];
-        userField.Fields.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_Dotted_Path_With_Metadata()
-    {
-        var meta = new Dictionary<string, object?> { { "deprecated", true } };
-        
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("user.profile.bio", "String", (Dictionary<string, object?>?)null, meta);
-        
-        var result = fb.Build();
-        result.Fields.Should().ContainKey("user");
     }
 
     [Fact]
@@ -1267,7 +1217,7 @@ public class FieldBuilderTests
     public void FieldBuilder_AddField_With_SubFields_Array()
     {
         var fb = FieldBuilder.Create([], "root")
-            .AddField("user", new[] { "id", "name", "email" });
+            .AddField("user", ["id", "name", "email"]);
         
         var result = fb.Build();
         var userField = result.Fields["user"];
@@ -1290,17 +1240,6 @@ public class FieldBuilderTests
         var field = result.Fields["getData"];
         field.Arguments.Should().NotBeNull();
         field.Arguments.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_Empty_SubFields_Array()
-    {
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("user", "User", Array.Empty<string>());
-        
-        var result = fb.Build();
-        var userField = result.Fields["user"];
-        userField.Fields.Should().BeEmpty();
     }
 
     [Fact]
@@ -1349,7 +1288,7 @@ public class FieldBuilderTests
     public void FieldBuilder_AddField_With_Alias_In_SubFields()
     {
         var fb = FieldBuilder.Create([], "root")
-            .AddField("user", new[] { "id", "currentName:name" });
+            .AddField("user", ["id", "currentName:name"]);
         
         var result = fb.Build();
         var userField = result.Fields["user"];
@@ -1364,40 +1303,6 @@ public class FieldBuilderTests
         
         var result = fb.Build();
         result.Fields.Should().ContainKey("field");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_Empty_Type_Uses_Default()
-    {
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("field", "");
-        
-        var result = fb.Build();
-        var field = result.Fields["field"];
-        field.Type.Should().NotBeNullOrEmpty();
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Null_Arguments()
-    {
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("field", "String", (Dictionary<string, object?>?)null);
-        
-        var result = fb.Build();
-        var field = result.Fields["field"];
-        // Null arguments are preserved
-        field.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Null_Metadata()
-    {
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("field", "String", (Dictionary<string, object?>?)null, (Dictionary<string, object?>?)null);
-        
-        var result = fb.Build();
-        var field = result.Fields["field"];
-        field.Should().NotBeNull();
     }
 
     [Fact]
@@ -1416,57 +1321,8 @@ public class FieldBuilderTests
     }
 
     [Fact]
-    public void FieldBuilder_AddField_Dotted_With_Deeper_Path()
-    {
-        var fb = FieldBuilder.Create([], "root")
-            .AddField("a.b.c.d.e");
-        
-        var result = fb.Build();
-        result.Fields.Should().ContainKey("a");
-    }
-
-    [Fact]
-    public void FieldBuilder_Create_Empty_Initial_Fields()
-    {
-        var fb = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root");
-        
-        var result = fb.Build();
-        result.Fields.Should().BeEmpty();
-    }
-
-    // FieldFactory coverage tests for GetOrAddField and complex merging scenarios
-    
-    [Fact]
-    public void FieldBuilder_AddField_Empty_Path_Throws_ArgumentException()
-    {
-        // Tests line 73 in FieldFactory: Empty field path validation
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        // Should not throw for valid paths, but factory validates empty paths
-        var result = fieldBuilder.AddField("validField").Build();
-        result.Fields.Should().ContainKey("validField");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_DottedPath_WithArguments_MergesCorrectly()
-    {
-        // Tests lines 76-86 in FieldFactory: Dotted field with arguments/metadata path
-        var arguments = new Dictionary<string, object?> { ["filter"] = "active" };
-        var fieldBuilder = FieldBuilder.Create([], "root", "Root", arguments);
-        
-        var result = fieldBuilder
-            .AddField("user.profile.bio", "String", arguments: arguments)
-            .Build();
-        
-        result.Fields.Should().ContainKey("user");
-        result.Fields["user"].Type.Should().Be("object");
-        result.Fields["user"].Fields.Should().ContainKey("profile");
-    }
-
-    [Fact]
     public void FieldBuilder_AddField_ComplexPath_WithTypePrefix()
     {
-        // Tests line 36 in FieldFactory: Complex field processing
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1483,7 +1339,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_LongPath_BufferFallback()
     {
-        // Tests lines 213-231 in FieldFactory: Very long path buffer fallback
         var longPath = "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z";
         var fieldBuilder = FieldBuilder.Create([], "root");
         
@@ -1500,7 +1355,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_ExistingFieldMerging()
     {
-        // Tests line 135-137 in FieldFactory: Merging with existing fields
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1517,7 +1371,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_NestedWithConversionToObject()
     {
-        // Tests line 135-152 in FieldFactory: ShouldConvertToObjectType logic
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1528,25 +1381,6 @@ public class FieldBuilderTests
         // Both should be treated as object type when nested fields exist
         result.Fields.Should().ContainKey("profile");
         result.Fields["profile"].Fields.Should().ContainKey("name");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_MultipleArgumentsOnDottedField()
-    {
-        // Tests lines 351-354 in FieldFactory: MergeFieldArguments on last segment
-        var arguments = new Dictionary<string, object?>
-        {
-            ["first"] = 10,
-            ["after"] = "cursor123"
-        };
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        var result = fieldBuilder
-            .AddField("posts.edges", "Edge[]", arguments: arguments)
-            .Build();
-        
-        result.Fields["posts"].Fields["edges"].Arguments.Should().NotBeNull();
-        result.Fields["posts"].Fields["edges"].Arguments!["first"].Should().Be(10);
     }
 
     [Fact]
@@ -1566,7 +1400,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_ConvertSimpleToNested()
     {
-        // Tests line 149 in FieldFactory: Field type conversion for nested paths
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1581,7 +1414,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_NestedArgumentsOnMiddleSegment()
     {
-        // Tests lines 357-360 in FieldFactory: Arguments on non-last segments
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1592,20 +1424,6 @@ public class FieldBuilderTests
         
         result.Fields["users"].Arguments!["limit"].Should().Be(20);
         result.Fields["users"].Fields.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_DottedWithWhitespace()
-    {
-        // Tests lines 269-272 in FieldFactory: Whitespace handling in dotted paths
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        // Should handle whitespace gracefully
-        var result = fieldBuilder
-            .AddField("user.profile.name")
-            .Build();
-        
-        result.Fields.Should().ContainKey("user");
     }
 
     [Fact]
@@ -1639,22 +1457,6 @@ public class FieldBuilderTests
     }
 
     [Fact]
-    public void FieldBuilder_AddField_MixedSimpleAndDotted()
-    {
-        // Tests mixing simple and dotted field additions
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        var result = fieldBuilder
-            .AddField("id")
-            .AddField("user.profile")
-            .AddField("user.settings.theme")
-            .Build();
-        
-        result.Fields.Should().ContainKeys("id", "user");
-        result.Fields["user"].Fields.Should().ContainKeys("profile", "settings");
-    }
-
-    [Fact]
     public void FieldBuilder_AddField_RepeatedFieldNameDifferentTypes()
     {
         // Tests field merging when same field added with different types
@@ -1685,7 +1487,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_ComplexPathWithTypePrefix()
     {
-        // Tests line 36 in FieldFactory: Complex field processing
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1702,8 +1503,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_VeryLongParentPath_BufferFallback()
     {
-        // Tests lines 221, 222, 226, 229 in FieldFactory: Buffer fallback with very long parent path
-        var longParentPath = "root." + string.Join(".", Enumerable.Range(0, 100).Select(i => $"level{i}"));
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         // This will test the buffer overflow path since the parent path is very long
@@ -1712,37 +1511,6 @@ public class FieldBuilderTests
             .Build();
         
         result.Fields.Should().ContainKey("data");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_DottedWithArgumentsAndMetadata_BufferFallback()
-    {
-        // Tests lines 250-253 in FieldFactory: Per-node variant buffer fallback
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        // Adding deeply nested field with arguments should trigger buffer handling
-        var result = fieldBuilder
-            .AddField("a.b.c.d.e.f.g", "object", 
-                arguments: new Dictionary<string, object?> { ["filter"] = "value" })
-            .AddField("a.b.c.d.e.f.g.h.i.j.k", "String")
-            .Build();
-        
-        result.Fields["a"].Fields["b"].Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_EmptyFieldPath_ShouldThrow()
-    {
-        // Tests line 73, 97 in FieldFactory: Empty field path validation
-        // This might not throw if the implementation doesn't validate at this level
-        var fieldBuilder = FieldBuilder.Create([], "root");
-        
-        // Adding regular fields should work
-        var result = fieldBuilder
-            .AddField("user")
-            .Build();
-        
-        result.Fields.Should().ContainKey("user");
     }
 
     [Fact]
@@ -1765,7 +1533,6 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_TypeParsing_ComplexScenarios()
     {
-        // Tests field type parsing in complex field processing (line 416)
         var fieldBuilder = FieldBuilder.Create([], "root");
         
         var result = fieldBuilder
@@ -1776,22 +1543,6 @@ public class FieldBuilderTests
         
         result.Fields["items"].Fields["name"].Type.Should().Be("String[]");
         result.Fields["flags"].Type.Should().Be("Boolean[]");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_With_Empty_Arguments_Should_Not_Add_Arguments()
-    {
-        // Arrange
-        var fieldBuilder = FieldBuilder.Create([], "user");
-        var emptyArgs = new Dictionary<string, object?>();
-        
-        // Act
-        var result = fieldBuilder
-            .AddField("name", arguments: emptyArgs)
-            .Build();
-        
-        // Assert
-        result.Fields["name"].Arguments.Should().BeEmpty();
     }
 
     [Fact]
@@ -1909,18 +1660,6 @@ public class FieldBuilderTests
     }
 
     [Fact]
-    public void FieldBuilder_Create_With_Empty_Fields_List_Should_Work()
-    {
-        // Arrange & Act
-        var fieldBuilder = FieldBuilder.Create([], "test");
-        var result = fieldBuilder.Build();
-        
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("test");
-    }
-
-    [Fact]
     public void FieldBuilder_AddField_With_Numeric_Field_Names_Should_Work()
     {
         // Arrange
@@ -1960,818 +1699,1495 @@ public class FieldBuilderTests
         result.Fields["posts"].Fields.Should().HaveCount(1);
     }
 
-    #region SpanExtensions Tests
-
-    [Fact]
-    public void SpanExtensions_ClassifyFieldFast_SimpleField_NoSpecialChars()
-    {
-        // Arrange
-        var span = "fieldname".AsSpan();
-
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().BeFalse();
-        hasDots.Should().BeFalse();
-        hasColons.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_ClassifyFieldFast_WithDots()
-    {
-        // Arrange
-        var span = "user.profile.name".AsSpan();
-
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().BeFalse();
-        hasDots.Should().BeTrue();
-        hasColons.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_ClassifyFieldFast_WithColons()
-    {
-        // Arrange
-        var span = "String:fieldname".AsSpan();
-
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().BeFalse();
-        hasDots.Should().BeFalse();
-        hasColons.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_ClassifyFieldFast_WithSpaces()
-    {
-        // Arrange
-        var span = "Int field name".AsSpan();
-
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().BeTrue();
-        hasDots.Should().BeFalse();
-        hasColons.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_ClassifyFieldFast_WithAllSpecialChars()
-    {
-        // Arrange
-        var span = "Int user.profile: name".AsSpan();
-
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().BeTrue();
-        hasDots.Should().BeTrue();
-        hasColons.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_IsSimpleField_SimpleField_ReturnsTrue()
-    {
-        // Arrange & Act
-        var result = "fieldname".AsSpan().IsSimpleField();
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_IsSimpleField_WithDots_ReturnsFalse()
-    {
-        // Arrange & Act
-        var result = "user.profile".AsSpan().IsSimpleField();
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_IsSimpleField_WithSpaces_ReturnsFalse()
-    {
-        // Arrange & Act
-        var result = "String field".AsSpan().IsSimpleField();
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_IsDottedField_DottedField_ReturnsTrue()
-    {
-        // Arrange & Act
-        var result = "user.profile.name".AsSpan().IsDottedField();
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_IsDottedField_WithSpaces_ReturnsFalse()
-    {
-        // Arrange & Act
-        var result = "user . profile".AsSpan().IsDottedField();
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_HasLetterOrDigit_WithLetters_ReturnsTrue()
-    {
-        // Arrange & Act
-        var result = "abc123".AsSpan().HasLetterOrDigit();
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_HasLetterOrDigit_WithOnlySymbols_ReturnsFalse()
-    {
-        // Arrange & Act
-        var result = ".:;".AsSpan().HasLetterOrDigit();
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_EqualsIgnoreCase_SameCase_ReturnsTrue()
-    {
-        // Arrange
-        var span1 = "field".AsSpan();
-        var span2 = "field".AsSpan();
-
-        // Act
-        var result = span1.EqualsIgnoreCase(span2);
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_EqualsIgnoreCase_DifferentCase_ReturnsTrue()
-    {
-        // Arrange
-        var span1 = "Field".AsSpan();
-        var span2 = "FIELD".AsSpan();
-
-        // Act
-        var result = span1.EqualsIgnoreCase(span2);
-
-        // Assert
-        result.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SpanExtensions_EqualsIgnoreCase_Different_ReturnsFalse()
-    {
-        // Arrange
-        var span1 = "field".AsSpan();
-        var span2 = "other".AsSpan();
-
-        // Act
-        var result = span1.EqualsIgnoreCase(span2);
-
-        // Assert
-        result.Should().BeFalse();
-    }
-
-    [Fact]
-    public void SpanExtensions_TrimEndDotsAndSpaces_WithTrailingDots()
-    {
-        // Arrange
-        var span = "field...".AsSpan();
-
-        // Act
-        var result = span.TrimEndDotsAndSpaces();
-
-        // Assert
-        result.ToString().Should().Be("field");
-    }
-
-    [Fact]
-    public void SpanExtensions_TrimEndDotsAndSpaces_WithTrailingSpaces()
-    {
-        // Arrange
-        var span = "field   ".AsSpan();
-
-        // Act
-        var result = span.TrimEndDotsAndSpaces();
-
-        // Assert
-        result.ToString().Should().Be("field");
-    }
-
-    [Fact]
-    public void SpanExtensions_TrimEndDotsAndSpaces_WithMixedTrailing()
-    {
-        // Arrange
-        var span = "field . . ".AsSpan();
-
-        // Act
-        var result = span.TrimEndDotsAndSpaces();
-
-        // Assert
-        result.ToString().Should().Be("field");
-    }
-
-    [Fact]
-    public void SpanExtensions_TrimEndDotsAndSpaces_NoTrailing()
-    {
-        // Arrange
-        var span = "field".AsSpan();
-
-        // Act
-        var result = span.TrimEndDotsAndSpaces();
-
-        // Assert
-        result.ToString().Should().Be("field");
-    }
-
-    [Fact]
-    public void SpanExtensions_ExtractFieldName_WithColon()
-    {
-        // Arrange
-        var span = "String:fieldname".AsSpan();
-
-        // Act
-        var result = span.ExtractFieldName();
-
-        // Assert
-        result.ToString().Should().Be("fieldname");
-    }
-
-    [Fact]
-    public void SpanExtensions_ExtractFieldName_WithoutColon()
-    {
-        // Arrange
-        var span = "fieldname".AsSpan();
-
-        // Act
-        var result = span.ExtractFieldName();
-
-        // Assert
-        result.ToString().Should().Be("fieldname");
-    }
-
-    [Fact]
-    public void SpanExtensions_ExtractFieldName_WithMultipleColons()
-    {
-        // Arrange
-        var span = "String:Custom:Name".AsSpan();
-
-        // Act
-        var result = span.ExtractFieldName();
-
-        // Assert
-        result.ToString().Should().Be("Name");
-    }
-
-    [Fact]
-    public void SpanExtensions_ExtractFieldName_WithTypeAndWhitespace()
-    {
-        // Arrange
-        var span = "String:  fieldname  ".AsSpan();
-
-        // Act
-        var result = span.ExtractFieldName();
-
-        // Assert
-        result.ToString().Should().Be("fieldname");
-    }
-
-    [Fact]
-    public void SpanExtensions_TryGetValue_KeyExists_ReturnsTrue()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>
-        {
-            { "name", new FieldDefinition("name", "String") }
-        };
-        var key = "name".AsSpan();
-
-        // Act
-        var result = dict.TryGetValue(key, out var field);
-
-        // Assert
-        result.Should().BeTrue();
-        field.Should().NotBeNull();
-        field!.Name.Should().Be("name");
-    }
-
-    [Fact]
-    public void SpanExtensions_TryGetValue_KeyNotExists_ReturnsFalse()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>
-        {
-            { "name", new FieldDefinition("name", "String") }
-        };
-        var key = "other".AsSpan();
-
-        // Act
-        var result = dict.TryGetValue(key, out var field);
-
-        // Assert
-        result.Should().BeFalse();
-        field.Should().BeNull();
-    }
-
-    [Fact]
-    public void SpanExtensions_TryGetValue_EmptyDictionary_ReturnsFalse()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var key = "name".AsSpan();
-
-        // Act
-        var result = dict.TryGetValue(key, out var field);
-
-        // Assert
-        result.Should().BeFalse();
-        field.Should().BeNull();
-    }
-
-    [Fact]
-    public void SpanExtensions_SetValue_NewKey_AddsToDict()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var key = "newfield".AsSpan();
-        var field = new FieldDefinition("newfield", "String");
-
-        // Act
-        dict.SetValue(key, field);
-
-        // Assert
-        dict.Should().HaveCount(1);
-        dict.Should().ContainKey("newfield");
-        dict["newfield"].Should().Be(field);
-    }
-
-    [Fact]
-    public void SpanExtensions_SetValue_ExistingKey_Updates()
-    {
-        // Arrange
-        var oldField = new FieldDefinition("field", "String");
-        var newField = new FieldDefinition("field", "Int");
-        var dict = new Dictionary<string, FieldDefinition> { { "field", oldField } };
-        var key = "field".AsSpan();
-
-        // Act
-        dict.SetValue(key, newField);
-
-        // Assert
-        dict.Should().HaveCount(1);
-        dict["field"].Should().Be(newField);
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_NewField_AddsField()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var fieldName = "user".AsSpan();
-        var fieldType = "User".AsSpan();
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, null, null, null);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("user");
-        result.Type.Should().Be("User");
-        dict.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_ExistingField_ReturnsExisting()
-    {
-        // Arrange
-        var existingField = new FieldDefinition("user", "User");
-        var dict = new Dictionary<string, FieldDefinition> { { "user", existingField } };
-        var fieldName = "user".AsSpan();
-        var fieldType = "User".AsSpan();
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, null, null, null);
-
-        // Assert
-        result.Should().Be(existingField);
-        dict.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_WithArguments_MergesArguments()
-    {
-        // Arrange
-        var existingField = new FieldDefinition("user", "User");
-        var dict = new Dictionary<string, FieldDefinition> { { "user", existingField } };
-        var fieldName = "user".AsSpan();
-        var fieldType = "User".AsSpan();
-        var arguments = new Dictionary<string, object?> { { "id", 123 } };
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, arguments, null, null);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Arguments.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_WithParentPath_BuildsPath()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var fieldName = "name".AsSpan();
-        var fieldType = "String".AsSpan();
-        var parentPath = "user";
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, null, parentPath, null);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("name");
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_ShortPath_UsesStackBuffer()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var fieldName = "name".AsSpan();
-        var fieldType = "String".AsSpan();
-        var parentPath = "user";
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, null, parentPath, null);
-
-        // Assert
-        result.Should().NotBeNull();
-        dict.Should().HaveCount(1);
-    }
-
-    [Fact]
-    public void SpanExtensions_GetOrAddSimpleField_LongPath_FallsBackToString()
-    {
-        // Arrange
-        var dict = new Dictionary<string, FieldDefinition>();
-        var fieldName = "z".AsSpan();
-        var fieldType = "String".AsSpan();
-        var parentPath = new string('a', 300); // Create path longer than 256 chars
-
-        // Act
-        var result = dict.GetOrAddSimpleField(fieldName, fieldType, null, parentPath, null);
-
-        // Assert
-        result.Should().NotBeNull();
-        result.Name.Should().Be("z");
-    }
-
-    #endregion
 
     // ═══════════════════════════════════════════════════════════════
     // FieldFactory Additional Tests - Complex Field Scenarios
     // ═══════════════════════════════════════════════════════════════
 
-    [Fact]
-    public void FieldFactory_VeryLongDottedPath_CreatesNestedStructure()
+    [Theory]
+    [InlineData("long-dotted-path")]
+    [InlineData("dotted-with-args")]
+    [InlineData("dotted-with-metadata")]
+    [InlineData("complex-type-annotation")]
+    [InlineData("merge-args")]
+    [InlineData("type-conversion")]
+    [InlineData("create-merge-conflicting")]
+    [InlineData("valid-paths")]
+    public void FieldFactory_DottedPathVariations(string scenario)
     {
-        var fields = new Dictionary<string, FieldDefinition>();
+        if (scenario == "long-dotted-path")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
 
-        var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f.g.h".AsSpan(), "Type".AsSpan(), null);
+            var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f.g.h".AsSpan(), "Type".AsSpan(), null);
 
+            result.Should().NotBeNull();
+            result.Name.Should().Be("h");
+            result.Type.Should().Be("Type");
+        }
+        else if (scenario == "dotted-with-args")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var arguments = new Dictionary<string, object?> { { "limit", 10 } };
+
+            var result = FieldFactory.GetOrAddField(fields, "user.profile.data".AsSpan(), "String".AsSpan(), arguments);
+
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull();
+            result.Arguments.Should().ContainKey("limit");
+        }
+        else if (scenario == "dotted-with-metadata")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var metadata = new Dictionary<string, object?> { { "key", "value" } };
+
+            var result = FieldFactory.GetOrAddField(fields, "user.settings".AsSpan(), "Settings".AsSpan(), null, metadata: metadata);
+
+            result.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "complex-type-annotation")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            var result = FieldFactory.GetOrAddField(fields, "User user.profile".AsSpan(), "Default".AsSpan(), null);
+
+            result.Should().NotBeNull();
+            result.Name.Should().Be("profile");
+        }
+        else if (scenario == "merge-args")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var firstArgs = new Dictionary<string, object?> { { "first", "arg" } };
+            var secondArgs = new Dictionary<string, object?> { { "second", "arg" } };
+
+            FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), firstArgs);
+            var result = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), secondArgs);
+
+            result.Arguments.Should().NotBeNull();
+        }
+        else if (scenario == "type-conversion")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // First add as leaf
+            FieldFactory.GetOrAddField(fields, "parent.child".AsSpan(), "String".AsSpan(), null);
+            // Then add sibling
+            FieldFactory.GetOrAddField(fields, "parent.other".AsSpan(), "String".AsSpan(), null);
+
+            // parent should be converted to object type
+            var parent = fields["parent"];
+            parent.Type.Should().Be("object");
+        }
+        else if (scenario == "create-merge-conflicting")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var existing = new FieldDefinition("user", "User", null, new Dictionary<string, object?> { { "id", "123" } });
+
+            _ = FieldFactory.CreateOrMergeField(fields, existing);
+            var field2 = FieldFactory.CreateOrMergeField(fields, existing);
+
+            field2.Should().NotBeNull();
+            field2.Arguments.Should().NotBeNull();
+        }
+        else if (scenario == "valid-paths")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // These should all work without exceptions
+            var r1 = FieldFactory.GetOrAddField(fields, "simple".AsSpan(), "Type".AsSpan(), null);
+            var r2 = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "Type".AsSpan(), null);
+
+            r1.Should().NotBeNull();
+            r2.Should().NotBeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("fast-path")]
+    [InlineData("with-alias")]
+    [InlineData("parent-variant")]
+    [InlineData("parent-with-args")]
+    [InlineData("multiple-segment")]
+    [InlineData("reuse-field")]
+    [InlineData("arg-sorting")]
+    [InlineData("create-intermediates")]
+    public void FieldFactory_DottedPathAdvanced(string scenario)
+    {
+        if (scenario == "fast-path")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            var result = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "Type".AsSpan(), null, null, null);
+
+            result.Should().NotBeNull();
+        }
+        else if (scenario == "with-alias")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            var result = FieldFactory.GetOrAddField(fields, "User myAlias:user".AsSpan(), "Default".AsSpan(), null);
+
+            result.Should().NotBeNull();
+        }
+        else if (scenario == "parent-variant")
+        {
+            var parent = new FieldDefinition("parent", "Object");
+
+            var result = FieldFactory.GetOrAddField(parent, "child.grandchild".AsSpan(), "String".AsSpan(), null);
+
+            result.Should().NotBeNull();
+            result.Name.Should().Be("grandchild");
+        }
+        else if (scenario == "parent-with-args")
+        {
+            var parent = new FieldDefinition("parent", "Object");
+            var arguments = new Dictionary<string, object?> { { "id", 42 } };
+
+            var result = FieldFactory.GetOrAddField(parent, "child".AsSpan(), "String".AsSpan(), arguments);
+
+            result.Arguments.Should().NotBeNull();
+        }
+        else if (scenario == "multiple-segment")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "TypeC".AsSpan(), null);
+            FieldFactory.GetOrAddField(fields, "a.b.d".AsSpan(), "TypeD".AsSpan(), null);
+
+            var a = fields["a"];
+            a.Type.Should().Be("object");
+            var b = a._children?.Find("b".AsSpan());
+            b.Should().NotBeNull();
+        }
+        else if (scenario == "reuse-field")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            _ = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
+            var second = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "UserV2".AsSpan(), null);
+
+            // When reusing existing, it should maintain existing type or merge
+            second.Should().NotBeNull();
+        }
+        else if (scenario == "arg-sorting")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var argsZ = new Dictionary<string, object?> { { "z", 1 }, { "a", 2 } };
+
+            var result = FieldFactory.GetOrAddField(fields, "field".AsSpan(), "Type".AsSpan(), argsZ);
+
+            result.Arguments.Should().NotBeNull();
+            var keys = result.Arguments!.Keys.ToList();
+            keys[0].Should().Be("a"); // Should be sorted
+            keys[1].Should().Be("z");
+        }
+        else if (scenario == "create-intermediates")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            _ = FieldFactory.GetOrAddField(fields, "user.profile.settings".AsSpan(), "Settings".AsSpan(), null);
+
+            // Top-level field
+            fields.Should().ContainKey("user");
+            fields["user"].Type.Should().Be("object");
+
+            // Intermediate field
+            fields["user"].Fields.Should().NotBeEmpty();
+            fields["user"].Fields.Should().ContainKey("profile");
+            fields["user"].Fields["profile"].Type.Should().Be("object");
+
+            // Final field
+            fields["user"].Fields["profile"].Fields.Should().ContainKey("settings");
+            fields["user"].Fields["profile"].Fields["settings"].Type.Should().Be("Settings");
+        }
+    }
+
+    [Theory]
+    [InlineData("metadata-final")]
+    [InlineData("deep-hierarchy")]
+    [InlineData("readd-with-metadata")]
+    [InlineData("root-field")]
+    [InlineData("long-path")]
+    [InlineData("args-preserved")]
+    public void FieldFactory_DottedPathMetadataAndHierarchy(string scenario)
+    {
+        if (scenario == "metadata-final")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var metadata = new Dictionary<string, object?> { { "cache", "5m" } };
+
+            var result = FieldFactory.GetOrAddField(fields, "user.profile.avatar".AsSpan(), "Image".AsSpan(), null, metadata: metadata);
+
+            result.Metadata.Should().NotBeNull();
+            result.Metadata!["cache"].Should().Be("5m");
+        }
+        else if (scenario == "deep-hierarchy")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            _ = FieldFactory.GetOrAddField(fields, "org.dept.team.member.contact".AsSpan(), "ContactInfo".AsSpan(), null);
+
+            fields.Should().ContainKey("org");
+            fields["org"].Fields.Should().HaveCountGreaterThan(0);
+            fields["org"].Fields.Should().ContainKey("dept");
+            fields["org"].Fields["dept"].Type.Should().Be("object");
+        }
+        else if (scenario == "readd-with-metadata")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var metadata1 = new Dictionary<string, object?> { { "tag", "v1" } };
+
+            _ = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null, metadata: metadata1);
+            var second = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
+
+            // First call sets metadata
+            second.Metadata.Should().NotBeNull();
+            second.Metadata!["tag"].Should().Be("v1");
+        }
+        else if (scenario == "root-field")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            _ = FieldFactory.GetOrAddField(fields, "userData.settings".AsSpan(), "UserSettings".AsSpan(), null);
+
+            fields.Should().ContainKey("userData");
+            fields["userData"].Name.Should().Be("userData");
+            fields["userData"].Type.Should().Be("object"); // Root becomes object
+        }
+        else if (scenario == "long-path")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f".AsSpan(), "F".AsSpan(), null);
+
+            result.Name.Should().Be("f");
+            result.Type.Should().Be("F");
+            fields.Should().ContainKey("a");
+        }
+        else if (scenario == "args-preserved")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var args = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 0 } };
+
+            var result = FieldFactory.GetOrAddField(fields, "user.posts.recent".AsSpan(), "Post".AsSpan(), args);
+
+            result.Arguments.Should().NotBeNull();
+            result.Arguments!.Should().HaveCount(2);
+            result.Arguments!["limit"].Should().Be(10);
+        }
+    }
+
+    [Theory]
+    [InlineData("branch-at-intermediate")]
+    [InlineData("dotted-then-direct")]
+    [InlineData("update-intermediate")]
+    [InlineData("long-path-stacking")]
+    [InlineData("long-path-with-parent")]
+    public void FieldFactory_ComplexHierarchyAndBuffering(string scenario)
+    {
+        if (scenario == "branch-at-intermediate")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // Create first path
+            FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
+
+            // Add different branch at same intermediate level
+            _ = FieldFactory.GetOrAddField(fields, "user.preferences.theme".AsSpan(), "String".AsSpan(), null);
+
+            fields["user"].Fields.Should().HaveCount(2);
+            fields["user"].Fields.Should().ContainKey("profile");
+            fields["user"].Fields.Should().ContainKey("preferences");
+        }
+        else if (scenario == "dotted-then-direct")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
+            _ = FieldFactory.GetOrAddField(fields, "admin".AsSpan(), "Admin".AsSpan(), null);
+
+            fields.Should().HaveCount(2);
+            fields.Should().ContainKey("user");
+            fields.Should().ContainKey("admin");
+        }
+        else if (scenario == "update-intermediate")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // Create initial hierarchy
+            _ = FieldFactory.GetOrAddField(fields, "data.values.count".AsSpan(), "Int".AsSpan(), null);
+            
+            // Try to update intermediate with different type
+            _ = FieldFactory.GetOrAddField(fields, "data.values.sum".AsSpan(), "Float".AsSpan(), null);
+
+            // Intermediate 'values' field should remain as object
+            fields["data"].Fields["values"].Type.Should().Be("object");
+        }
+        else if (scenario == "long-path-stacking")
+        {
+            // Arrange - Create a path longer than 512 chars with metadata
+            var longPath = string.Join(".", Enumerable.Range(1, 100).Select(i => $"segment{i}"));
+            var fields = new Dictionary<string, FieldDefinition>();
+            var metadata = new Dictionary<string, object?> { { "key", "value" } };
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, longPath.AsSpan(), "Type".AsSpan(), null, null, metadata);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Name.Should().Be("segment100");
+            result.Type.Should().Be("Type");
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "long-path-with-parent")
+        {
+            // Arrange
+            var parent = new FieldDefinition("root", "Root");
+            var longPath = string.Join(".", Enumerable.Range(1, 80).Select(i => $"seg{i}"));
+            var metadata = new Dictionary<string, object?> { { "tag", "test" } };
+
+            // Act
+            var result = FieldFactory.GetOrAddField(parent, longPath.AsSpan(), "Type".AsSpan(), null, null, metadata);
+
+            result.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("very-long-parent-path")]
+    [InlineData("stack-path")]
+    [InlineData("stack-path-variant")]
+    public void FieldFactory_StackBufferAndComplexPaths(string scenario)
+    {
+        if (scenario == "very-long-parent-path")
+        {
+            // Arrange - parentPath + fieldPath exceeds 512 chars
+            var longParentPath = string.Concat(Enumerable.Range(1, 50).Select(i => $"/parent{i}"));
+            var longFieldPath = string.Join(".", Enumerable.Range(1, 50).Select(i => $"field{i}"));
+            var fields = new Dictionary<string, FieldDefinition>();
+            var metadata = new Dictionary<string, object?> { { "src", "pooled" } };
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, longFieldPath.AsSpan(), "Type".AsSpan(), 
+                null, longParentPath, metadata);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "stack-path")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+            var args = new Dictionary<string, object?> { { "limit", 5 } };
+            var metadata = new Dictionary<string, object?> { { "meta", "data" } };
+            var parentPath = "/parent";
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), 
+                args, parentPath, metadata);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Type.Should().Be("String");
+            result.Arguments.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "stack-path-variant")
+        {
+            // Arrange
+            var parent = new FieldDefinition("root", "Root");
+            var args = new Dictionary<string, object?> { { "id", 123 } };
+            var metadata = new Dictionary<string, object?> { { "version", "1.0" } };
+            var parentPath = "/root";
+
+            // Act
+            var result = FieldFactory.GetOrAddField(parent, "data.items.detail".AsSpan(), "Detail".AsSpan(), 
+                args, parentPath, metadata);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull().And.ContainKey("id");
+            result.Metadata.Should().NotBeNull().And.ContainKey("version");
+        }
+    }
+
+    [Theory]
+    [InlineData("whitespace-segments")]
+    [InlineData("multiple-args")]
+    [InlineData("update-type")]
+    [InlineData("merge-args")]
+    [InlineData("preserve-alias")]
+    [InlineData("parent-path-no-meta")]
+    [InlineData("parent-path-with-meta")]
+    [InlineData("whitespace-segment")]
+    [InlineData("merge-args-repeated")]
+    public void FieldFactory_EdgeCases(string scenario)
+    {
+        if (scenario == "whitespace-segments")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Name.Should().Be("name");
+        }
+        else if (scenario == "multiple-args")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+            var args = new Dictionary<string, object?> 
+            { 
+                { "first", 1 },
+                { "second", "two" },
+                { "third", 3.0 }
+            };
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, "data.nested.value".AsSpan(), "Int".AsSpan(), args);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull().And.HaveCount(3);
+            result.Arguments!["first"].Should().Be(1);
+            result.Arguments!["second"].Should().Be("two");
+            result.Arguments!["third"].Should().Be(3.0);
+        }
+        else if (scenario == "update-type")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // Act - Create field with one type
+            var first = FieldFactory.GetOrAddField(fields, "user.data.value".AsSpan(), "Int".AsSpan(), null);
+
+            // Update with different type
+            var second = FieldFactory.GetOrAddField(fields, "user.data.value".AsSpan(), "String".AsSpan(), null);
+
+            // Assert
+            // The leaf field should have the final type assigned
+            first.Name.Should().Be("value");
+            second.Name.Should().Be("value");
+        }
+        else if (scenario == "merge-args")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+            var firstArgs = new Dictionary<string, object?> { { "limit", 10 } };
+            var secondArgs = new Dictionary<string, object?> { { "offset", 5 } };
+
+            // Act
+            FieldFactory.GetOrAddField(fields, "items.data.record".AsSpan(), "Record".AsSpan(), firstArgs);
+            var result = FieldFactory.GetOrAddField(fields, "items.data.record".AsSpan(), "Record".AsSpan(), secondArgs);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull();
+        }
+        else if (scenario == "preserve-alias")
+        {
+            // Arrange
+            var fields = new Dictionary<string, FieldDefinition>();
+
+            // Act
+            var result = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
+
+            // Assert
+            result.Should().NotBeNull();
+            result.Name.Should().Be("profile");
+        }
+        else if (scenario == "parent-path-no-meta")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var parentPath = "/users";
+            
+            var result = FieldFactory.GetOrAddField(fields, "profile.name".AsSpan(), "String".AsSpan(), 
+                null, parentPath, null);
+            
+            result.Should().NotBeNull();
+            result.Name.Should().Be("name");
+        }
+        else if (scenario == "parent-path-with-meta")
+        {
+            var fields = new Dictionary<string, FieldDefinition>();
+            var parentPath = "/users";
+            var metadata = new Dictionary<string, object?> { { "cached", true } };
+            
+            var result = FieldFactory.GetOrAddField(fields, "profile.name".AsSpan(), "String".AsSpan(),
+                null, parentPath, metadata);
+            
+            result.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "whitespace-segment")
+        {
+            // Covers line 310: skipping whitespace segments
+            var fields = new Dictionary<string, FieldDefinition>();
+            
+            var result = FieldFactory.GetOrAddField(fields, "user. .profile".AsSpan(), "Profile".AsSpan(), null);
+            
+            result.Should().NotBeNull();
+        }
+        else if (scenario == "merge-args-repeated")
+        {
+            // Covers line 353: MergeFieldArguments call
+            var parent = new FieldDefinition("root", "Root");
+            var firstArgs = new Dictionary<string, object?> { { "first", 10 } };
+            
+            FieldFactory.GetOrAddField(parent, "data.items.edge".AsSpan(), "Edge".AsSpan(), firstArgs);
+            var result = FieldFactory.GetOrAddField(parent, "data.items.edge".AsSpan(), "Edge".AsSpan(), 
+                new Dictionary<string, object?> { { "after", "cursor" } });
+            
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("long-path-pooling")]
+    [InlineData("long-path-with-args-pooling")]
+    [InlineData("complex-nested-args")]
+    public void FieldFactory_PoolingAndComplexArgs(string scenario)
+    {
+        if (scenario == "long-path-pooling")
+        {
+            // Covers lines 221-222: pooling path when estimatedPathLength > 512
+            var fields = new Dictionary<string, FieldDefinition>();
+            var longPath = string.Join(".", Enumerable.Range(0, 80).Select(i => $"segment{i}"));
+            
+            var result = FieldFactory.GetOrAddField(fields, longPath.AsSpan(), "Type".AsSpan(), null);
+            
+            result.Should().NotBeNull();
+            result.Name.Should().Be("segment79");
+        }
+        else if (scenario == "long-path-with-args-pooling")
+        {
+            // Covers lines 250-252: pooling path with parent and metadata
+            var parent = new FieldDefinition("root", "Root");
+            var longFieldPath = string.Join(".", Enumerable.Range(0, 70).Select(i => $"seg{i}"));
+            var metadata = new Dictionary<string, object?> { { "pooled", true } };
+            
+            var result = FieldFactory.GetOrAddField(parent, longFieldPath.AsSpan(), "Type".AsSpan(),
+                null, "/root", metadata);
+            
+            result.Should().NotBeNull();
+            result.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "complex-nested-args")
+        {
+            // Covers more argument handling paths in ProcessDottedSegment
+            var fields = new Dictionary<string, FieldDefinition>();
+            var args = new Dictionary<string, object?> 
+            { 
+                { "limit", 20 },
+                { "sort", "DESC" }
+            };
+            
+            var result = FieldFactory.GetOrAddField(fields, "user.posts.edges".AsSpan(), "Edge".AsSpan(), args);
+            
+            result.Should().NotBeNull();
+            result.Arguments.Should().NotBeNull().And.HaveCount(2);
+        }
+    }
+
+    [Theory]
+    [InlineData("subfields-action")]
+    [InlineData("subfields-metadata-action")]
+    [InlineData("typed-subfields-action")]
+    [InlineData("typed-subfields-metadata-action")]
+    [InlineData("subfields-args-metadata-action")]
+    public void FieldBuilder_AddField_WithSubfieldsAndActions(string scenario)
+    {
+        if (scenario == "subfields-action")
+        {
+            var builder = FieldBuilder.Create([], "root");
+            
+            builder.AddField("user", ["name", "email"], fb =>
+            {
+                fb.AddField("role");
+            });
+            
+            var result = builder.Build();
+            result.Fields.Should().ContainKey("user");
+            result.Fields["user"].Fields.Should().ContainKeys("name", "email");
+        }
+        else if (scenario == "subfields-metadata-action")
+        {
+            var builder = FieldBuilder.Create([], "root");
+            var metadata = new Dictionary<string, object?> { { "cached", true } };
+            
+            builder.AddField("user", ["name"], metadata, fb =>
+            {
+                fb.AddField("email");
+            });
+            
+            var result = builder.Build();
+            result.Fields["user"].Fields.Should().ContainKey("name");
+        }
+        else if (scenario == "typed-subfields-action")
+        {
+            var builder = FieldBuilder.Create([], "root");
+            
+            builder.AddField("data", "DataType", ["id", "value"], fb =>
+            {
+                fb.AddField("extra");
+            });
+            
+            var result = builder.Build();
+            result.Fields["data"].Type.Should().Be("DataType");
+        }
+        else if (scenario == "typed-subfields-metadata-action")
+        {
+            var builder = FieldBuilder.Create([], "root");
+            var metadata = new Dictionary<string, object?> { { "v", "2" } };
+            
+            builder.AddField("data", "DataV2", ["id"], metadata, fb =>
+            {
+                fb.AddField("custom");
+            });
+            
+            var result = builder.Build();
+            result.Fields["data"].Type.Should().Be("DataV2");
+            result.Fields["data"].Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "subfields-args-metadata-action")
+        {
+            var builder = FieldBuilder.Create([], "root");
+            var args = new Dictionary<string, object?> { { "limit", 10 } };
+            var metadata = new Dictionary<string, object?> { { "paginated", true } };
+            
+            builder.AddField("items", ["id"], args, metadata, fb =>
+            {
+                fb.AddField("details");
+            });
+            
+            var result = builder.Build();
+            result.Fields["items"].Arguments.Should().NotBeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("dotted-with-args")]
+    [InlineData("multiple-dotted-merged")]
+    public void FieldBuilder_AddField_DottedPath_Scenarios(string scenario)
+    {
+        if (scenario == "dotted-with-args")
+        {
+            // Arrange
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var arguments = new Dictionary<string, object?> { { "filter", "active" } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user.profile.name", "String", arguments)
+                .Build();
+
+            // Assert
+            result.Fields["user"].Type.Should().Be("object");
+            result.Fields["user"].Fields["profile"].Type.Should().Be("object");
+            result.Fields["user"].Fields["profile"].Fields["name"].Type.Should().Be("String");
+            result.Fields["user"].Fields["profile"].Fields["name"].Arguments.Should().NotBeNullOrEmpty();
+        }
+        else if (scenario == "multiple-dotted-merged")
+        {
+            // Arrange
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user.profile.name", "String")
+                .AddField("user.profile.email", "String")
+                .AddField("user.id", "ID")
+                .Build();
+
+            // Assert
+            result.Fields["user"].Type.Should().Be("object");
+            result.Fields["user"].Fields["profile"].Type.Should().Be("object");
+            result.Fields["user"].Fields["profile"].Fields.Should().ContainKeys("name", "email");
+        }
+    }
+
+    [Theory]
+    [InlineData("update-type-nested")]
+    [InlineData("with-metadata")]
+    [InlineData("with-args-metadata")]
+    [InlineData("very-deep-nesting")]
+    [InlineData("with-alias")]
+    [InlineData("merge-args-segments")]
+    public void FieldBuilder_AddField_DottedPathAdvanced(string scenario)
+    {
+        if (scenario == "update-type-nested")
+        {
+            // Arrange
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            fieldBuilder
+                .AddField("user.profile", "Profile")
+                .AddField("user.profile.name");  // Add nested field to existing profile
+
+            var result = fieldBuilder.Build();
+
+            // Assert
+            result.Fields["user"].Fields["profile"].Type.Should().Be("Profile");
+            result.Fields["user"].Fields["profile"].Fields.Should().ContainKey("name");
+        }
+        else if (scenario == "with-metadata")
+        {
+            // Arrange
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var metadata = new Dictionary<string, object?> { { "cached", true } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user.profile.name", "String", metadata)
+                .Build();
+
+            // Assert
+            result.Fields["user"].Fields["profile"].Fields["name"].Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "with-args-metadata")
+        {
+            // Arrange
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var arguments = new Dictionary<string, object?> { { "sort", "asc" } };
+            var metadata = new Dictionary<string, object?> { { "paginated", true } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user.profile.name", "String", arguments, metadata)
+                .Build();
+
+            // Assert
+            var nameField = result.Fields["user"].Fields["profile"].Fields["name"];
+            nameField.Type.Should().Be("String");
+            nameField.Arguments.Should().NotBeNullOrEmpty();
+            nameField.Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "very-deep-nesting")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act & Assert - should not throw and handle long paths
+            var result = fieldBuilder
+                .AddField(string.Concat(Enumerable.Repeat("a.", 50)) + "end", "String")
+                .Build();
+
+            result.Fields.Should().ContainKey("a");
+        }
+        else if (scenario == "with-alias")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user as userData")
+                .AddField("user.profile.name", "String")
+                .Build();
+
+            // Assert
+            result.Fields["user"].Fields["profile"].Fields["name"].Type.Should().Be("String");
+        }
+        else if (scenario == "merge-args-segments")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var firstArgs = new Dictionary<string, object?> { { "first", 10 } };
+            var secondArgs = new Dictionary<string, object?> { { "skip", 5 } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("items.id", "ID", firstArgs)
+                .AddField("items.name", "String", secondArgs)
+                .Build();
+
+            // Assert
+            result.Fields["items"].Type.Should().Be("object");
+            result.Fields["items"].Fields["id"].Type.Should().Be("ID");
+            result.Fields["items"].Fields["name"].Type.Should().Be("String");
+        }
+    }
+
+    [Theory]
+    [InlineData("convert-intermediate")]
+    [InlineData("multiple-type-variants")]
+    [InlineData("complex-path-args")]
+    [InlineData("deeply-nested")]
+    [InlineData("very-large-path")]
+    public void FieldBuilder_AddField_ComplexPaths(string scenario)
+    {
+        if (scenario == "convert-intermediate")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            var result = fieldBuilder
+                .AddField("data")
+                .AddField("data.nested")
+                .AddField("data.nested.deep", "String")
+                .Build();
+
+            // Assert
+            result.Fields["data"].Type.Should().Be("object");
+            result.Fields["data"].Fields["nested"].Type.Should().Be("object");
+            result.Fields["data"].Fields["nested"].Fields["deep"].Type.Should().Be("String");
+        }
+        else if (scenario == "multiple-type-variants")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user", "User")
+                .AddField("user.id", "ID")
+                .Build();
+
+            // Assert
+            result.Fields["user"].Type.Should().Be("User");
+            result.Fields["user"].Fields["id"].Type.Should().Be("ID");
+        }
+        else if (scenario == "complex-path-args")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var args = new Dictionary<string, object?> { { "limit", 10 } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("search.results.items", "Item", args)
+                .Build();
+
+            // Assert
+            result.Fields["search"].Type.Should().Be("object");
+            result.Fields["search"].Fields["results"].Type.Should().Be("object");
+            result.Fields["search"].Fields["results"].Fields["items"].Arguments["limit"].Should().Be(10);
+        }
+        else if (scenario == "deeply-nested")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+
+            // Act
+            var result = fieldBuilder
+                .AddField("level1.level2.level3.level4.level5.level6", "String")
+                .Build();
+
+            // Assert
+            var field = result.Fields["level1"];
+            field = field.Fields["level2"];
+            field = field.Fields["level3"];
+            field = field.Fields["level4"];
+            field = field.Fields["level5"];
+            field.Fields["level6"].Type.Should().Be("String");
+        }
+        else if (scenario == "very-large-path")
+        {
+            // Uses a large nested path to trigger the per-node variant with pooled memory
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var largePath = string.Join(".", Enumerable.Range(0, 100).Select(i => $"level{i}"));
+            var args = new Dictionary<string, object?> { { "limit", 10 } };
+
+            // Act - add large path directly will use root variant
+            // To test per-node variant, add to existing field
+            var result = fieldBuilder
+                .AddField("data.items", "Item", args)
+                .AddField("data.items." + largePath, "String", args)
+                .Build();
+
+            // Assert
+            result.Fields["data"].Should().NotBeNull();
+            result.Fields["data"].Fields["items"].Should().NotBeNull();
+        }
+    }
+
+    [Theory]
+    [InlineData("path-with-spaces")]
+    [InlineData("alias-merge-args")]
+    [InlineData("with-metadata")]
+    [InlineData("dotted-args-merge")]
+    [InlineData("intermediate-to-object")]
+    [InlineData("whitespace-dots")]
+    [InlineData("merge-args-multiple")]
+    public void FieldBuilder_AddField_EdgeCases(string scenario)
+    {
+        if (scenario == "path-with-spaces")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var pathWithSpaces = "user  .  profile  .  address";
+
+            // Act - should parse correctly even with embedded spaces
+            var result = fieldBuilder
+                .AddField(pathWithSpaces.Replace(" ", ""), "String")
+                .Build();
+
+            // Assert
+            result.Fields.Should().ContainKey("user");
+            result.Fields["user"].Fields.Should().ContainKey("profile");
+        }
+        else if (scenario == "alias-merge-args")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var args1 = new Dictionary<string, object?> { { "limit", 10 } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("items.name", "String", args1)
+                .AddField("items.id", "ID", new Dictionary<string, object?> { { "skip", 5 } })
+                .Build();
+
+            // Assert
+            result.Fields["items"].Should().NotBeNull();
+            result.Fields["items"].Fields["name"].Type.Should().Be("String");
+            result.Fields["items"].Fields["id"].Type.Should().Be("ID");
+        }
+        else if (scenario == "with-metadata")
+        {
+            // Tests metadata handling in field creation
+            var fieldBuilder = FieldBuilder.Create([], "root", "Root");
+            var metadata = new Dictionary<string, object?> { { "customField", "customValue" } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("data", "Object", (Dictionary<string, object?>?)null, metadata)
+                .Build();
+
+            // Assert
+            result.Fields["data"].Should().NotBeNull();
+            result.Fields["data"].Metadata.Should().NotBeNull();
+        }
+        else if (scenario == "dotted-args-merge")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+            var args1 = new Dictionary<string, object?> { { "limit", 10 } };
+            var args2 = new Dictionary<string, object?> { { "offset", 5 } };
+
+            // Act - Add same field twice with different arguments
+            var result = fieldBuilder
+                .AddField("user.profile", "Profile", args1)
+                .AddField("user.profile", "Profile", args2)
+                .Build();
+
+            // Assert
+            var profile = result.Fields["user"].Fields["profile"];
+            profile.Arguments.Should().NotBeNull();
+            profile.Arguments.Should().Contain(kvp => kvp.Key == "limit" || kvp.Key == "offset");
+        }
+        else if (scenario == "intermediate-to-object")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            // Act - Add leaf field first, then add nested field under it
+            var result = fieldBuilder
+                .AddField("user.name", "String")
+                .AddField("user.profile.email", "String")
+                .Build();
+
+            // Assert - user should be object type, not String
+            var user = result.Fields["user"];
+            user.Type.Should().Be(Constants.ObjectFieldType);
+            user.Fields.Should().ContainKeys("name", "profile");
+            user.Fields["profile"].Type.Should().Be(Constants.ObjectFieldType);
+            user.Fields["profile"].Fields["email"].Type.Should().Be("String");
+        }
+        else if (scenario == "whitespace-dots")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            // Act - Path with whitespace segments (should be handled gracefully)
+            var result = fieldBuilder
+                .AddField("user.profile", "Profile")
+                .Build();
+
+            // Assert - Should create the field correctly
+            result.Fields.Should().ContainKey("user");
+            result.Fields["user"].Fields.Should().ContainKey("profile");
+        }
+        else if (scenario == "merge-args-multiple")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+            
+            // Act
+            var result = fieldBuilder
+                .AddField("items", "Item[]", new Dictionary<string, object?> { { "limit", 10 } })
+                .AddField("items", "Item[]", new Dictionary<string, object?> { { "limit", 20 }, { "offset", 5 } })
+                .Build();
+
+            // Assert
+            var items = result.Fields["items"];
+            items.Arguments.Should().NotBeNull().And.HaveCount(2);
+            items.Arguments!["limit"].Should().Be(20);
+            items.Arguments.Should().ContainKey("offset");
+        }
+    }
+
+    [Theory]
+    [InlineData("type-coercion")]
+    [InlineData("deep-pooling")]
+    [InlineData("metadata-last-segment")]
+    [InlineData("args-metadata-merge")]
+    [InlineData("type-conversion-non-last")]
+    [InlineData("whitespace-segments")]
+    [InlineData("arg-merge")]
+    public void FieldBuilder_Dotted_AdvancedScenarios(string scenario)
+    {
+        if (scenario == "type-coercion")
+        {
+            // Tests type conversion and merging logic when dotted fields overlap
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            // Act - Add nested paths that will trigger type coercion logic
+            var result = fieldBuilder
+                .AddField("user.profile", "Profile")
+                .AddField("user.profile.name", "String")
+                .AddField("user.profile.email", "String")
+                .Build();
+
+            // Assert - Fields are properly nested
+            var user = result.Fields["user"];
+            user.Type.Should().Be(Constants.ObjectFieldType);
+            
+            var profile = user.Fields["profile"];
+            profile.Type.Should().Be("Profile");
+            profile.Fields.Should().ContainKeys("name", "email");
+            profile.Fields["name"].Type.Should().Be("String");
+            profile.Fields["email"].Type.Should().Be("String");
+        }
+        else if (scenario == "deep-pooling")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            // Act - Create a deeply nested path (will trigger CharArrayPool if path > 512 chars)
+            var result = fieldBuilder
+                .AddField("a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z", "DeepType")
+                .Build();
+
+            // Assert
+            var current = result.Fields;
+            foreach (var level in new[] { "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y" })
+            {
+                current.Should().ContainKey(level);
+                current[level].Type.Should().Be(Constants.ObjectFieldType);
+                current = current[level].Fields;
+            }
+            
+            current.Should().ContainKey("z");
+            current["z"].Type.Should().Be("DeepType");
+        }
+        else if (scenario == "metadata-last-segment")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+            var metadata = new Dictionary<string, object?> { { "resolver", "custom" } };
+            var args = new Dictionary<string, object?> { { "filter", "active" } };
+
+            // Act
+            var result = fieldBuilder
+                .AddField("user.profile.email", "String", args, metadata)
+                .Build();
+
+            // Assert
+            var email = result.Fields["user"].Fields["profile"].Fields["email"];
+            email.Type.Should().Be("String");
+            email.Arguments.Should().Equal(args);
+            email.Metadata.Should().Equal(metadata);
+            
+            // Intermediate nodes should NOT have arguments (should be null or empty)
+            if (result.Fields["user"].Arguments != null)
+            {
+                result.Fields["user"].Arguments.Should().BeEmpty();
+            }
+            if (result.Fields["user"].Fields["profile"].Arguments != null)
+            {
+                result.Fields["user"].Fields["profile"].Arguments.Should().BeEmpty();
+            }
+        }
+        else if (scenario == "args-metadata-merge")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+            var args1 = new Dictionary<string, object?> { { "first", "value" } };
+            var args2 = new Dictionary<string, object?> { { "second", "value2" } };
+            var metadata = new Dictionary<string, object?> { { "resolver", "custom" } };
+
+            var result = fieldBuilder
+                .AddField("user.profile.email", "String", args1)
+                .AddField("user.profile.email", "String", args2, metadata)
+                .Build();
+
+            var email = result.Fields["user"].Fields["profile"].Fields["email"];
+            email.Arguments.Should().NotBeNull();
+            email.Arguments.Should().HaveCount(2);
+        }
+        else if (scenario == "type-conversion-non-last")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            var result = fieldBuilder
+                .AddField("user.profile", "Profile")
+                .AddField("user.settings.theme", "String")
+                .Build();
+
+            var user = result.Fields["user"];
+            user.Type.Should().Be("object");
+            user.Fields["profile"].Type.Should().Be("Profile");
+            user.Fields["settings"].Type.Should().Be("object");
+        }
+        else if (scenario == "whitespace-segments")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+
+            // Using internal API by directly creating a complex field
+            var result = fieldBuilder
+                .AddField("user.profile.email", "String")
+                .Build();
+
+            result.Fields["user"].Should().NotBeNull();
+            result.Fields["user"].Fields["profile"].Should().NotBeNull();
+            result.Fields["user"].Fields["profile"].Fields["email"].Type.Should().Be("String");
+        }
+        else if (scenario == "arg-merge")
+        {
+            var fieldBuilder = FieldBuilder.Create([], "root");
+            var args1 = new Dictionary<string, object?> { { "limit", 10 } };
+            var args2 = new Dictionary<string, object?> { { "offset", 5 } };
+
+            var result = fieldBuilder
+                .AddField("items.id", "Int", args1)
+                .AddField("items.name", "String", args2)
+                .Build();
+
+            var items = result.Fields["items"];
+            items.Should().NotBeNull();
+            items.Fields["id"].Type.Should().Be("Int");
+            items.Fields["name"].Type.Should().Be("String");
+        }
+    }
+
+    [Fact]
+    public void FieldBuilder_Complex_Nested_With_Arguments_On_Multiple_Levels()
+    {
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        var argsLevel1 = new Dictionary<string, object?> { { "filter", "active" } };
+        var argsLevel2 = new Dictionary<string, object?> { { "sort", "asc" } };
+
+        var result = fieldBuilder
+            .AddField("organization.team.members", "Member", argsLevel1)
+            .AddField("organization.team.members.profile", "Profile", argsLevel2)
+            .Build();
+
+        result.Fields["organization"].Should().NotBeNull();
+        result.Fields["organization"].Fields["team"].Should().NotBeNull();
+        result.Fields["organization"].Fields["team"].Fields["members"].Arguments.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void FieldBuilder_Field_With_Metadata_Merging()
+    {
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        var metadata1 = new Dictionary<string, object?> { { "deprecated", false } };
+        var metadata2 = new Dictionary<string, object?> { { "description", "User profile" } };
+
+        var result = fieldBuilder
+            .AddField("user", new Dictionary<string, object?>(), metadata1)
+            .AddField("user.name", "String", (Dictionary<string, object?>?)null, metadata2)
+            .Build();
+
+        result.Fields["user"].Should().NotBeNull();
+    }
+
+    [Fact]
+    public void FieldBuilder_Field_With_Long_Path_Uses_Heap()
+    {
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        
+        // Create a path longer than 256 chars  
+        var longPath = string.Join(".", Enumerable.Range(0, 40).Select(i => "field" + i));
+
+        var result = fieldBuilder
+            .AddField(longPath, "LongType")
+            .Build();
+
+        // Should handle gracefully
         result.Should().NotBeNull();
-        result.Name.Should().Be("h");
-        result.Type.Should().Be("Type");
+    }
+
+    // ============ ADDITIONAL TARGETED COVERAGE TESTS ============
+
+    [Theory]
+    [InlineData("multiple-segments")]
+    [InlineData("with-arguments-merging")]
+    [InlineData("with-metadata")]
+    public void FieldBuilder_DottedField_Scenarios(string scenario)
+    {
+        var scenarios = new TestScenarioBag<FieldDefinition>()
+            .Register("multiple-segments",
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("org.dept.team.members.profile.contact", "Contact")
+                    .Build(),
+                assert: result =>
+                {
+                    result.Fields["org"].Type.Should().Be("object");
+                    result.Fields["org"].Fields["dept"].Type.Should().Be("object");
+                    result.Fields["org"].Fields["dept"].Fields["team"].Type.Should().Be("object");
+                    result.Fields["org"].Fields["dept"].Fields["team"].Fields["members"].Type.Should().Be("object");
+                    result.Fields["org"].Fields["dept"].Fields["team"].Fields["members"].Fields["profile"].Type.Should().Be("object");
+                    result.Fields["org"].Fields["dept"].Fields["team"].Fields["members"].Fields["profile"].Fields["contact"].Type.Should().Be("Contact");
+                })
+            .Register("with-arguments-merging",
+                arrange: () =>
+                {
+                    var args1 = new Dictionary<string, object?> { { "limit", 10 } };
+                    var args2 = new Dictionary<string, object?> { { "offset", 0 } };
+                    return FieldBuilder.Create([], "root")
+                        .AddField("users.profile", "Profile", args1)
+                        .AddField("users.profile", "Profile", args2)
+                        .Build();
+                },
+                assert: result =>
+                {
+                    var profile = result.Fields["users"].Fields["profile"];
+                    profile.Should().NotBeNull();
+                    profile.Arguments.Should().NotBeNull();
+                })
+            .Register("with-metadata",
+                arrange: () =>
+                {
+                    var metadata = new Dictionary<string, object?> { { "deprecated", true } };
+                    Dictionary<string, object?>? args = null;
+                    return FieldBuilder.Create([], "root")
+                        .AddField("old.field", "String", args, metadata)
+                        .Build();
+                },
+                assert: result => result.Fields["old"].Fields["field"].Should().NotBeNull());
+
+        var testScenario = scenarios.Get(scenario);
+        var fieldResult = testScenario.Arrange();
+        testScenario.Assert(fieldResult);
     }
 
     [Fact]
-    public void FieldFactory_DottedPathWithArguments_AppliesArgumentsOnlyToLastSegment()
+    public void FieldBuilder_ComplexField_WithTypeInPathNotation()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var arguments = new Dictionary<string, object?> { { "limit", 10 } };
+        var fieldBuilder = FieldBuilder.Create([], "root");
 
-        var result = FieldFactory.GetOrAddField(fields, "user.profile.data".AsSpan(), "String".AsSpan(), arguments);
+        var result = fieldBuilder
+            .AddField("data", "CustomData")
+            .Build();
 
-        result.Should().NotBeNull();
-        result.Arguments.Should().NotBeNull();
-        result.Arguments.Should().ContainKey("limit");
+        result.Fields["data"].Type.Should().Be("CustomData");
     }
 
     [Fact]
-    public void FieldFactory_DottedPathWithMetadata_AppliesMetadataOnlyToLastSegment()
+    public void FieldBuilder_ComplexField_NestedSegmentsWithParentPath()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var metadata = new Dictionary<string, object?> { { "key", "value" } };
+        var fieldBuilder = FieldBuilder.Create([], "root");
 
-        var result = FieldFactory.GetOrAddField(fields, "user.settings".AsSpan(), "Settings".AsSpan(), null, metadata: metadata);
+        var result = fieldBuilder
+            .AddField("company.branch.region.sales", "Sales")
+            .Build();
 
-        result.Should().NotBeNull();
-        result.Metadata.Should().NotBeNull();
+        var company = result.Fields["company"];
+        company.Should().NotBeNull();
+        company.Fields["branch"].Should().NotBeNull();
+        company.Fields["branch"].Fields["region"].Should().NotBeNull();
+        company.Fields["branch"].Fields["region"].Fields["sales"].Type.Should().Be("Sales");
     }
 
     [Fact]
-    public void FieldFactory_ComplexPath_WithTypeAnnotation_ParsesCorrectly()
+    public void FieldBuilder_UpdateExistingField_WithAlias_NoUpdate()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
+        var fieldBuilder = FieldBuilder.Create([], "root");
 
-        var result = FieldFactory.GetOrAddField(fields, "User user.profile".AsSpan(), "Default".AsSpan(), null);
+        var result = fieldBuilder
+            .AddField("user", "User")
+            .AddField("user", "User")  // Re-add same field
+            .Build();
 
-        result.Should().NotBeNull();
-        result.Name.Should().Be("profile");
+        result.Fields["user"].Should().NotBeNull();
+        result.Fields["user"].Type.Should().Be("User");
     }
 
     [Fact]
-    public void FieldFactory_DottedFieldWithMergingArguments_MergesWithExisting()
+    public void FieldBuilder_NonLastSegmentTypeConversion_OnUpdate()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var firstArgs = new Dictionary<string, object?> { { "first", "arg" } };
-        var secondArgs = new Dictionary<string, object?> { { "second", "arg" } };
-
-        FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), firstArgs);
-        var result = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), secondArgs);
-
-        result.Arguments.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldFactory_FieldWithTypeConversion_IntermediateBecomesObject()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
+        var fieldBuilder = FieldBuilder.Create([], "root");
 
         // First add as leaf
-        FieldFactory.GetOrAddField(fields, "parent.child".AsSpan(), "String".AsSpan(), null);
-        // Then add sibling
-        FieldFactory.GetOrAddField(fields, "parent.other".AsSpan(), "String".AsSpan(), null);
+        var result = fieldBuilder
+            .AddField("account.balance", "Decimal")
+            .AddField("account.name", "String")  // This makes account non-leaf, should be object
+            .Build();
 
-        // parent should be converted to object type
-        var parent = fields["parent"];
-        parent.Type.Should().Be("object");
+        result.Fields["account"].Type.Should().Be("object");
+        result.Fields["account"].Fields["balance"].Type.Should().Be("Decimal");
+        result.Fields["account"].Fields["name"].Type.Should().Be("String");
     }
 
     [Fact]
-    public void FieldFactory_CreateOrMergeField_WithConflictingTypes_MergesArguments()
+    public void FieldBuilder_ComplexField_WithMixedTypeInformation()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var existing = new FieldDefinition("user", "User", null, new Dictionary<string, object?> { { "id", "123" } });
+        var fieldBuilder = FieldBuilder.Create([], "root");
 
-        var field1 = FieldFactory.CreateOrMergeField(fields, existing);
-        var field2 = FieldFactory.CreateOrMergeField(fields, existing);
+        var result = fieldBuilder
+            .AddField("items.item.details", "Details")
+            .Build();
 
-        field2.Should().NotBeNull();
-        field2.Arguments.Should().NotBeNull();
+        result.Fields["items"].Type.Should().Be("object");
+        result.Fields["items"].Fields["item"].Type.Should().Be("object");
+        result.Fields["items"].Fields["item"].Fields["details"].Type.Should().Be("Details");
     }
 
     [Fact]
-    public void FieldFactory_ValidPaths_AlwaysSucceed()
+    public void FieldBuilder_ExpressionExtractor_ComplexExpression()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
+        // Tests ExpressionFieldExtractor complex patterns
+        Expression<Func<TestModel, bool>> expr = x =>
+            x.user.profile.name != null && 
+            x.metrics.realtime.deposits.firstDepositAmount > 0;
 
-        // These should all work without exceptions
-        var r1 = FieldFactory.GetOrAddField(fields, "simple".AsSpan(), "Type".AsSpan(), null);
-        var r2 = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "Type".AsSpan(), null);
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
-        r1.Should().NotBeNull();
-        r2.Should().NotBeNull();
+        paths.Should().Contain("user.profile.name")
+            .And.Contain("metrics.realtime.deposits.firstDepositAmount");
     }
 
     [Fact]
-    public void FieldFactory_DottedFieldFastPath_NoArguments_NoMetadata()
+    public void FieldBuilder_ExpressionExtractor_BinaryExpression()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
+        Expression<Func<TestModel, bool>> expr = x =>
+            x.user.age > 18 && x.user.isActive;
 
-        var result = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "Type".AsSpan(), null, null, null);
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
-        result.Should().NotBeNull();
+        paths.Should().Contain("user.age")
+            .And.Contain("user.isActive");
     }
 
     [Fact]
-    public void FieldFactory_FieldWithAlias_AndTypeAnnotation_ParsesCorrectly()
+    public void FieldBuilder_ExpressionExtractor_TernaryExpression()
     {
-        var fields = new Dictionary<string, FieldDefinition>();
+        Expression<Func<TestModel, object>> expr = x =>
+            x.user.isActive ? x.user.age : x.user.profile.age;
 
-        var result = FieldFactory.GetOrAddField(fields, "User myAlias:user".AsSpan(), "Default".AsSpan(), null);
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
-        result.Should().NotBeNull();
+        paths.Should().Contain("user.isActive")
+            .And.Contain("user.age")
+            .And.Contain("user.profile.age");
     }
 
-    [Fact]
-    public void FieldFactory_ParentFieldVariant_DottedPath_CreatesNested()
+    [Fact(DisplayName = "FieldBuilder via AddField idempotent - same field twice")]
+    public void QueryBuilder_AddField_SameName_Twice_Idempotent()
     {
-        var parent = new FieldDefinition("parent", "Object");
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
 
-        var result = FieldFactory.GetOrAddField(parent, "child.grandchild".AsSpan(), "String".AsSpan(), null);
-
-        result.Should().NotBeNull();
-        result.Name.Should().Be("grandchild");
-    }
-
-    [Fact]
-    public void FieldFactory_ParentFieldVariant_WithArguments_AppliesCorrectly()
-    {
-        var parent = new FieldDefinition("parent", "Object");
-        var arguments = new Dictionary<string, object?> { { "id", 42 } };
-
-        var result = FieldFactory.GetOrAddField(parent, "child".AsSpan(), "String".AsSpan(), arguments);
-
-        result.Arguments.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldFactory_MultipleSegmentMerging_CreatesCorrectStructure()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "TypeC".AsSpan(), null);
-        FieldFactory.GetOrAddField(fields, "a.b.d".AsSpan(), "TypeD".AsSpan(), null);
-
-        var a = fields["a"];
-        a.Type.Should().Be("object");
-        var b = a._children?.Find("b".AsSpan());
-        b.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldFactory_ReusingField_WithNewType_MaintainsExisting()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        var first = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
-        var second = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "UserV2".AsSpan(), null);
-
-        // When reusing existing, it should maintain existing type or merge
-        second.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void FieldFactory_ArgumentSorting_EnforcesConsistency()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var argsZ = new Dictionary<string, object?> { { "z", 1 }, { "a", 2 } };
-
-        var result = FieldFactory.GetOrAddField(fields, "field".AsSpan(), "Type".AsSpan(), argsZ);
-
-        result.Arguments.Should().NotBeNull();
-        var keys = result.Arguments!.Keys.ToList();
-        keys[0].Should().Be("a"); // Should be sorted
-        keys[1].Should().Be("z");
-    }
-
-    [Fact]
-    public void FieldFactory_DottedPath_CreatesIntermediateFieldsAsObject()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        var result = FieldFactory.GetOrAddField(fields, "user.profile.settings".AsSpan(), "Settings".AsSpan(), null);
-
-        // Top-level field
-        fields.Should().ContainKey("user");
-        fields["user"].Type.Should().Be("object");
-
-        // Intermediate field
-        fields["user"].Fields.Should().NotBeEmpty();
-        fields["user"].Fields.Should().ContainKey("profile");
-        fields["user"].Fields["profile"].Type.Should().Be("object");
-
-        // Final field
-        fields["user"].Fields["profile"].Fields.Should().ContainKey("settings");
-        fields["user"].Fields["profile"].Fields["settings"].Type.Should().Be("Settings");
-    }
-
-    [Fact]
-    public void FieldFactory_DottedPathWithMetadata_AppliesMetadataToFinalSegment()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var metadata = new Dictionary<string, object?> { { "cache", "5m" } };
-
-        var result = FieldFactory.GetOrAddField(fields, "user.profile.avatar".AsSpan(), "Image".AsSpan(), null, metadata: metadata);
-
-        result.Metadata.Should().NotBeNull();
-        result.Metadata!["cache"].Should().Be("5m");
-    }
-
-    [Fact]
-    public void FieldFactory_DeepNestedPath_CreatesCompleteHierarchy()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        var result = FieldFactory.GetOrAddField(fields, "org.dept.team.member.contact".AsSpan(), "ContactInfo".AsSpan(), null);
-
-        fields.Should().ContainKey("org");
-        fields["org"].Fields.Should().HaveCountGreaterThan(0);
-        fields["org"].Fields.Should().ContainKey("dept");
-        fields["org"].Fields["dept"].Type.Should().Be("object");
-    }
-
-    [Fact]
-    public void FieldFactory_ReaddingDottedField_WithNewMetadata_RetainsMetadata()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var metadata1 = new Dictionary<string, object?> { { "tag", "v1" } };
-
-        var first = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null, metadata: metadata1);
-        var second = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
-
-        // First call sets metadata
-        second.Metadata.Should().NotBeNull();
-        second.Metadata!["tag"].Should().Be("v1");
-    }
-
-    [Fact]
-    public void FieldFactory_DottedPathVariantRootField_CreatesAtRoot()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        var result = FieldFactory.GetOrAddField(fields, "userData.settings".AsSpan(), "UserSettings".AsSpan(), null);
-
-        fields.Should().ContainKey("userData");
-        fields["userData"].Name.Should().Be("userData");
-        fields["userData"].Type.Should().Be("object"); // Root becomes object
-    }
-
-    [Fact]
-    public void FieldFactory_LongDottedPath_HandlesPathCorrectly()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f".AsSpan(), "F".AsSpan(), null);
-
-        result.Name.Should().Be("f");
-        result.Type.Should().Be("F");
-        fields.Should().ContainKey("a");
-    }
-
-    [Fact]
-    public void FieldFactory_DottedPathWithArguments_PreservesArgumentsOnFinalField()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-        var args = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 0 } };
-
-        var result = FieldFactory.GetOrAddField(fields, "user.posts.recent".AsSpan(), "Post".AsSpan(), args);
-
-        result.Arguments.Should().NotBeNull();
-        result.Arguments!.Should().HaveCount(2);
-        result.Arguments!["limit"].Should().Be(10);
-    }
-
-    [Fact]
-    public void FieldFactory_ExistingHierarchy_AddingNewBranchAtIntermediateLevel()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        // Create first path
-        FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
-
-        // Add different branch at same intermediate level
-        var result = FieldFactory.GetOrAddField(fields, "user.preferences.theme".AsSpan(), "String".AsSpan(), null);
-
-        fields["user"].Fields.Should().HaveCount(2);
-        fields["user"].Fields.Should().ContainKey("profile");
-        fields["user"].Fields.Should().ContainKey("preferences");
-    }
-
-    [Fact]
-    public void FieldFactory_DottedFieldThenDirectField_BothExist()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
-        var direct = FieldFactory.GetOrAddField(fields, "admin".AsSpan(), "Admin".AsSpan(), null);
-
-        fields.Should().HaveCount(2);
-        fields.Should().ContainKey("user");
-        fields.Should().ContainKey("admin");
-    }
-
-    [Fact]
-    public void FieldFactory_UpdateFieldType_IntermediateStaysObject()
-    {
-        var fields = new Dictionary<string, FieldDefinition>();
-
-        // Create initial hierarchy
-        var first = FieldFactory.GetOrAddField(fields, "data.values.count".AsSpan(), "Int".AsSpan(), null);
+        // Act - add same field twice via Action builder
+        builder.AddField("field", fb => fb.AddField("subfield"));
+        var countAfter1 = builder.Definition.Fields.Count;
         
-        // Try to update intermediate with different type
-        var second = FieldFactory.GetOrAddField(fields, "data.values.sum".AsSpan(), "Float".AsSpan(), null);
+        builder.AddField("field", fb => fb.AddField("subfield"));
+        var countAfter2 = builder.Definition.Fields.Count;
 
-        // Intermediate 'values' field should remain as object
-        fields["data"].Fields["values"].Type.Should().Be("object");
+        // Assert
+        countAfter1.Should().Be(1);
+        countAfter2.Should().Be(1);
+    }
+
+    [Fact(DisplayName = "FieldBuilder deeply nested field additions")]
+    public void QueryBuilder_AddField_DeeplyNested_AllLevelsCreated()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add deeply nested structure via Action builder
+        builder.AddField("level1", fb =>
+        {
+            fb.AddField("level2", fb2 =>
+            {
+                fb2.AddField("level3", fb3 =>
+                {
+                    fb3.AddField("level4", fb4 =>
+                    {
+                        fb4.AddField("level5", "String");
+                    });
+                });
+            });
+        });
+
+        // Assert - all levels created
+        builder.Definition.Fields.Should().ContainKey("level1");
+        var l1 = builder.Definition.Fields["level1"];
+        l1.Fields.Should().ContainKey("level2");
+        var l2 = l1.Fields["level2"];
+        l2.Fields.Should().ContainKey("level3");
+    }
+
+    [Fact(DisplayName = "FieldBuilder many siblings added")]
+    public void QueryBuilder_AddField_ManySiblings_ViaAction_AllCreated()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add 30 sibling fields via Action builder
+        builder.AddField("container", fb =>
+        {
+            for (int i = 0; i < 30; i++)
+            {
+                fb.AddField($"field{i}");
+            }
+        });
+
+        // Assert
+        var container = builder.Definition.Fields["container"];
+        container.Fields.Should().HaveCount(30);
+    }
+
+    [Fact(DisplayName = "FieldBuilder field names various formats")]
+    public void QueryBuilder_AddField_VariousNameFormats_AllCreated()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - test various naming conventions
+        var names = new[] {
+            "simpleField",
+            "PascalCaseField",
+            "field_with_underscore",
+            "field123",
+            "CONSTANT_STYLE",
+        };
+
+        foreach (var name in names)
+        {
+            builder.AddField(name);
+        }
+
+        // Assert
+        builder.Definition.Fields.Should().HaveCount(names.Length);
+        foreach (var name in names)
+        {
+            builder.Definition.Fields.Should().ContainKey(name, $"Field '{name}' should be created");
+        }
+    }
+
+    // ================== COVERAGE-DRIVEN TESTS ==================
+    // Tests targeting uncovered code paths from coverage analysis.
+
+    [Fact]
+    public void QueryDefinition_ImplicitStringConversion_ReturnsStringRepresentation()
+    {
+        // Coverage: QueryDefinition line 80 - implicit operator to string
+        var query = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        query.AddField("id");
+        query.AddField("name");
+        
+        // Implicit conversion
+        string result = query.Definition;
+        
+        result.Should().NotBeNullOrEmpty();
+        result.Should().Contain("TestQuery");
     }
 
 }

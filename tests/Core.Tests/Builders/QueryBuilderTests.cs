@@ -51,12 +51,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_With_Type_Triggers_InternType_Path()
     {
-        // This test verifies that the hasExplicitType path (line 393-396) is covered
-        // The InternType code is only reached when:
-        // 1. hasSubFields = true (subfields provided)
-        // 2. Field string has a type prefix (e.g., "String user")
-        // 3. hasExplicitType = true (type != default after parsing)
-        
         // Arrange & Act
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("String user", subFields: ["profile", "email"]);  // Type prefix + subfields
@@ -408,7 +402,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_CreateFromDefinition_Should_Wrap_Existing_Definition()
     {
-        // Test uncovered line: CreateFromDefinition factory method (line 66)
         var definition = new QueryDefinition("ExistingQuery");
         definition.Fields["user"] = new FieldDefinition("user", "User");
         
@@ -422,7 +415,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_With_FieldDefinitionArray_Should_Process_Correctly()
     {
-        // Test uncovered line: AddField(field, FieldDefinition[]?, metadata) overload (line 112)
         var subFieldDefs = new[]
         {
             new FieldDefinition("id", "ID"),
@@ -442,7 +434,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_With_FieldBuilder_Action_Should_Build_Nested_Structure()
     {
-        // Test uncovered line: AddField(field, Action<FieldBuilder>) overload (line 122-125)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("user", (Action<FieldBuilder>)(fb =>
             {
@@ -460,7 +451,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Null_Arguments_Dictionary_Should_Skip_Sorting()
     {
-        // Test the fast path optimization when arguments are null (line 78-81)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("simpleField", arguments: null, metadata: null);
 
@@ -470,7 +460,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Empty_Arguments_Dictionary_Should_Process_As_Null()
     {
-        // Test the condition when arguments.Count == 0 vs null (line 84)
         var emptyArgs = new Dictionary<string, object?>();
         
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
@@ -507,7 +496,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_DottedPath_With_Complex_Arguments_ShouldMerge()
     {
-        // Test FieldFactory.GetOrAddDottedField - merging with existing arguments (lines 69-112 uncovered)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("user.profile", new Dictionary<string, object?> { ["depth"] = 2 }, null, fb =>
             {
@@ -527,7 +515,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_DottedPath_Multiple_Levels_With_Arguments()
     {
-        // Test deep dotted path merging (lines 85-100 in FieldFactory)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("data.edges[0].node.user.profile.settings", new Dictionary<string, object?> { ["format"] = "detailed" })
             .AddField("data.edges[0].node.user.profile.avatar", new Dictionary<string, object?> { ["size"] = "large" });
@@ -540,7 +527,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Merge_Conflicting_Arguments_Should_Preserve()
     {
-        // Test FieldFactory merge behavior with argument conflicts (lines 213-255 uncovered)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("user", new Dictionary<string, object?> { ["id"] = "123" })
             .AddField("user", new Dictionary<string, object?> { ["format"] = "full" });
@@ -553,7 +539,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_DottedPath_With_Type_Specification()
     {
-        // Test type handling in dotted path merging (lines 105-112)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("user", "User", null)
             .AddField("user.profile", "Profile", null)
@@ -567,7 +552,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_DottedPath_Numeric_Index_Parsing()
     {
-        // Test numeric index handling in dotted paths (lines 156-170)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("results[0].items[5].data")
             .AddField("results[1].items[10].meta");
@@ -579,11 +563,10 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_DottedPath_With_Empty_Path_Segment()
     {
-        // Test edge case: empty path segments (lines 73-80)
         var action = () =>
         {
-            var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
-                .AddField("user..profile"); // Double dot creates empty segment
+            QueryBuilder.CreateDefaultBuilder("TestQuery")
+                .AddField("user..profile");
         };
 
         // Should handle gracefully without throwing
@@ -593,7 +576,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Complex_Field_Merging_With_Subfields()
     {
-        // Test FieldFactory merge logic with nested field children (lines 220-240)
         var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("user", fb => fb
                 .AddField("profile", pfb => pfb
@@ -613,7 +595,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Metadata_Merging_During_Dotted_Composition()
     {
-        // Test metadata preservation during complex merging (lines 235-250)
         var metadata1 = new Dictionary<string, object?> { ["version"] = 1 };
         var metadata2 = new Dictionary<string, object?> { ["cached"] = true };
 
@@ -629,7 +610,6 @@ public class QueryBuilderTests
     [Fact]
     public void QueryBuilder_AddField_Type_Override_During_Merge()
     {
-        // Test type specification behavior during merge (lines 106-112)
         var queryBuilder1 = QueryBuilder.CreateDefaultBuilder("TestQuery")
             .AddField("result", "GenericResult")
             .AddField("result", "SpecificResult");  // Type override
@@ -640,27 +620,14 @@ public class QueryBuilderTests
 
     // ============ PHASE 9.3a: Edge Case & Exception Testing ============
 
-    [Fact]
-    public void QueryBuilder_AddField_Null_FieldName_Should_Throw()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void QueryBuilder_AddField_InvalidFieldName_Should_Throw(string invalidFieldName)
     {
         var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
-        Action act = () => builder.AddField((string)null!);
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_Empty_FieldName_Should_Throw()
-    {
-        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
-        Action act = () => builder.AddField("");
-        act.Should().Throw<ArgumentException>();
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_Whitespace_OnlyFieldName_Should_Throw()
-    {
-        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
-        Action act = () => builder.AddField("   ");
+        Action act = () => builder.AddField(invalidFieldName!);
         act.Should().Throw<ArgumentException>();
     }
 
@@ -961,7 +928,7 @@ public class QueryBuilderTests
         var subArgs = new Dictionary<string, object?> { { "format", "ISO" } };
         
         var builder = QueryBuilder.CreateDefaultBuilder("TestQuery")
-            .AddField("user", args, new[] { "id", "name" })
+            .AddField("user", args, ["id", "name"])
             .AddField("user.createdAt", subArgs);
         
         var query = builder.ToString();
@@ -1230,8 +1197,8 @@ public class QueryBuilderTests
     public void QueryBuilder_AddField_MergingBehavior()
     {
         var builder = QueryBuilder.CreateDefaultBuilder("TestQuery")
-            .AddField("user", new[] { "id" })
-            .AddField("user", new[] { "name" });
+            .AddField("user", ["id"])
+            .AddField("user", ["name"]);
         
         var query = builder.ToString();
         query.Should().Contain("user");
@@ -1533,4 +1500,496 @@ public class QueryBuilderTests
         var query = builder.Definition;
         query.Should().NotBeNull();
     }
+
+    [Fact]
+    public void QueryBuilder_AddField_WithDictionaryArguments()
+    {
+        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        var args = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 20 } };
+        
+        builder.AddField("users", args);
+        
+        var query = builder.Definition;
+        query.Fields.Should().ContainKey("users");
+        query.Fields["users"].Arguments.Should().ContainKeys("limit", "offset");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_WithTypeAndDictionary()
+    {
+        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        var args = new Dictionary<string, object?> { { "filter", "active" } };
+        
+        builder.AddField("items", "ItemConnection", args);
+        
+        var query = builder.Definition;
+        query.Fields["items"].Type.Should().Be("ItemConnection");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_WithTypeDictionaryAndMetadata()
+    {
+        // Tests QueryBuilder type overload with metadata
+        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        var metadata = new Dictionary<string, object?> { { "cached", true } };
+        
+        builder.AddField("data", "DataType", metadata);
+        
+        var query = builder.Definition;
+        query.Fields["data"].Metadata.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_Arguments_And_SubFields_Should_ProcessSortedArguments()
+    {
+        // Arrange
+        var arguments = new Dictionary<string, object?> { { "id", 123 }, { "name", "Test" } };
+        var subFields = new[] { new FieldDefinition("id", "ID") };
+
+        // Act
+        var query = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", arguments, subFields)
+            .ToString();
+
+        // Assert
+        query.Should().Contain("user");
+        query.Should().Contain("id:123");
+        query.Should().Contain("name:\"Test\"");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_EmptyArguments_And_SubFields_Should_Ignore_EmptyDict()
+    {
+        // Arrange
+        var emptyArgs = new Dictionary<string, object?>();
+        var subFields = new[] { new FieldDefinition("id", "ID") };
+
+        // Act
+        var query = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", emptyArgs, subFields)
+            .ToString();
+
+        // Assert - Should not have arguments section since dict is empty
+        query.Should().Contain("user");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_Arguments_SubFields_And_Metadata_Should_Apply_All()
+    {
+        // Arrange
+        var arguments = new Dictionary<string, object?> { { "id", 42 } };
+        var subFields = new[] { new FieldDefinition("name", "String") };
+        var metadata = new Dictionary<string, object?> { { "description", "Test" } };
+
+        // Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", arguments, subFields, metadata);
+
+        // Assert
+        var userField = queryBuilder.Definition.Fields["user"];
+        userField.Arguments.Should().NotBeNullOrEmpty();
+        userField.Metadata.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_NestedDottedPath_With_Arguments_Should_Work()
+    {
+        // Arrange
+        var arguments = new Dictionary<string, object?> { { "id", 42 } };
+
+        // Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user.profile.name", arguments);
+
+        // Assert
+        queryBuilder.Definition.Fields["user"].Should().NotBeNull();
+        queryBuilder.Definition.Fields["user"].Fields["profile"].Should().NotBeNull();
+        queryBuilder.Definition.Fields["user"].Fields["profile"].Fields["name"].Arguments.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_ChainedWithBuilder_And_Subfields_Should_Create_Tree()
+    {
+        // Arrange
+        var userField = new FieldDefinition("id", "ID");
+        var subFields = new[] { userField };
+
+        // Act
+        var query = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", subFields)
+            .AddField("user", fb => fb.AddField("name"))
+            .ToString();
+
+        // Assert
+        query.Should().Contain("user");
+        query.Should().Contain("id");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_SimpleFieldNoArgumentsOrMetadata_ShouldWork()
+    {
+        // Arrange & Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("simpleField");
+
+        // Assert
+        queryBuilder.Definition.Fields.Should().ContainKey("simpleField");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_WithMetadataButNoArguments_ShouldApplyMetadata()
+    {
+        // Arrange
+        var metadata = new Dictionary<string, object?> { { "internal", true } };
+
+        // Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("fieldWithMeta", metadata);
+
+        // Assert
+        queryBuilder.Definition.Fields["fieldWithMeta"].Metadata.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_Type_Only_Should_Create_Simple_Field()
+    {
+        // Arrange & Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("userData", "User");
+
+        // Assert
+        queryBuilder.Definition.Fields["userData"].Type.Should().Be("User");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_Multiple_Times_Same_Field_With_Different_Args_Should_Merge()
+    {
+        // Arrange & Act
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", new Dictionary<string, object?> { { "id", 1 } })
+            .AddField("user", new Dictionary<string, object?> { { "name", "Test" } });
+
+        // Assert
+        var userField = queryBuilder.Definition.Fields["user"];
+        userField.Arguments.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_Preserve_Existing_Explicit_Type_When_Reused()
+    {
+        // Arrange - First add field with explicit type
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", "User");
+
+        // Assert that type is set
+        queryBuilder.Definition.Fields["user"].Type.Should().Be("User");
+
+        // Act - Add same field again with subfields
+        queryBuilder.AddField("user", fb => fb.AddField("id"));
+
+        // Assert - Type should be preserved
+        queryBuilder.Definition.Fields["user"].Type.Should().Be("User");
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_Preserve_Object_Type_When_Reused_With_Subfields()
+    {
+        // Arrange - First add field with subfields (creates object type)
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery")
+            .AddField("user", fb => fb.AddField("id"));
+
+        var initialType = queryBuilder.Definition.Fields["user"].Type;
+
+        // Act - Add same field again with subfields
+        queryBuilder.AddField("user", fb => fb.AddField("name"));
+
+        // Assert - Type should remain object
+        queryBuilder.Definition.Fields["user"].Type.Should().Be(initialType);
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_Empty_Field_Name_Throws()
+    {
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+
+        // Act & Assert
+        var action = () => queryBuilder.AddField("", "Type");
+        action.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void QueryBuilder_AddField_With_FieldBuilder_Null_Throws()
+    {
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+
+        // Act & Assert
+        var action = () => queryBuilder.AddField("user", (Action<FieldBuilder>)null!);
+        action.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void QueryBuilder_ResolveFieldType_PreserveExplicitType_Priority1_WithSubfields()
+    {
+        // When a field already has an explicit non-default, non-object type,
+        // that type should be preserved even when later adding with subfields via AddFieldCore
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        
+        // First, add a field with an explicit type via the string overload
+        queryBuilder.AddField("user", "User");
+        queryBuilder.Definition.Fields["user"].Type.Should().Be("User");
+        
+        // Now add the same field WITH an explicit array of subfields (hits AddFieldCore -> DetermineFieldTypeOptimized)
+        // Priority 1 should preserve the "User" type
+        queryBuilder.AddField("user", arguments: null, subFields: ["id", "name"]);
+        
+        // Type should still be "User" (Priority 1 preserved it)
+        queryBuilder.Definition.Fields["user"].Type.Should().Be("User");
+    }
+
+    [Fact]
+    public void QueryBuilder_ResolveFieldType_DefaultToObjectType_Priority4_WithSubfields()
+    {
+        // When a field WITH SUBFIELDS has no spaces in name (simple name) and no existing definition,
+        // DetermineFieldTypeOptimized returns "object" type (not "String")
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        
+        // Add a new field with simple name and subfields (no explicit type, no dots)
+        // This calls AddFieldCore which checks line 373-376: hasSpaces==false, so returns ObjectFieldType
+        queryBuilder.AddField("simpleFieldWithSub", arguments: null, subFields: ["id"]);
+        
+        // The type should be "object" (Priority 4 default for simple fields with subfields)
+        queryBuilder.Definition.Fields["simpleFieldWithSub"].Type.Should().Be("object");
+    }
+
+    [Fact]
+    public void QueryBuilder_FindExistingFieldCached_SimpleFieldPath_UltraFastPath_WithSubfields()
+    {
+        // When the field span is a simple field (no dots), it should use direct dictionary lookup
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        
+        // Add a simple field with explicit type (via string type overload)
+        queryBuilder.AddField("simpleField", "CustomType");
+        
+        // Add it again with subfields - DetermineFieldTypeOptimized hits the fast path (GetValueOrDefault direct lookup)
+        queryBuilder.AddField("simpleField", arguments: null, subFields: ["name"]);
+        
+        // Field should exist with preserved type (simple field fast path found it)
+        queryBuilder.Definition.Fields.Should().ContainKey("simpleField");
+        queryBuilder.Definition.Fields["simpleField"].Type.Should().Be("CustomType");
+    }
+
+    [Fact]
+    public void QueryBuilder_FindExistingFieldCached_DottedFieldPath_SlowPath_WithSubfields()
+    {
+        // Complement to ULTRA FAST PATH - tests the slow path for dotted fields
+        // When field span contains dots, it should use path traversal (Helpers.FindExistingFieldByPath)
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        
+        // First establish a nested field structure
+        queryBuilder.AddField("user", arguments: null, subFields: ["id"]);
+        
+        // Now add a dotted field with subfields - should hit slow path (Helpers.FindExistingFieldByPath)
+        queryBuilder.AddField("user.profile", arguments: null, subFields: ["bio"]);
+        
+        // Both should exist
+        queryBuilder.Definition.Fields.Should().ContainKey("user");
+    }
+
+    [Fact]
+    public void QueryBuilder_ResolveFieldType_Priority3_PreserveObjectType_WithSubfields()
+    {
+        // When field exists with "object" type, keep it when adding subfields again
+        var queryBuilder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        
+        // First add a field with subfields (simple name, no explicit type -> gets "object")
+        queryBuilder.AddField("container", arguments: null, subFields: ["id"]);
+        var initialType = queryBuilder.Definition.Fields["container"].Type;
+        initialType.Should().Be("object");
+        
+        // Add it again with new subfields (Priority 3 should preserve object type)
+        queryBuilder.AddField("container", arguments: null, subFields: ["name"]);
+        
+        // Type should remain "object" (Priority 3 preserved it)
+        queryBuilder.Definition.Fields["container"].Type.Should().Be("object");
+    }
+
+    [Theory(DisplayName = "QueryBuilder.AddField handles empty field names")]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void AddField_EmptyFieldName_ThrowsOrHandles(string fieldName)
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act & Assert - empty names should be rejected or handled consistently
+        var action = () => builder.AddField(fieldName);
+
+        try
+        {
+            action.Invoke();
+            builder.Definition.Fields.Should().NotContainKey(fieldName, "Empty field names should not be added");
+        }
+        catch (ArgumentException)
+        {
+            // Expected behavior - guard clause rejects empty names
+        }
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField same field twice with different types merges correctly")]
+    public void AddField_SameFieldDifferentTypes_MergesConsistently()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add same field with different types
+        builder.AddField("user", "UserV1");
+        _ = builder.Definition.Fields["user"].Type;
+        
+        builder.AddField("user", "UserV2");
+        _ = builder.Definition.Fields["user"].Type;
+
+        // Assert - should merge, with first or compatible type winning
+        builder.Definition.Fields.Should().ContainKey("user");
+        builder.Definition.Fields["user"].Should().NotBeNull();
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField with null metadata handles gracefully")]
+    public void AddField_WithNullMetadata_DoesNotFail()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add field with explicit null metadata
+        builder.AddField("field", metadata: null);
+
+        // Assert
+        builder.Definition.Fields.Should().ContainKey("field");
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField with null arguments handles gracefully")]
+    public void AddField_WithNullArguments_DoesNotFail()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add field with explicit null arguments
+        builder.AddField("field", arguments: null);
+
+        // Assert
+        builder.Definition.Fields.Should().ContainKey("field");
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField with empty subfields array")]
+    public void AddField_WithEmptySubfieldsArray_HandlesConsistently()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add field with empty subfields array
+        builder.AddField("field", subFields: Array.Empty<string>());
+
+        // Assert - should create field even with empty subfields
+        builder.Definition.Fields.Should().ContainKey("field");
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField idempotent - calling twice with same name")]
+    public void AddField_CalledTwice_IsIdempotent()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add same field twice
+        builder.AddField("field");
+        var countAfterFirst = builder.Definition.Fields.Count;
+        
+        builder.AddField("field");
+        var countAfterSecond = builder.Definition.Fields.Count;
+
+        // Assert - should not duplicate
+        countAfterFirst.Should().Be(1);
+        countAfterSecond.Should().Be(1);
+        builder.Definition.Fields.Should().HaveCount(1);
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField with complex arguments and metadata")]
+    public void AddField_WithComplexArgumentsAndMetadata_Preserved()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+        _ = new Dictionary<string, object?> { { "limit", 10 }, { "offset", null } };
+        var meta = new Dictionary<string, object?> { { "deprecated", true } };
+
+        // Act
+        builder.AddField("field", "String", meta);
+
+        // Assert
+        var field = builder.Definition.Fields["field"];
+        field.Type.Should().Be("String");
+        field.Metadata.Should().ContainKey("deprecated");
+    }
+
+    [Fact(DisplayName = "QueryBuilder.AddField via Action builder - nested additions")]
+    public void AddField_WithActionBuilder_NestedAdditions()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - complex nested scenario
+        builder.AddField("user", fb => {
+            fb.AddField("profile", pfb => {
+                pfb.AddField("name");
+                pfb.AddField("email");
+            });
+            fb.AddField("posts", pb => {
+                pb.AddField("title");
+            });
+        });
+
+        // Assert - all nested fields should be created
+        builder.Definition.Fields.Should().ContainKey("user");
+        var user = builder.Definition.Fields["user"];
+        user.Fields.Should().HaveCountGreaterThanOrEqualTo(2);
+        user.Fields.Should().ContainKey("profile");
+        user.Fields.Should().ContainKey("posts");
+    }
+
+    [Fact(DisplayName = "QueryBuilder with many fields - stress test")]
+    public void AddField_Many_Fields_Handles()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - add many fields
+        for (int i = 0; i < 100; i++)
+        {
+            builder.AddField($"field{i}");
+        }
+
+        // Assert
+        builder.Definition.Fields.Should().HaveCount(100);
+    }
+
+    [Fact(DisplayName = "QueryBuilder field names with special characters")]
+    public void AddField_SpecialCharactersInName_Handles()
+    {
+        // Arrange
+        var builder = QueryBuilder.CreateDefaultBuilder("test");
+
+        // Act - test various special chars that might appear in GraphQL or custom scenarios
+        var testNames = new[] { 
+            "user_id",      // underscore
+            "User",         // PascalCase
+            "userID",       // camelCase with acronym
+            "user123",      // with numbers
+        };
+
+        foreach (var name in testNames)
+        {
+            builder.AddField(name);
+        }
+
+        // Assert
+        builder.Definition.Fields.Should().HaveCount(testNames.Length);
+    }
+
 }

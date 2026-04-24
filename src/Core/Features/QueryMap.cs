@@ -53,12 +53,18 @@ internal sealed class QueryMap
 
     /// <summary>
     /// Gets the path segments to reach a specific node within a query.
+    /// Uses the path index for O(1) lookup when available, falls back to DFS traversal.
     /// </summary>
     /// <param name="queryName">The name of the query to find the path for.</param>
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <param name="queryDefinition">The query definition to search within</param>
+    /// <param name="pathIndex">Optional path index for O(1) lookups (performance optimization)</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
-    internal string[] GetPathTo(string queryName, string? nodePath, QueryDefinition queryDefinition)
+    internal string[] GetPathTo(
+        string queryName,
+        string? nodePath,
+        QueryDefinition queryDefinition,
+        Dictionary<string, string[]>? pathIndex = null)
     {
         var rootPath = GetMappedPath(queryName);
         if (string.IsNullOrEmpty(rootPath))
@@ -71,8 +77,26 @@ internal sealed class QueryMap
             return [rootPath];
         }
 
+        // Phase 2 optimization: Lazy index initialization
+        // On first call, compute and cache paths; on subsequent calls, return from cache
+        var cacheKey = $"{rootPath}.{nodePath}";
+        
+        if (pathIndex?.TryGetValue(cacheKey, out var cachedPath) == true)
+        {
+            return cachedPath;
+        }
+
+        // Compute path using DFS traversal
         var rootField = FindRootField(queryDefinition, rootPath);
-        return rootField == null ? [rootPath] : BuildPathToNode(rootField, nodePath);
+        var computedPath = rootField == null ? [rootPath] : BuildPathToNode(rootField, nodePath);
+        
+        // Cache for future calls
+        if (pathIndex != null)
+        {
+            pathIndex[cacheKey] = computedPath;
+        }
+        
+        return computedPath;
     }
 
     private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)

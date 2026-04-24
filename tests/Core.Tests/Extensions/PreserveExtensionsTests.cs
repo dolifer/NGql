@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using FluentAssertions;
 using NGql.Core.Builders;
 using Xunit;
 
@@ -315,5 +317,61 @@ public class PreserveExtensionsTests
 
         // Assert
         return result.Verify();
+    }
+
+    [Fact]
+    public void Preserve_MixedArgumentsAndMetadata()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId", "Int", new Dictionary<string, object?> { { "id", 1 } })
+            .AddField("data.edges.node.Email:email", "String", new Dictionary<string, object?> { { "verified", true } });
+
+        // Act - preserve fields with arguments
+        var result = PreservationBuilder.Create(query)
+            .Preserve("TestQuery.edges.node.userId")
+            .Preserve("TestQuery.edges.node.email")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Preserve_WithTypeConversion()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("data", "object")
+            .AddField("data.edges", "object")
+            .AddField("data.edges.node", "User")
+            .AddField("data.edges.node.profile", "Profile")
+            .AddField("data.edges.node.profile.name", "String");
+
+        // Act
+        var result = PreservationBuilder.Create(query)
+            .Preserve("TestQuery.edges.node.profile.name")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Preserve_EmptyPreserveList()
+    {
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("data.edges.node.userId");
+
+        // Act - create builder but don't preserve anything
+        var result = PreservationBuilder.Create(query)
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.Should().NotBeNull();
     }
 }

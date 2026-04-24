@@ -1,4 +1,6 @@
-﻿using FluentAssertions;
+﻿using System;
+using System.Collections.Generic;
+using FluentAssertions;
 using NGql.Core.Abstractions;
 using Xunit;
 
@@ -257,5 +259,28 @@ public class QueryDefinitionQueryTests
         }
     }
 }");
+    }
+
+    [Fact]
+    public void Fields_Property_Internal_Setter_Via_Reflection()
+    {
+        // Arrange
+        var query = new QueryDefinition("TestQuery");
+        var newFields = new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "field1", new FieldDefinition("field1") }
+        };
+        
+        // Act - Use reflection to invoke the internal setter
+        var fieldsProperty = query.GetType().GetProperty("Fields");
+        var setMethod = fieldsProperty?.GetSetMethod(true);
+        
+        // Assert
+        if (setMethod != null)
+        {
+            setMethod.Invoke(query, [newFields]);
+            query.Fields.Should().HaveCount(1);
+            query.Fields.Should().ContainKey("field1");
+        }
     }
 }

@@ -68,11 +68,6 @@ internal static class FieldFactory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        if (fieldPath.IsEmpty)
-        {
-            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
-        }
-
         var hasNoArguments = arguments == null;
         var hasNoMetadata = metadata == null;
 
@@ -92,11 +87,6 @@ internal static class FieldFactory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition GetOrAddDottedField(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        if (fieldPath.IsEmpty)
-        {
-            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
-        }
-
         var hasNoArguments = arguments == null;
         var hasNoMetadata = metadata == null;
 
@@ -398,12 +388,6 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        // FAIL-FAST: Empty path check
-        if (fieldPath.IsEmpty)
-        {
-            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
-        }
-
         var parentPathSpan = parentPath.AsSpan();
         Span<char> pathBuffer = stackalloc char[512];
         var pathBuilder = new SpanPathBuilder(pathBuffer);
@@ -451,11 +435,6 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition GetOrAddComplexField(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        if (fieldPath.IsEmpty)
-        {
-            throw new ArgumentException("Field path cannot be empty", nameof(fieldPath));
-        }
-
         var parentPathSpan = parentPath.AsSpan();
         Span<char> pathBuffer = stackalloc char[512];
         var pathBuilder = new SpanPathBuilder(pathBuffer);

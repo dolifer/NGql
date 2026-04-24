@@ -65,7 +65,7 @@ public class QueryTests
         query.Select("id", "name");
 
         // assert
-        query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+        query.FieldsList.Should().BeEquivalentTo(["id", "name"]);
 
         string queryText = query;
         queryText.Should().Be(@"query name{
@@ -133,7 +133,7 @@ public class QueryTests
         query.Select(new List<string> { "id", "name" });
 
         // assert
-        query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+        query.FieldsList.Should().BeEquivalentTo(["id", "name"]);
 
         return query.Verify("idNameQuery");
     }
@@ -150,7 +150,7 @@ public class QueryTests
             .Select(new List<string> { "name" });
 
         // assert
-        query.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+        query.FieldsList.Should().BeEquivalentTo(["id", "name"]);
 
         return query.Verify("idNameQuery");
     }
@@ -498,7 +498,6 @@ public class QueryTests
     [Fact]
     public void Query_With_DateTime_Arguments_Should_Format_Correctly()
     {
-        // Test DateTime formatting with TryFormat (lines 82-88 coverage)
         var createdDate = new DateTime(2025, 01, 15, 10, 30, 45, 123);
         
         var query = new Query("UserQuery")
@@ -513,7 +512,6 @@ public class QueryTests
     [Fact]
     public void Query_With_DateTimeOffset_Arguments_Should_Format_Correctly()
     {
-        // Test DateTimeOffset formatting with TryFormat (lines 90-98 coverage)
         var eventTime = new DateTimeOffset(2025, 06, 20, 14, 30, 00, TimeSpan.FromHours(2));
         
         var query = new Query("EventQuery")
@@ -556,7 +554,6 @@ public class QueryTests
     [Fact]
     public void Query_With_Enum_And_EnumValue_Should_Format_Correctly()
     {
-        // Test Enum and EnumValue types (lines 101-110)
         var args = new Dictionary<string, object?>
         {
             { "status", TestStatus.Active },
@@ -575,7 +572,6 @@ public class QueryTests
     [Fact]
     public void Query_With_Variable_Should_Format_Correctly()
     {
-        // Test Variable type (line 110)
         var variable = new Variable("$userId", "ID");
         
         var query = new Query("VariableQuery")
@@ -589,7 +585,6 @@ public class QueryTests
     [Fact]
     public void Query_With_Boolean_Values_Should_Format_Correctly()
     {
-        // Test boolean formatting (lines 42-44)
         var args = new Dictionary<string, object?>
         {
             { "active", true },
@@ -608,7 +603,6 @@ public class QueryTests
     [Fact]
     public void Query_With_String_Arguments_Should_Format_Correctly()
     {
-        // Test string formatting (lines 38-40)
         var args = new Dictionary<string, object?>
         {
             { "name", "John" },

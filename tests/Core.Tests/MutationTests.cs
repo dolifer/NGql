@@ -26,7 +26,7 @@ public class MutationTests
         mutation.Select("id", "name");
 
         // assert
-        mutation.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+        mutation.FieldsList.Should().BeEquivalentTo(["id", "name"]);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public class MutationTests
         mutation.Select(new List<string> { "id", "name" });
 
         // assert
-        mutation.FieldsList.Should().BeEquivalentTo(new[] { "id", "name" });
+        mutation.FieldsList.Should().BeEquivalentTo(["id", "name"]);
     }
 
     [Fact]

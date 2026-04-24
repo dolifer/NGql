@@ -19,12 +19,34 @@ public sealed class QueryBuilder
     public IEnumerable<Variable> Variables => Definition.Variables;
 
     /// <summary>
+    ///     Gets the internal path index for field lookups (internal use only).
+    /// </summary>
+    internal Dictionary<string, string[]> PathIndex => _pathIndex;
+
+    /// <summary>
+    ///     Gets the internal field lookup cache for O(1) field resolution during merges (internal use only).
+    /// </summary>
+    internal Dictionary<string, FieldDefinition?> FieldLookupCache => _fieldLookupCache;
+
+    /// <summary>
     ///     Maps original query names to their merged definition names.
     /// </summary>
     private QueryMap? _queryMap;
     private QueryMap QueryMapInstance => _queryMap ??= new();
 
     private readonly QueryDefinition _definition;
+
+    /// <summary>
+    ///     Caches paths to fields for O(1) lookup in GetPathTo().
+    ///     Maps field name/alias → string[] path segments from root.
+    /// </summary>
+    private readonly Dictionary<string, string[]> _pathIndex = new();
+
+    /// <summary>
+    ///     Caches field lookups for O(1) lookup in FindExistingFieldByPath().
+    ///     Maps field path → FieldDefinition reference for quick merge target identification.
+    /// </summary>
+    private readonly Dictionary<string, FieldDefinition?> _fieldLookupCache = new(StringComparer.OrdinalIgnoreCase);
 
     private QueryBuilder(QueryDefinition queryDefinition) => _definition = queryDefinition;
 
@@ -239,6 +261,9 @@ public sealed class QueryBuilder
             FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
         }
         
+        // Phase 3: Invalidate caches after field addition
+        InvalidateLookupCaches();
+        
         // Defer UpdateRootMapping - will be called when query is built/used
         return this;
     }
@@ -302,6 +327,8 @@ public sealed class QueryBuilder
         if (!hasSubFields)
         {
             QueryMapInstance.UpdateRootMapping(_definition);
+            // Phase 3: Invalidate caches after field addition
+            InvalidateLookupCaches();
             return this;
         }
 
@@ -309,6 +336,8 @@ public sealed class QueryBuilder
             builder.AddField(subField);
 
         QueryMapInstance.UpdateRootMapping(_definition);
+        // Phase 3: Invalidate caches after field addition
+        InvalidateLookupCaches();
         return this;
     }
 
@@ -319,8 +348,22 @@ public sealed class QueryBuilder
     /// <returns>Current QueryBuilder instance for method chaining</returns>
     private QueryBuilder IncludeImpl(in QueryDefinition queryDefinition)
     {
-        QueryMerger.MergeQuery(_definition, QueryMapInstance, in queryDefinition);
+        QueryMerger.MergeQuery(_definition, QueryMapInstance, this, in queryDefinition);
+        
+        // Phase 3: Invalidate lookup caches after merge since fields changed
+        InvalidateLookupCaches();
+        
         return this;
+    }
+
+    /// <summary>
+    /// Phase 3 optimization: Invalidates both path and field lookup caches.
+    /// Called after any modification to Definition.Fields to ensure cache consistency.
+    /// </summary>
+    private void InvalidateLookupCaches()
+    {
+        _fieldLookupCache.Clear();
+        _pathIndex.Clear();
     }
 
     public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
@@ -338,7 +381,7 @@ public sealed class QueryBuilder
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
     public string[] GetPathTo(string queryName, string? nodePath = null)
-        => QueryMapInstance.GetPathTo(queryName, nodePath, _definition);
+        => QueryMapInstance.GetPathTo(queryName, nodePath, _definition, _pathIndex);
 
     /// <summary>
     /// Gets the count of fields in the QueryDefinition.
@@ -412,10 +455,20 @@ public sealed class QueryBuilder
         // ULTRA FAST PATH: Simple field lookup
         if (fieldSpan.IsSimpleField())
         {
-            return Definition.Fields.GetValueOrDefault(fieldSpan.ToString());
+            var fieldName = fieldSpan.ToString();
+            return Definition.Fields.GetValueOrDefault(fieldName);
         }
 
-        // FAST PATH: Use optimized path traversal
-        return Helpers.FindExistingFieldByPath(Definition.Fields, fieldSpan);
+        // Phase 3: Check field lookup cache first
+        var fieldPath = fieldSpan.ToString();
+        if (_fieldLookupCache.TryGetValue(fieldPath, out var cachedField))
+        {
+            return cachedField;
+        }
+
+        // FAST PATH: Use optimized path traversal and cache result
+        var result = Helpers.FindExistingFieldByPath(Definition.Fields, fieldSpan);
+        _fieldLookupCache[fieldPath] = result;
+        return result;
     }
 }

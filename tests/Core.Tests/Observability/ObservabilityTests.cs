@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
@@ -424,9 +424,9 @@ public class ObservabilityTests
         // Arrange & Act & Assert
         var action = () =>
         {
-            using (var scope1 = NGqlTelemetry.CreateTimedScope("op1", default))
+            using (NGqlTelemetry.CreateTimedScope("op1", default))
             {
-                using (var scope2 = NGqlTelemetry.CreateTimedScope("op2", default))
+                using (NGqlTelemetry.CreateTimedScope("op2", default))
                 {
                     // Nested scopes
                 }
@@ -457,6 +457,425 @@ public class ObservabilityTests
         // Arrange & Act & Assert
         var recordAction = () => NGqlTelemetry.RecordSerialization(0, 0);
         recordAction.Should().NotThrow();
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // UNCOVERED TELEMETRY AND ACTIVITY TESTS
+    // ═══════════════════════════════════════════════════════════════
+
+    [Fact]
+    public void NGqlActivity_StartField_ShouldCreateFieldActivity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartField("extract_fields")
+                .WithTag("test", "field_activity");
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_StartPooling_ShouldCreatePoolingActivity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartPooling("StringBuilderPool", "acquire")
+                .WithTag("test", "pooling_activity");
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithQueryTags_ShouldTagActivity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("build")
+                .WithQueryTags("TestQuery", 5);
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithFieldTags_ShouldTagActivity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartField("process")
+                .WithFieldTags("user.profile.name", true, false);
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithPoolingTags_ShouldTagActivity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartPooling("ArgumentsPool", "release")
+                .WithPoolingTags("Dictionary", "hit", 42);
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_NestedActivities_ShouldWorkCorrectly()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var query = NGqlActivity.StartQuery("nested_test")
+                .WithQueryTags("NestedQuery", 10);
+            using var field = NGqlActivity.StartField("inner_field")
+                .WithFieldTags("data.items", false, true);
+            _ = query.IsRecording && field.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagQueryActivity_WithActivity_ShouldTag()
+    {
+        // Arrange
+        var queryActivity = NGqlTelemetry.StartQueryBuildingActivity("test_query");
+        
+        // Act
+        var action = () =>
+        {
+            NGqlTelemetry.TagQueryActivity(queryActivity, "MyQuery", 15);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+        queryActivity?.Dispose();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagQueryActivity_WithNullActivity_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () => NGqlTelemetry.TagQueryActivity(null, "Query", 0);
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagFieldActivity_WithActivity_ShouldTag()
+    {
+        // Arrange
+        var fieldActivity = NGqlTelemetry.StartFieldActivity("test_field");
+
+        // Act
+        var action = () =>
+        {
+            NGqlTelemetry.TagFieldActivity(fieldActivity, "user.profile.email", true, true);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+        fieldActivity?.Dispose();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagFieldActivity_WithNullActivity_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () => NGqlTelemetry.TagFieldActivity(null, "field.path", false, false);
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagPoolingActivity_WithActivity_ShouldTag()
+    {
+        // Arrange
+        var poolActivity = NGqlTelemetry.StartPoolingActivity("StringBuilderPool", "acquire");
+
+        // Act
+        var action = () =>
+        {
+            NGqlTelemetry.TagPoolingActivity(poolActivity, "StringBuilder", "cache_hit", 100);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+        poolActivity?.Dispose();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagPoolingActivity_WithNullActivity_ShouldNotThrow()
+    {
+        // Arrange & Act & Assert
+        var action = () => NGqlTelemetry.TagPoolingActivity(null, "Pool", "miss", 0);
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_StartFieldActivity_ShouldCreateActivity()
+    {
+        // Arrange & Act
+        var activity = NGqlTelemetry.StartFieldActivity("field_operation");
+
+        // Assert - Activity can be null if no listener is attached, so just test it doesn't throw
+        var action = () => activity?.Dispose();
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_StartPoolingActivity_ShouldCreateActivity()
+    {
+        // Arrange & Act
+        var activity = NGqlTelemetry.StartPoolingActivity("ArgumentPool", "checkout");
+
+        // Assert - Activity can be null if no listener is attached, so just test it doesn't throw
+        var action = () => activity?.Dispose();
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_ChainedWithFieldTags_ShouldWork()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartField("chained_test")
+                .WithFieldTags("user.data.value", true, true)
+                .WithTag("custom.key", "custom.value");
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_ChainedWithPoolingTags_ShouldWork()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartPooling("HashSetPool", "return")
+                .WithPoolingTags("HashSet", "miss", 50)
+                .WithTag("trace.id", "12345");
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithQueryTagsAndFieldTags_ShouldChain()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("complex_chain")
+                .WithQueryTags("TestQuery", 3)
+                .WithTag("environment", "test")
+                .WithStatus(System.Diagnostics.ActivityStatusCode.Ok);
+            _ = activity.IsRecording;
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region Coverage Tests for NGqlTelemetry tagging methods
+
+    [Fact]
+    public void NGqlActivity_WithQueryTags_Should_Set_Tags_On_Activity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("query_test");
+            activity.WithQueryTags("TestQuery", 5);
+        };
+
+        // Assert - Should not throw
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithFieldTags_Should_Set_Field_Tags_On_Activity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("field_test");
+            activity.WithFieldTags("user.profile.name", true, true);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithPoolingTags_Should_Set_Pooling_Tags_On_Activity()
+    {
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("pooling_test");
+            activity.WithPoolingTags("ArgumentsPool", "hit", 10);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithNullActivity_TagMethods_Should_NotThrow()
+    {
+        // Arrange - Activity is null
+        Activity? activity = null;
+
+        // Act
+        var action = () =>
+        {
+            NGqlTelemetry.TagQueryActivity(activity, "Query", 0);
+            NGqlTelemetry.TagFieldActivity(activity, "field", false, false);
+            NGqlTelemetry.TagPoolingActivity(activity, "Pool", "miss", 0);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region Activity Tagging Coverage (NGqlTelemetry and NGqlActivity tag methods)
+
+    [Fact]
+    public void NGqlActivity_WithQueryTags_ChainCompletes()
+    {
+        // Act - Test that chaining methods work and doesn't throw
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("chain_test")
+                .WithQueryTags("TestQuery", 3)
+                .WithTag("custom.key", "custom.value");
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithFieldTags_ChainCompletes()
+    {
+        // Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("field_test")
+                .WithFieldTags("user.profile", false, true);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlActivity_WithPoolingTags_ChainCompletes()
+    {
+        // Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartPooling("CharArrayPool", "allocate")
+                .WithPoolingTags("CharArray", "hit", 25);
+        };
+
+        // Assert
+        action.Should().NotThrow();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagQueryActivity_WithActivity_CompletesWithoutError()
+    {
+        // Arrange
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+        
+        var source = new ActivitySource("NGql.Core", "1.0.0");
+        using var activity = source.StartActivity("test");
+
+        // Act
+        var action = () => NGqlTelemetry.TagQueryActivity(activity, "TestQuery", 5);
+
+        // Assert
+        action.Should().NotThrow();
+        listener.Dispose();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagFieldActivity_WithActivity_CompletesWithoutError()
+    {
+        // Arrange
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+        
+        var source = new ActivitySource("NGql.Core", "1.0.0");
+        using var activity = source.StartActivity("test");
+
+        // Act
+        var action = () => NGqlTelemetry.TagFieldActivity(activity, "user.profile.name", true, false);
+
+        // Assert
+        action.Should().NotThrow();
+        listener.Dispose();
+    }
+
+    [Fact]
+    public void NGqlTelemetry_TagPoolingActivity_WithActivity_CompletesWithoutError()
+    {
+        // Arrange
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+        
+        var source = new ActivitySource("NGql.Core", "1.0.0");
+        using var activity = source.StartActivity("test");
+
+        // Act
+        var action = () => NGqlTelemetry.TagPoolingActivity(activity, "ArgumentsPool", "hit", 50);
+
+        // Assert
+        action.Should().NotThrow();
+        listener.Dispose();
     }
 
     #endregion

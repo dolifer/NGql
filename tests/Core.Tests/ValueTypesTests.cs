@@ -1,17 +1,11 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
-using NGql.Core;
 using NGql.Core.Builders;
 using Xunit;
 
 namespace NGql.Core.Tests;
 
-/// <summary>
-/// Comprehensive tests for value types: EnumValue and Variable
-/// Tests all public API surface including operators, comparisons, and equality.
-/// </summary>
 public class ValueTypesTests
 {
     #region EnumValue Tests
@@ -203,6 +197,29 @@ public class ValueTypesTests
 
         // Assert
         found.Should().BeTrue();
+    }
+
+    [Fact]
+    public void EnumValue_Equals_WithNullObject_ShouldReturnFalse()
+    {
+        // Arrange
+        var enumValue = new EnumValue("ACTIVE");
+
+        // Act & Assert
+        object? nullObj = null;
+        enumValue.Equals(nullObj).Should().BeFalse();
+    }
+
+    [Fact]
+    public void EnumValue_Equals_WithNonEnumValueObject_ShouldThrow()
+    {
+        // Arrange
+        var enumValue = new EnumValue("ACTIVE");
+
+        // Act & Assert
+        var action = () => enumValue.Equals((object)"not-enum");
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*Object must be of type*");
     }
 
     #endregion

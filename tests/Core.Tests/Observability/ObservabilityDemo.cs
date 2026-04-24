@@ -10,9 +10,6 @@ using Xunit.Abstractions;
 
 namespace NGql.Core.Tests.Observability;
 
-/// <summary>
-/// Demo showing how to use NGql's built-in OpenTelemetry-compatible observability features
-/// </summary>
 public class ObservabilityDemo
 {
     private readonly ITestOutputHelper _output;

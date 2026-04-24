@@ -95,42 +95,6 @@ internal static class Helpers
     /// <summary>
     /// Generic dictionary merging with recursive support for nested dictionaries.
     /// </summary>
-    private static TDict MergeDictionariesCore<TDict, TValue>(
-        IDictionary<string, TValue>? existing,
-        IDictionary<string, TValue> update,
-        Func<TDict> createResult,
-        Func<IDictionary<string, TValue>, IDictionary<string, TValue>, TValue> mergeNested)
-        where TDict : IDictionary<string, TValue>
-    {
-        var result = createResult();
-
-        // Add existing entries if present
-        if (existing != null)
-        {
-            foreach (var (key, value) in existing)
-            {
-                result[key] = value;
-            }
-        }
-
-        // Merge or add update entries
-        foreach (var (key, updateValue) in update)
-        {
-            if (result.TryGetValue(key, out var existingValue) &&
-                existingValue is IDictionary<string, TValue> existingDict &&
-                updateValue is IDictionary<string, TValue> updateDict)
-            {
-                result[key] = mergeNested(existingDict, updateDict);
-            }
-            else
-            {
-                result[key] = updateValue;
-            }
-        }
-
-        return result;
-    }
-
     /// <summary>
     /// Merges two dictionaries with support for nullable values and recursive merging of nested dictionaries.
     /// This is the primary efficient implementation that avoids extra allocations.

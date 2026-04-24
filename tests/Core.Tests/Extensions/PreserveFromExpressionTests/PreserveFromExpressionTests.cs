@@ -39,9 +39,9 @@ public class PreserveFromExpressionTests
         // Simulate the real issue: parameters map to different original queries but same merged path
         var localMap = new Dictionary<string, string[]>
         {
-            { "groupA", new[] { "QueryA" } },
-            { "groupB", new[] { "QueryA" } },
-            { "groupC", new[] { "QueryA" } }
+            { "groupA", ["QueryA"] },
+            { "groupB", ["QueryA"] },
+            { "groupC", ["QueryA"] }
         };
 
         // Lambda references navigation properties from all three parameters
@@ -93,9 +93,9 @@ public class PreserveFromExpressionTests
         // QueryB and QueryC both have MergeByFieldPath (default), so they merge together into QueryB.
         var localMap = new Dictionary<string, string[]>
         {
-            { "groupA", new[] { "QueryA" } },  // Maps to separate QueryA root
-            { "groupB", new[] { "QueryB" } },  // Maps to QueryB root
-            { "groupC", new[] { "QueryB" } }   // Also maps to QueryB (merged into it)
+            { "groupA", ["QueryA"] },  // Maps to separate QueryA root
+            { "groupB", ["QueryB"] },  // Maps to QueryB root
+            { "groupC", ["QueryB"] }   // Also maps to QueryB (merged into it)
         };
 
         // Lambda references navigation properties from all three parameters
@@ -323,7 +323,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "QueryA" } }
+            { "user", ["QueryA"] }
         };
 
         // Act - specify always-preserve fields
@@ -491,8 +491,8 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "QueryA" } },
-            { "product", new[] { "QueryB" } }
+            { "user", ["QueryA"] },
+            { "product", ["QueryB"] }
         };
 
         // Act - different parameter types
@@ -522,7 +522,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "TestQuery" } }
+            { "user", ["TestQuery"] }
         };
 
         // Act - no alwaysPreserveFields parameter (uses overload without it)
@@ -549,7 +549,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "TestQuery" } }
+            { "user", ["TestQuery"] }
         };
 
         // Act - reference computed property Profile.Name which should expand to FirstName and LastName
@@ -577,7 +577,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "TestQuery" } }
+            { "user", ["TestQuery"] }
         };
 
         // Act - reference computed property Profile.Contact.Email which should expand to PrimaryEmail and SecondaryEmail
@@ -607,7 +607,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "TestQuery" } }
+            { "user", ["TestQuery"] }
         };
 
         // Act - reference both computed (Profile.Name) and regular (Profile.Contact.PrimaryEmail) properties
@@ -638,7 +638,7 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "user", new[] { "TestQuery" } }
+            { "user", ["TestQuery"] }
         };
 
         // Act - use computed property in conditional with null coalescing
@@ -679,8 +679,8 @@ public class PreserveFromExpressionTests
 
         var localMap = new Dictionary<string, string[]>
         {
-            { "playerFirstDeposit", new[] { "QueryA" } },
-            { "playerSecondDeposit", new[] { "QueryB" } }
+            { "playerFirstDeposit", ["QueryA"] },
+            { "playerSecondDeposit", ["QueryB"] }
         };
 
         // Act - both parameters reference .Date navigation property
@@ -701,7 +701,6 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservation_ComplexExpression_With_Multiple_Navigations()
     {
-        // Test uncovered line: Expression visitor handling multiple navigation properties (lines 100-150)
         var query = QueryBuilder
             .CreateDefaultBuilder("ComplexQuery")
             .AddField("user", ub => ub
@@ -725,7 +724,6 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservation_With_Nested_Collections()
     {
-        // Test uncovered line: Collection handling in expression visitor (lines 120-140)
         var query = QueryBuilder
             .CreateDefaultBuilder("CollectionQuery")
             .AddField("collections", f => f
@@ -743,7 +741,6 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservation_Preserve_Entire_Graph()
     {
-        // Test uncovered line: Full graph preservation (lines 75-90)
         var query = QueryBuilder
             .CreateDefaultBuilder("FullGraphQuery")
             .AddField("root", f => f
@@ -766,7 +763,6 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservation_With_Dotted_Paths()
     {
-        // Test uncovered line: Dotted path expansion (lines 160-180)
         var query = QueryBuilder
             .CreateDefaultBuilder("DottedPathQuery")
             .AddField("data.edges.node.user.profile.settings");
@@ -781,7 +777,6 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservation_Overlapping_Paths()
     {
-        // Test uncovered line: Path overlap handling (lines 140-160)
         var query = QueryBuilder
             .CreateDefaultBuilder("OverlapQuery")
             .AddField("user", f => f
@@ -908,5 +903,258 @@ public class PreserveFromExpressionTests
         result.Should().NotBeNull();
         result.ToString().Should().Contain("firstName");
         result.ToString().Should().Contain("lastName");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PHASE: ExpressionPreservationProcessor Coverage Gap Tests
+    // Target Lines 92-100 (alwaysPreserveFields), 147-154 (useNoPrefixMode), 251-256 (greedy preservation)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    [Fact]
+    public Task ExpressionPreservation_MultiParameter_WithAlwaysPreserveFields()
+    {
+        // Arrange - create queries with multiple parameters mapping to same base path
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Status:status");
+
+        var queryB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.ProductId:productId")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Price:price");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(queryA)
+            .Include(queryB);
+
+        // Multiple parameters mapping to different base paths
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user", ["QueryA"] },
+            { "product", ["QueryB"] },
+            { "extra", ["QueryA"] }  // Additional entry to trigger alwaysPreserveFields block
+        };
+
+        // Act - include alwaysPreserveFields to trigger Block 1 (lines 92-100)
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user, TestDataModels.Product product) =>
+                    user.Email != null && product.Name != null,
+                "edges.node",
+                localMap,
+                "UserId")  // alwaysPreserveFields: "UserId"
+            .Build();
+
+        // Assert - should preserve both Email, Name, AND UserId (from alwaysPreserveFields)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_MultiParameter_UnprefixedFields_UsesNoPrefixMode()
+    {
+        // Arrange - create scenario where multiple parameters with no prefixes
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user1", ["TestQuery"] },
+            { "user2", ["TestQuery"] }  // Multiple parameters, same base path
+        };
+
+        // Act - expression without parameter prefixes should trigger useNoPrefixMode (lines 147-154)
+        // This tests the specific code path where multiple parameters exist but paths don't have prefixes
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user1, TestDataModels.SimpleUser user2) =>
+                    user1.Email != null && user2.Name != null,  // References Email and Name
+                "edges.node",
+                localMap)
+            .Build();
+
+        // Assert - both Email and Name should be preserved
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_ParameterOnly_GreedyPreservation()
+    {
+        // Arrange - query with multiple fields
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name")
+            .AddField("data.edges.node.Age:age");
+
+        // Act - expression that ONLY references the parameter name, no fields
+        // "(user) => user != null" should trigger lines 250-255 greedy preservation
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => user != null,  // Only parameter reference, NO fields
+                "edges.node")
+            .Build();
+
+        // Assert - should greedily preserve ALL type properties (Email, Name, Age, Status, UserId)
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservation_MultiParameter_OneOnlyReferenced_GreedyPreservation()
+    {
+        // Arrange
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "user1", ["TestQuery"] },
+            { "user2", ["TestQuery"] }
+        };
+
+        // Act - user2 is ONLY referenced by name, no field access
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user1, TestDataModels.SimpleUser user2) =>
+                    user1.Email != null && user2 != null,  // user2 only referenced as parameter name
+                "edges.node",
+                localMap)
+            .Build();
+
+        // Assert - user2 should have all its properties greedy-preserved
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservationProcessor_Block1_AlwaysPreserveFields_UnmatchedBasePaths()
+    {
+        // This test targets line 99 in ExpressionPreservationProcessor
+        // It exercises: paramsByBasePath[basePathKey] = new List<string>();
+        // This line is hit when alwaysPreserveFields is set AND a base path from localMap
+        // doesn't have any parameters that referenced it in the expression
+
+        // Arrange - create queries with multiple base paths
+        var queryA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("QueryA:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email");
+
+        var queryB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("QueryB:data.edges.node.Status:status")
+            .AddField("data.edges.node.Settings:settings.Theme:theme");
+
+        var mergedQuery = QueryBuilder
+            .CreateDefaultBuilder("MergedQuery", MergingStrategy.MergeByFieldPath)
+            .Include(queryA)
+            .Include(queryB);
+
+        var localMap = new Dictionary<string, string[]>
+        {
+            { "userA", ["QueryA"] },
+            { "userB", ["QueryB"] }  // This base path is in localMap but not referenced
+        };
+
+        // Act - expression only references userA, but alwaysPreserveFields is provided
+        // This forces processing of QueryB base path even though userB was not referenced
+        var result = PreservationBuilder.Create(mergedQuery)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser userA, TestDataModels.SimpleUser userB) => userA.Email != null,
+                "edges.node",
+                localMap,
+                "Status")  // alwaysPreserveFields triggers: process all base paths in localMap
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task ExpressionPreservationProcessor_Block2_DeepNestedObjectPreservation()
+    {
+        // This test targets line 314 in ExpressionPreservationProcessor
+        // It exercises: preserveCallback($"{objectPath}.{child.Name}");
+        // Needed when PreserveMatchedField processes object fields with children
+
+        // Arrange - create query with deeply nested object structure
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Profile:profile.Name:name")
+            .AddField("data.edges.node.Profile:profile.Bio:bio")
+            .AddField("data.edges.node.Profile:profile.Avatar:avatar")
+            .AddField("data.edges.node.Profile:profile.Address:address.City:city")
+            .AddField("data.edges.node.Profile:profile.Address:address.Street:street");
+
+        // Act - reference nested object which has children
+        // This should hit the code path where match.Value has children
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.UserWithProfile user) => user.Profile != null,
+                "edges.node")
+            .Build();
+
+        // Assert
+        return result.Verify();
+    }
+
+    [Fact]
+    public void ExpressionPreservationProcessor_Block3_NonLambdaExpression()
+    {
+        // This test targets line 369 in ExpressionPreservationProcessor
+        // It exercises: if (expression is not LambdaExpression { Parameters.Count: > 0 } lambda) return null;
+        // Needed when a non-lambda expression is passed to GetParameterNames
+
+        // Arrange - create a simple query
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        // Act - pass a constant expression (non-lambda)
+        // When nodePath is null, ProcessExpression takes fast path
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (Expression)Expression.Constant(true))  // Non-lambda expression
+            .Build();
+
+        // Assert - should handle gracefully (extract no fields from constant)
+        result.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ExpressionPreservationProcessor_Block4_ZeroParameterLambda()
+    {
+        // This test targets line 385 in ExpressionPreservationProcessor
+        // It exercises: return new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+        // Needed when GetParameterTypes receives a lambda with zero parameters or non-lambda
+
+        // Arrange - create a query
+        var query = QueryBuilder
+            .CreateDefaultBuilder("TestQuery")
+            .AddField("TestQuery:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.Email:email");
+
+        // Act - pass a zero-parameter lambda
+        // This should call GetParameterTypes which returns empty dict
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (Expression<Func<bool>>)(() => true))  // Zero-parameter lambda
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
     }
 }

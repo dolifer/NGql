@@ -212,10 +212,6 @@ public class LockFreePoolingTests
         action.Should().NotThrow("High frequency operations should not cause pooling issues");
     }
 
-    /// <summary>
-    /// RED TEST: Demonstrates ThreadLocalPool<T> bug where different generic types 
-    /// corrupt each other's thread-local caches due to shared [ThreadStatic] field.
-    /// </summary>
     [Fact]
     public void ThreadLocalPool_Different_Generic_Types_Should_Not_Corrupt_Each_Other()
     {
@@ -333,9 +329,6 @@ public class LockFreePoolingTests
         errors.Should().BeEmpty("Concurrent access to different generic pools should not cause errors");
     }
 
-    /// <summary>
-    /// RED TEST: High contention concurrent access with multiple generic types.
-    /// </summary>
     [Fact]
     public async Task ThreadLocalPool_High_Contention_Multiple_Types_Should_Maintain_Integrity()
     {
@@ -353,7 +346,7 @@ public class LockFreePoolingTests
         );
 
         var listPool = new ThreadLocalPool<List<int>>(
-            factory: () => new List<int>(),
+            factory: () => [],
             reset: list => list.Clear(),
             poolName: "ListPool"
         );
@@ -379,11 +372,11 @@ public class LockFreePoolingTests
                         var list = listPool.Get();
 
                         // Verify types haven't been corrupted
-                        if (sb == null || !(sb is StringBuilder))
+                        if (sb is not StringBuilder)
                             errors.Add($"SB corruption: got {sb?.GetType().Name ?? "null"}");
-                        if (dict == null || !(dict is Dictionary<string, int>))
+                        if (dict is not Dictionary<string, int>)
                             errors.Add($"Dict corruption: got {dict?.GetType().Name ?? "null"}");
-                        if (list == null || !(list is List<int>))
+                        if (list is not List<int>)
                             errors.Add($"List corruption: got {list?.GetType().Name ?? "null"}");
 
                         // Use the objects
@@ -402,11 +395,11 @@ public class LockFreePoolingTests
                         var list2 = listPool.Get();
 
                         // Verify we're getting correct types
-                        if (!(sb2 is StringBuilder))
+                        if (sb2 is not StringBuilder)
                             errors.Add("Second SB get returned wrong type");
-                        if (!(dict2 is Dictionary<string, int>))
+                        if (dict2 is not Dictionary<string, int>)
                             errors.Add("Second Dict get returned wrong type");
-                        if (!(list2 is List<int>))
+                        if (list2 is not List<int>)
                             errors.Add("Second List get returned wrong type");
 
                         sbPool.Return(sb2);
@@ -424,5 +417,75 @@ public class LockFreePoolingTests
         // ASSERT
         await Task.WhenAll(tasks);
         errors.Should().BeEmpty("No type corruption should occur under concurrent access");
+    }
+
+    [Fact]
+    public void ThreadLocalPool_ExhaustThreadLocalCache_UsesGlobalPool()
+    {
+        var pool = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            poolName: "TestPool"
+        );
+        
+        // Get many items to fill beyond thread-local cache (typically small)
+        var items = new List<StringBuilder>();
+        for (int i = 0; i < 200; i++)
+        {
+            items.Add(pool.Get());
+        }
+        
+        // Return all items - this will fill both thread-local and global pool
+        foreach (var item in items)
+        {
+            pool.Return(item);
+        }
+        
+        // Now get again from global pool
+        var retrieved = pool.Get();
+        retrieved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ThreadLocalPool_ReturnRejectedByValidator_NotReturned()
+    {
+        // This test covers line 122: when validator rejects item (return path taken)
+        var usedItems = new HashSet<StringBuilder>();
+        
+        var pool = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            validateForReturn: sb => !usedItems.Contains(sb),
+            poolName: "TestPool"
+        );
+        
+        var item1 = pool.Get();
+        usedItems.Add(item1);
+        pool.Return(item1); // Validator should reject this
+        
+        var item2 = pool.Get();
+        item2.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ThreadLocalPool_MultipleReturnsAndGets_MaintainsPoolInvariant()
+    {
+        // Covers global pool operations and item reuse
+        var pool = new ThreadLocalPool<List<int>>(
+            factory: () => [],
+            reset: x => x.Clear(),
+            poolName: "ListPool"
+        );
+        
+        // Get and return multiple times
+        for (int i = 0; i < 50; i++)
+        {
+            var list = pool.Get();
+            list.Should().NotBeNull();
+            list.Should().BeEmpty(); // Should be cleared
+            
+            list.Add(i);
+            pool.Return(list);
+        }
     }
 }

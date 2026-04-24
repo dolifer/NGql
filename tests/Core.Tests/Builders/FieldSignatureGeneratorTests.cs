@@ -240,7 +240,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_NestedFieldsWithArguments_ShouldConsiderNestingLevel()
     {
-        // Test uncovered line: Nested field signature computation (lines 169-180)
         // This tests the AppendFieldSignature and AppendFieldSignatureRemainder logic
         var fields = new Dictionary<string, FieldDefinition>
         {
@@ -273,7 +272,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithSpecialCharactersInArguments_ShouldBeIncluded()
     {
-        // Test uncovered line: Argument value handling in signature (lines 201-212)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>
@@ -304,7 +302,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFields_ShouldConsiderAllFields()
     {
-        // Test uncovered line: Multiple field iteration and signature (lines 213-230)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["user"] = new("user", "User", null, new Dictionary<string, object?> { ["id"] = "1" }),
@@ -329,7 +326,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ComplexNestedWithTypedArguments_ShouldIncludeTypeInfo()
     {
-        // Test uncovered line: Type handling in nested signatures (lines 206-215)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["data"] = new("data", "DataNode", null, new Dictionary<string, object?>(),
@@ -358,7 +354,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_DeterministicWithDifferentFieldOrder_ShouldProduceDifferentSignature()
     {
-        // Test uncovered line: Signature generation behavior (lines 218-230)
         // Note: Signatures depend on insertion order since Dictionary iteration is insertion-order based in .NET
         var fields1 = new Dictionary<string, FieldDefinition>
         {
@@ -386,7 +381,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_UnicodeFieldNames_ShouldHandleCorrectly()
     {
-        // Test uncovered line: Unicode handling in field names (lines 223-231)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["用户"] = new("用户", "User"),  // Chinese: "user"
@@ -404,7 +398,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithNullArguments_ShouldHandleGracefully()
     {
-        // Test uncovered line: Null argument handling (lines 224-229)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type1", null, new Dictionary<string, object?> { ["key"] = null }),
@@ -422,7 +415,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithEnumerableValues_ShouldIncludeInSignature()
     {
-        // Test uncovered line: Enumerable argument handling (line 211)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>
@@ -450,7 +442,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithDictionaryValues_ShouldIncludeInSignature()
     {
-        // Test uncovered line: Dictionary argument handling (line 208)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["filter"] = new("filter", "Result[]", null, new Dictionary<string, object?>
@@ -476,7 +467,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_PrimitiveTypesInArguments_ShouldBeIncluded()
     {
-        // Test uncovered line: Primitive value handling (line 198)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["query"] = new("query", "Result[]", null, new Dictionary<string, object?>
@@ -505,7 +495,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_LongPathWithNestedArguments_TestBufferFallback()
     {
-        // Test uncovered line: Buffer fallback path (lines 220-230)
         // Create a path long enough to exceed the 512 byte buffer
         var longFieldName = "very" + new string('l', 400) + "ongfield";
         var fields = new Dictionary<string, FieldDefinition>
@@ -529,7 +518,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_NestedFieldsWithMultipleLevels_TestRecursion()
     {
-        // Test uncovered line: Recursive nested field processing (lines 167-180)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["root"] = new("root", "Root", null, new Dictionary<string, object?>(),
@@ -557,7 +545,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFieldsWithUnorderedDictionary_ShouldProduceDeterministicSignature()
     {
-        // Test uncovered line: Field ordering and determinism (line 228-234)
         var fields1 = new Dictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type1"),
@@ -584,7 +571,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ComplexNestedWithMultipleArguments()
     {
-        // Test uncovered line: Multiple arguments in nested context (line 207-217)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
@@ -623,7 +609,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_SortedDictionaryArguments_ShouldProduceDeterministicSignature()
     {
-        // Test uncovered line: SortedDictionary handling for arguments (line 223)
         var sortedArgs = new SortedDictionary<string, object?>
         {
             ["zeta"] = "last",
@@ -648,7 +633,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ChildFieldSorting_ShouldBeDeterministic()
     {
-        // Test uncovered line: Child field sorting by name (line 132)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
@@ -672,7 +656,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_EmptyAndNonEmptyChildrenFields_ShouldProduceDifferentSignatures()
     {
-        // Test uncovered line: Children field iteration logic (line 125-140)
         var fieldsWithChildren = new Dictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
@@ -700,7 +683,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_AllDictionaryTypes_ShouldBeHandledCorrectly()
     {
-        // Test uncovered line: Dictionary type handling (line 223)
         var regularDict = new Dictionary<string, object?> { ["k1"] = "v1" };
         var sortedDict = new SortedDictionary<string, object?> { ["k2"] = "v2" };
 
@@ -725,7 +707,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithComplexNestedStructure()
     {
-        // Test uncovered line: Complex nested structure in arguments (lines 204-218)
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["query"] = new("query", "Result[]", null, new Dictionary<string, object?>
@@ -753,7 +734,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_VeryDeepNestedStructure_Recursive()
     {
-        // Test uncovered line 169-180: Recursive nested field processing
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["l1"] = new("l1", "Type", null, new Dictionary<string, object?>(),
@@ -791,7 +771,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithComplexArgumentTypes()
     {
-        // Test uncovered line 215-217: Complex value type handling
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, new Dictionary<string, object?>
@@ -821,7 +800,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFieldsWithDifferentNesting_Deterministic()
     {
-        // Test uncovered line 173-177: Field sorting and processing
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["zebra"] = new("zebra", "Z", null, new Dictionary<string, object?>(),
@@ -847,7 +825,6 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ChildFieldsWithArguments_AllCovered()
     {
-        // Test uncovered line 169-180: Span operations and array pool
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
@@ -1036,6 +1013,98 @@ public class FieldSignatureGeneratorTests
         var fields = new Dictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "[Type!]!")
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_WithFieldChildren_ProcessesChildFields()
+    {
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            ["parent"] = new("parent", "Type", null, null, new Dictionary<string, FieldDefinition>
+            {
+                ["child1"] = new("child1", "String"),
+                ["child2"] = new("child2", "Int"),
+                ["child3"] = new("child3", "Boolean")
+            })
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_WithComplexArgumentTypes_AllProcessed()
+    {
+        var args = new SortedDictionary<string, object?>
+        {
+            ["obj"] = new { nested = "value" },
+            ["list"] = new[] { 1, 2, 3 }
+        };
+
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            ["field"] = new("field", "Type", null, args)
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_WithManyChildFields_UseArrayPool()
+    {
+        var childFields = new Dictionary<string, FieldDefinition>();
+        for (int i = 0; i < 10; i++)
+        {
+            childFields[$"field{i:D2}"] = new($"field{i:D2}", "Type");
+        }
+
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            ["parent"] = new("parent", "Type", null, null, childFields)
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_WithDeeplyNestedStructure()
+    {
+        var level3 = new Dictionary<string, FieldDefinition>
+        {
+            ["leaf"] = new("leaf", "String")
+        };
+        var level2 = new Dictionary<string, FieldDefinition>
+        {
+            ["mid"] = new("mid", "Type", null, null, level3)
+        };
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            ["root"] = new("root", "Type", null, null, level2)
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_WithNullableAndArrayTypes()
+    {
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            ["nullable"] = new("nullable", "String"),
+            ["array"] = new("array", "[Int!]!"),
+            ["optional"] = new("optional", "Boolean")
         };
 
         var sig = FieldSignatureGenerator.GenerateSignature(fields);

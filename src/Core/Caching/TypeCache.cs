@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Runtime.CompilerServices;
 
 namespace NGql.Core.Caching;
@@ -68,4 +69,20 @@ internal static class TypeCache
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string InternType(ReadOnlySpan<char> type) => GetInternedType(type);
+}
+
+/// <summary>
+/// Caches reflection metadata for type introspection
+/// </summary>
+internal static class TypeMetadataCache
+{
+    /// <summary>
+    /// Caches PropertyInfo pairs (Key, Value) for KeyValuePair&lt;,&gt; generic types.
+    /// </summary>
+    internal static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)?> KvpPropertyCache = new();
+
+    /// <summary>
+    /// Caches PropertyInfo[] per object type for the default WriteObject reflection branch.
+    /// </summary>
+    internal static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
 }

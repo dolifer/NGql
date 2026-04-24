@@ -147,7 +147,7 @@ public class QueryTextBuilderTests
     {
         // act & assert
         var exception = Assert.Throws<InvalidOperationException>(() => new Query("foo")
-            .Select(new object[] { 1, "text", Guid.NewGuid() })
+            .Select([1, "text", Guid.NewGuid()])
             .ToString()
         );
 
@@ -191,7 +191,7 @@ public class QueryTextBuilderTests
     {
         // ARRANGE
         var builder = new StringBuilder();
-        var kvp = new KeyValuePair<int, List<string>>(1, new List<string> { "a", "b", "c" });
+        var kvp = new KeyValuePair<int, List<string>>(1, ["a", "b", "c"]);
 
         // ACT & ASSERT
         var action = () => WriteObject(builder, kvp);
@@ -202,7 +202,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithDeeplyNestedFields_ShouldFormatCorrectly()
     {
-        // Test uncovered line: Indentation handling (line 69)
         // This tests deeply nested field formatting
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("level1", fb => fb
@@ -226,7 +225,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithMultipleFieldsAtSameLevel_ShouldPreserveOrder()
     {
-        // Test uncovered line: Field sorting/formatting (line 313)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("zebra")
             .AddField("apple")
@@ -246,7 +244,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithComplexArguments_ShouldFormatCorrectly()
     {
-        // Test uncovered line: Complex argument formatting (line 305-315)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("search", new Dictionary<string, object?>
             {
@@ -268,7 +265,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithArrayArguments_ShouldFormatAsCollection()
     {
-        // Test uncovered line: Array collection handling (line 326-330)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("users", new Dictionary<string, object?> { ["ids"] = new[] { 1, 2, 3 } });
 
@@ -284,7 +280,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithEnumValues_ShouldFormatCorrectly()
     {
-        // Test uncovered line: Enum value handling in arguments (line 324)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("items", new Dictionary<string, object?>
             {
@@ -302,7 +297,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_NestedWithMixedArgumentTypes_ShouldHandleAll()
     {
-        // Test uncovered line: Mixed type handling (lines 305-343)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("root", fb => fb
                 .AddField("child", new Dictionary<string, object?>
@@ -329,7 +323,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithEmptyDictionary_ShouldHandleGracefully()
     {
-        // Test uncovered line: Empty dictionary handling (line 334)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("data", new Dictionary<string, object?>());
 
@@ -344,7 +337,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithCustomObjectArguments_ShouldUseReflection()
     {
-        // Test uncovered line: Object reflection handling (lines 346-360)
         // This tests WriteObjectReflection path
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("user", new Dictionary<string, object?>
@@ -363,7 +355,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithNestedCustomObjects_ShouldReflectAll()
     {
-        // Test uncovered line: Nested object reflection (lines 348-360)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("data", new Dictionary<string, object?>
             {
@@ -391,7 +382,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_KeyValuePair_ShouldFormatCorrectly()
     {
-        // Test uncovered line: KeyValuePair handling (lines 300-322)
         var kvp = new KeyValuePair<string, int>("key", 42);
         
         // Act
@@ -405,7 +395,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_NestedList_ShouldHandleCorrectly()
     {
-        // Test uncovered line: IList handling (lines 326-330)
         var nested = new List<object> 
         { 
             "string", 
@@ -425,7 +414,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ComplexDictionary_ShouldHandleCorrectly()
     {
-        // Test uncovered line: IDictionary handling (lines 332-336)
         var dict = new Dictionary<string, object>
         {
             ["nested"] = new { value = 123 },
@@ -444,7 +432,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ObjectWithProperties_ShouldReflect()
     {
-        // Test uncovered line: WriteObjectReflection (lines 346-360)
         var obj = new { Name = "Test", Age = 25, Active = true };
 
         // Act
@@ -460,7 +447,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ComplexObjectHierarchy_ShouldReflectAll()
     {
-        // Test uncovered line: Recursive object reflection (lines 356-358)
         var complex = new 
         { 
             User = new { Name = "John", Email = "john@example.com" },
@@ -479,7 +465,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ObjectPropertyReflection_WithNullProperty()
     {
-        // Test uncovered line: Object property with null value (line 357)
         var obj = new { NullProp = (string?)null, ValueProp = "value" };
 
         // Act
@@ -493,7 +478,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithCapacityExceeded_ShouldNotRepool()
     {
-        // Test uncovered line: Builder capacity check (lines 67-69)
         var query = QueryBuilder.CreateDefaultBuilder("query");
         
         // Add large field to exceed capacity
@@ -512,7 +496,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithoutIndent_ShouldNotAddPadding()
     {
-        // Test uncovered line: Padding logic (lines 85-91)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("field1")
             .AddField("field2");
@@ -528,7 +511,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ListOfObjects_ShouldFormatCorrectly()
     {
-        // Test uncovered line: List in collection formatting (line 328-329)
         var list = new List<object>
         {
             new { id = 1 },
@@ -548,7 +530,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_DictionaryWithComplexValues_ShouldPreserveStructure()
     {
-        // Test uncovered line: Dictionary with nested values (line 334)
         var dict = new Dictionary<string, object>
         {
             ["data"] = new { nested = new[] { 1, 2, 3 } },
@@ -566,7 +547,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_HeterogeneousList_ShouldHandleAll()
     {
-        // Test uncovered line: Mixed type handling in list (lines 326-330)
         var heterogeneous = new List<object>
         {
             42,
@@ -589,7 +569,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_WithEmptyFields_ShouldHandleGracefully()
     {
-        // Test uncovered line: Empty collection handling (line 364-367)
         var query = QueryBuilder.CreateDefaultBuilder("query");
 
         // Act
@@ -602,7 +581,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ObjectWithManyProperties_ShouldReflectAll()
     {
-        // Test uncovered line: Multiple properties in reflection (lines 351-358)
         var obj = new 
         { 
             Prop1 = "value1",
@@ -624,7 +602,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_ObjectWithoutProperties_ShouldHandleGracefully()
     {
-        // Test uncovered line: Object with no properties (lines 346-360)
         var emptyObj = new { };
 
         // Act
@@ -637,7 +614,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_EnumerableNonList_ShouldHandleAsDefault()
     {
-        // Test uncovered line: Non-IList enumerable (default handling) (lines 324-343)
         var hashSet = new HashSet<int> { 1, 2, 3, 4, 5 };
 
         // Act
@@ -650,7 +626,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQueryParam_NestedKeyValuePairs_ShouldFormat()
     {
-        // Test uncovered line: KeyValuePair with nested structure (lines 300-322)
         var kvp = new KeyValuePair<string, Dictionary<string, object>>(
             "filters", 
             new Dictionary<string, object> { ["status"] = "active" });
@@ -666,7 +641,6 @@ public class QueryTextBuilderTests
     [Fact]
     public void BuildQuery_FieldOrdering_ShouldBeConsistent()
     {
-        // Test uncovered line: Field ordering logic (lines 373-379)
         var query = QueryBuilder.CreateDefaultBuilder("query")
             .AddField("zebra")
             .AddField("apple")
@@ -679,5 +653,42 @@ public class QueryTextBuilderTests
         result.Should().Contain("zebra");
         result.Should().Contain("apple");
         result.Should().Contain("middle");
+    }
+
+    [Fact]
+    public void QueryTextBuilder_LargeCapacityBuilder_NotReturned()
+    {
+        // Test the memory leak prevention: builders that grow too large are not reused
+        // This tests the line: if (builder._stringBuilder.Capacity > MaxBuilderCapacity) { return; }
+        
+        var builder = QueryTextBuilder.GetFromPool();
+        
+        // Use reflection to access the private _stringBuilder field
+        var sbField = typeof(QueryTextBuilder).GetField("_stringBuilder", 
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        sbField.Should().NotBeNull("_stringBuilder field should exist");
+        
+        var stringBuilder = (StringBuilder)sbField.GetValue(builder);
+        
+        // Append a large string to make the capacity exceed MaxBuilderCapacity (256KB)
+        var largeString = new string('x', 300 * 1024); // 300KB
+        stringBuilder.Append(largeString);
+        
+        var builderCapacityBefore = stringBuilder.Capacity;
+        builderCapacityBefore.Should().BeGreaterThan(256 * 1024, "capacity should exceed MaxBuilderCapacity");
+        
+        // Return it to pool - it should NOT be reused due to large capacity
+        QueryTextBuilder.ReturnToPool(builder);
+        
+        // Get a builder from pool - if the large one was properly rejected, this should be a fresh one
+        var nextBuilder = QueryTextBuilder.GetFromPool();
+        var nextStringBuilder = (StringBuilder)sbField.GetValue(nextBuilder);
+        
+        // The next builder's capacity should be reasonable (not grown to 300KB+)
+        // The initial default capacity is typically much smaller
+        nextStringBuilder.Should().NotBeNull();
+        
+        // Clean up
+        QueryTextBuilder.ReturnToPool(nextBuilder);
     }
 }

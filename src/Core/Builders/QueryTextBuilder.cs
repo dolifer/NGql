@@ -1,9 +1,8 @@
 ﻿using System.Buffers;
 using System.Collections;
-using System.Collections.Concurrent;
-using System.Reflection;
 using System.Text;
 using NGql.Core.Abstractions;
+using NGql.Core.Caching;
 using NGql.Core.Extensions;
 
 namespace NGql.Core.Builders;
@@ -13,10 +12,7 @@ internal sealed class QueryTextBuilder
     private readonly StringBuilder _stringBuilder;
     
     // Constructor for creating new instances
-    private QueryTextBuilder()
-    {
-        _stringBuilder = new StringBuilder();
-    }
+    private QueryTextBuilder() => _stringBuilder = new StringBuilder();
 
     private const int IndentSize = 4;
     private const int MaxBuilderCapacity = 256 * 1024;  // 256KB threshold before reset
@@ -271,11 +267,6 @@ internal sealed class QueryTextBuilder
         _stringBuilder.Append(')');
     }
 
-    // Caches PropertyInfo pairs (Key, Value) for KeyValuePair<,> generic types.
-    private static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)?> KvpPropertyCache = new();
-    // Caches PropertyInfo[] per object type for the default WriteObject branch.
-    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
-
     internal static void WriteObject(StringBuilder builder, object? value)
     {
         if (value is null)
@@ -288,38 +279,7 @@ internal sealed class QueryTextBuilder
             return;
 
         var valueType = value.GetType();
-        if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
-        {
-            var kvpProps = KvpPropertyCache.GetOrAdd(
-                valueType,
-                static t =>
-                {
-                    var keyProp = t.GetProperty("Key");
-                    var valueProp = t.GetProperty("Value");
-                    
-                    // Defensive: Validate that KeyValuePair has the expected properties
-                    // This should never happen for real KeyValuePair<,>, but protects against
-                    // reflection caching issues or corrupted type metadata
-                    if (keyProp is null || valueProp is null)
-                    {
-                        return null;
-                    }
-                    return (keyProp, valueProp);
-                });
-
-            // If we couldn't get the properties, fall through to default object handling
-            if (kvpProps is null)
-            {
-                WriteObjectReflection(builder, value, valueType);
-                return;
-            }
-
-            var (keyProp, valueProp) = kvpProps.Value;
-            builder.Append(keyProp.GetValue(value));
-            builder.Append(':');
-            WriteObject(builder, valueProp.GetValue(value));
-            return;
-        }
+        if (ExtractKeyValuePairProperties(builder, value, valueType)) return;
 
         switch (value)
         {
@@ -343,9 +303,47 @@ internal sealed class QueryTextBuilder
         }
     }
 
+    private static bool ExtractKeyValuePairProperties(StringBuilder builder, object value, Type valueType)
+    {
+        if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+        {
+            var kvpProps = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
+                valueType,
+                static t =>
+                {
+                    var keyProp = t.GetProperty("Key");
+                    var valueProp = t.GetProperty("Value");
+                    
+                    // Defensive: Validate that KeyValuePair has the expected properties
+                    // This should never happen for real KeyValuePair<,>, but protects against
+                    // reflection caching issues or corrupted type metadata
+                    if (keyProp is null || valueProp is null)
+                    {
+                        return null;
+                    }
+                    return (keyProp, valueProp);
+                });
+
+            // If we couldn't get the properties, fall through to default object handling
+            if (kvpProps is null)
+            {
+                WriteObjectReflection(builder, value, valueType);
+                return true;
+            }
+
+            var (keyProp, valueProp) = kvpProps.Value;
+            builder.Append(keyProp.GetValue(value));
+            builder.Append(':');
+            WriteObject(builder, valueProp.GetValue(value));
+            return true;
+        }
+
+        return false;
+    }
+
     private static void WriteObjectReflection(StringBuilder builder, object value, Type valueType)
     {
-        var props = ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
+        var props = TypeMetadataCache.ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
         builder.Append('{');
         bool first = true;
         foreach (var prop in props)

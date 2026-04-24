@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,10 +10,6 @@ using Xunit;
 
 namespace NGql.Core.Tests.Abstractions;
 
-/// <summary>
-/// RED TEST: Demonstrates FieldChildren race condition in Append() method.
-/// Non-atomic _count++ can lose entries when accessed concurrently.
-/// </summary>
 public class FieldChildrenConcurrencyTests
 {
     [Fact]
@@ -114,11 +111,6 @@ public class FieldChildrenConcurrencyTests
     }
 }
 
-/// <summary>
-/// RED TEST: Demonstrates QueryDefinition recursive ToString() buffer corruption.
-/// Using a single cached ThreadLocal<QueryTextBuilder>, nested ToString() calls
-/// reuse and corrupt the mutable StringBuilder.
-/// </summary>
 public class QueryDefinitionRecursionTests
 {
     [Fact]
@@ -172,15 +164,10 @@ public class QueryDefinitionRecursionTests
     }
 }
 
-/// <summary>
-/// RED TEST: FieldChildren read-side race condition.
-/// While mutations (Append/Set) are protected, reads (Find/AsSpan) are unprotected.
-/// Thread A reads _items pointer, Thread B resizes array → Thread A reads wrong array.
-/// </summary>
 public class FieldChildrenReadRaceConditionTests
 {
     [Fact]
-    public void FieldChildren_Find_Should_Be_Safe_During_Concurrent_Append()
+    public async Task FieldChildren_Find_Should_Be_Safe_During_Concurrent_Append()
     {
         // ARRANGE
         var children = new FieldChildren();
@@ -206,14 +193,14 @@ public class FieldChildrenReadRaceConditionTests
                 for (int i = 0; i < 500; i++)
                 {
                     // These reads MUST NOT crash or return corrupt data
-                    var result = children.Find("field50".AsSpan());
-                    var span = children.AsSpan();  // Must not throw IndexOutOfRange
+                    children.Find("field50".AsSpan());
+                    children.AsSpan();  // Must not throw IndexOutOfRange
                 }
             }
             catch (Exception ex) { errors.Add(ex); }
         })).ToList();
 
-        Task.WaitAll(searchTasks.Concat(new[] { appendThread }).ToArray());
+        await Task.WhenAll(searchTasks.Concat([appendThread]).ToArray());
 
         // ASSERT: No crashes, no corrupted state
         errors.Should().BeEmpty("Concurrent Find + Append should never crash");
@@ -271,7 +258,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Enumerate_With_Modifications_Should_Use_Snapshot()
     {
-        // Arrange - Verify that enumeration uses snapshot pattern (lines 255-295 coverage)
         var children = new FieldChildren();
         for (int i = 0; i < 5; i++)
         {
@@ -309,7 +295,7 @@ public class FieldChildrenReadRaceConditionTests
         var iterationTasks = new List<Task>();
         for (int iter = 0; iter < 5; iter++)
         {
-            iterationTasks.Add(Task.Run(() =>
+            iterationTasks.Add(Task.Run(async () =>
             {
                 try
                 {
@@ -317,7 +303,7 @@ public class FieldChildrenReadRaceConditionTests
                     foreach (var field in children)
                     {
                         count++;
-                        System.Threading.Thread.Sleep(1); // Simulate work
+                        await Task.Delay(1);
                     }
                     iterationResults.Add(count);
                 }
@@ -338,7 +324,7 @@ public class FieldChildrenReadRaceConditionTests
             }
         });
 
-        await Task.WhenAll(iterationTasks.Concat(new[] { appendTask }).ToArray());
+        await Task.WhenAll(iterationTasks.Concat([appendTask]).ToArray());
 
         // Assert - All iterations should complete without exceptions (snapshot protects them)
         exceptions.Should().BeEmpty("Concurrent enumeration should be safe via snapshot pattern");
@@ -349,7 +335,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Clone_Should_Create_Independent_Copy()
     {
-        // Tests Clone method (line coverage for thread-safe copy operation)
         var children = new FieldChildren();
         for (int i = 0; i < 5; i++)
         {
@@ -372,7 +357,7 @@ public class FieldChildrenReadRaceConditionTests
     }
 
     [Fact]
-    public void FieldChildren_Find_Should_Be_Thread_Safe()
+    public async Task FieldChildren_Find_Should_Be_Thread_Safe()
     {
         // Tests Find method thread-safety (protected via locks)
         var children = new FieldChildren();
@@ -401,7 +386,7 @@ public class FieldChildrenReadRaceConditionTests
                 }
                 findResults.Add(found);
             });
-            task.Wait();
+            await task;
         }
 
         // Assert
@@ -411,7 +396,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_TryGetValue_Should_Find_Fields_By_Name()
     {
-        // Test uncovered line: TryGetValue method path (lines 66-73)
         var children = new FieldChildren();
         children.Append(new FieldDefinition("userId"));
         children.Append(new FieldDefinition("userName"));
@@ -430,7 +414,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Find_By_Span_Should_Handle_CaseInsensitive_Lookup()
     {
-        // Test uncovered line: Find method with case-insensitive comparison (line 59)
         var children = new FieldChildren();
         children.Append(new FieldDefinition("Profile"));
         children.Append(new FieldDefinition("Email"));
@@ -449,7 +432,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Set_Should_Update_Existing_Field()
     {
-        // Test uncovered line: Set method with name and field (line 112)
         var children = new FieldChildren();
         var originalField = new FieldDefinition("field1", "Type1");
         children.Append(originalField);
@@ -464,7 +446,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_AsSpan_Enumeration_Should_See_Snapshot()
     {
-        // Test uncovered line: AsSpan during concurrent mutations (line 38-41)
         var children = new FieldChildren();
         for (int i = 0; i < 5; i++)
         {
@@ -488,7 +469,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Enumeration_With_Index_Should_Work()
     {
-        // Test uncovered line: Enumeration when _index becomes active (>= 16 items)
         var children = new FieldChildren();
         const int itemCount = 20;
         
@@ -526,7 +506,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_ContainsKey_Should_Check_Field_Existence()
     {
-        // Test uncovered line: ContainsKey IReadOnlyDictionary implementation (line 75-76)
         var children = new FieldChildren();
         children.Append(new FieldDefinition("email"));
         children.Append(new FieldDefinition("phone"));
@@ -538,7 +517,6 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public void FieldChildren_Indexer_Should_Return_Field_By_Name()
     {
-        // Test uncovered line: IReadOnlyDictionary indexer (line 78-83)
         var children = new FieldChildren();
         children.Append(new FieldDefinition("data", "String"));
         
@@ -567,4 +545,93 @@ public class FieldChildrenReadRaceConditionTests
         values[0].Type.Should().Be("ID");
         values[1].Type.Should().Be("String");
     }
+
+    [Fact]
+    public void FieldChildren_IEnumerable_GetEnumerator_Should_Return_Enumerator()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("field1", "String"));
+
+        // Act
+        IEnumerable enumerable = (IEnumerable)children;
+        var enumerator = enumerable.GetEnumerator();
+
+        // Assert
+        enumerator.Should().NotBeNull();
+        enumerator.MoveNext().Should().BeTrue();
+        enumerator.Current.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void FieldChildren_IEnumerator_Current_Before_MoveNext_Should_Throw()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("field1", "String"));
+
+        IEnumerable enumerable = (IEnumerable)children;
+        var enumerator = enumerable.GetEnumerator();
+
+        // Act & Assert - accessing Current before MoveNext should throw
+        var action = () => { var _ = enumerator.Current; };
+        action.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void FieldChildren_IEnumerator_Reset_Should_Work()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("field1", "String"));
+        children.Append(new FieldDefinition("field2", "Int"));
+
+        IEnumerable enumerable = (IEnumerable)children;
+        var enumerator = enumerable.GetEnumerator();
+        enumerator.MoveNext();  // Move to first
+
+        // Act
+        enumerator.Reset();
+
+        // Assert - should be able to start over
+        enumerator.MoveNext().Should().BeTrue();
+    }
+
+    [Fact]
+    public void FieldChildren_With_Many_Items_Should_BuildIndex()
+    {
+        // Arrange
+        var children = new FieldChildren();
+
+        // Act - Add >16 items to trigger index building
+        for (int i = 0; i < 20; i++)
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+
+        // Assert - should find field quickly via index
+        var found = children.Find("field15");
+        found.Should().NotBeNull();
+        found?.Name.Should().Be("field15");
+    }
+
+    [Fact]
+    public void FieldChildren_Set_With_Many_Items_Should_Preserve_All()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        for (int i = 0; i < 18; i++)  // >16 to trigger index
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+
+        // Act - Set a new field when many items exist
+        var newField = new FieldDefinition("newField", "Int");
+        children.Set("newField", newField);
+
+        // Assert
+        children.Find("field00").Should().NotBeNull();  // Old fields still there
+        children.Find("newField").Should().NotBeNull();  // New field added
+    }
+
 }

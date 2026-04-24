@@ -97,7 +97,11 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
             if (_items == null)
                 _items = new FieldDefinition[InitialCapacity];
             else if (_count == _items.Length)
-                Array.Resize(ref _items, _items.Length * 2);
+            {
+                var items = _items;
+                Array.Resize(ref items, _items.Length * 2);
+                _items = items;
+            }
 
             _items[_count++] = child;
 
@@ -167,7 +171,11 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         if (_items == null)
             _items = new FieldDefinition[InitialCapacity];
         else if (_count == _items.Length)
-            Array.Resize(ref _items, _items.Length * 2);
+        {
+            var items = _items;
+            Array.Resize(ref items, _items.Length * 2);
+            _items = items;
+        }
 
         _items[_count++] = child;
 

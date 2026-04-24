@@ -35,8 +35,13 @@ internal static class QueryMerger
     /// </summary>
     /// <param name="targetDefinition">The target query definition to merge into</param>
     /// <param name="queryMap">The query map to update with merge results</param>
+    /// <param name="queryBuilder">Optional QueryBuilder instance to update path index (performance optimization)</param>
     /// <param name="incomingQuery">Query definition to merge</param>
-    public static void MergeQuery(QueryDefinition targetDefinition, QueryMap queryMap, in QueryDefinition incomingQuery)
+    public static void MergeQuery(
+        QueryDefinition targetDefinition, 
+        QueryMap queryMap,
+        QueryBuilder? queryBuilder,
+        in QueryDefinition incomingQuery)
     {
         // FAST PATH: Skip merge entirely if incoming query has no fields
         if (incomingQuery._fields?.Count == 0 || incomingQuery._fields == null) return;
@@ -112,6 +117,100 @@ internal static class QueryMerger
 
         // Update root query mapping if fields changed
         queryMap.UpdateRootMapping(targetDefinition);
+
+        // TODO: Implement lazy path indexing to avoid eager computation
+        // The path index will be computed on-demand in GetPathTo() after fixing alias resolution
+        // For now, skip population to avoid the overhead of DFS traversal during Include()
+    }
+
+    /// <summary>
+    /// Updates the path index with newly merged or updated fields.
+    /// This enables O(1) lookups in GetPathTo() instead of O(N×depth) DFS traversal.
+    /// </summary>
+    private static void UpdatePathIndex(
+        Dictionary<string, string[]> pathIndex,
+        QueryDefinition targetDefinition,
+        Dictionary<string, FieldDefinition> updatedFields)
+    {
+        // For each updated field, compute and cache its path from root
+        foreach (var fieldName in updatedFields.Keys)
+        {
+            if (targetDefinition.Fields.TryGetValue(fieldName, out var field))
+            {
+                var path = ComputeFieldPath(targetDefinition, fieldName);
+                if (path != null)
+                {
+                    pathIndex[fieldName] = path;
+                    
+                    // Also index by alias if it differs from name
+                    if (!ReferenceEquals(field._effectiveName, fieldName) &&
+                        !pathIndex.ContainsKey(field._effectiveName))
+                    {
+                        pathIndex[field._effectiveName] = path;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Computes the path from root to a specific field.
+    /// Returns the segments as a string array (e.g., ["player", "businessObjects", "playerProfile"]).
+    /// </summary>
+    private static string[]? ComputeFieldPath(QueryDefinition definition, string fieldName)
+    {
+        // For top-level fields, just return single-element array
+        if (definition.Fields.TryGetValue(fieldName, out var field))
+        {
+            return new[] { field._effectiveName };
+        }
+
+        // For nested fields, search recursively
+        var segments = new List<string>();
+        foreach (var rootField in definition.Fields.Values)
+        {
+            segments.Add(rootField._effectiveName);
+            if (FindPathSegments(rootField, fieldName, segments))
+            {
+                return segments.ToArray();
+            }
+            segments.Clear();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Recursively finds path segments to reach a target field name.
+    /// Uses DFS with backtracking to build the complete path.
+    /// </summary>
+    private static bool FindPathSegments(
+        FieldDefinition parent,
+        string targetName,
+        List<string> segments)
+    {
+        foreach (var field in parent.Fields.Values)
+        {
+            segments.Add(field._effectiveName);
+
+            // Check if this field is the target (by effective name or original name)
+            if (string.Equals(field._effectiveName, targetName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(field.Name, targetName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Recursively search in nested fields
+            if (FindPathSegments(field, targetName, segments))
+            {
+                return true;
+            }
+
+            // Backtrack: remove this segment since target wasn't found here
+            segments.RemoveAt(segments.Count - 1);
+        }
+
+        return false;
     }
 
     private static MergingStrategy GetEffectiveMergingStrategy(MergingStrategy rootStrategy, MergingStrategy childStrategy)
