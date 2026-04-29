@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
+using System.Threading;
 
 namespace NGql.Core.Abstractions;
 
@@ -8,37 +9,48 @@ namespace NGql.Core.Abstractions;
 /// Uses linear scan for small counts and a lazy dictionary index for larger counts.
 /// Null <see cref="FieldDefinition._children"/> on a leaf node costs nothing — no allocation occurs
 /// until the first child is added.
-/// 
-/// THREAD-SAFETY: All reads and mutations use lock synchronization to handle concurrent
-/// builder access (e.g., in parallel query building scenarios). Volatile fields ensure
-/// CPU write caches are flushed for all threads to see consistent state.
+///
+/// THREAD-SAFETY: Reads on small (no-index) collections are lock-free — readers do volatile loads
+/// of <see cref="_count"/> and <see cref="_items"/> and walk a contiguous array. Reads against the
+/// index, and all writes, take <see cref="_lock"/>. Writers publish updates with explicit volatile
+/// stores: the new slot is written before <see cref="_count"/> bumps, so any reader observing the
+/// new count is also guaranteed to see the corresponding initialized slot.
+///
+/// The index threshold is intentionally moderate: tiny collections do not need an index, and avoiding
+/// it on the read fast-path eliminates lock acquisition for the common case (most query nodes have
+/// fewer than a dozen direct children).
 /// </summary>
 internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinition>
 {
     private const int InitialCapacity = 4;
     private const int IndexThreshold = 16;
 
-    // THREAD-SAFETY FIX: Added volatile to ensure all readers see consistent values
-    // Volatile ensures CPU write caches are flushed and reads see latest values
-    internal volatile FieldDefinition[]? _items;
-    internal volatile int _count;
-    private Dictionary<string, FieldDefinition>? _index; // lazy, built when _count >= IndexThreshold
-    private readonly object _lock = new object(); // Lock for thread-safe mutations
+    /// <summary>Backing storage. Written only under <see cref="_lock"/>; readers do a single volatile load.</summary>
+    private FieldDefinition[]? _items;
+    /// <summary>Number of valid entries in <see cref="_items"/>. Volatile-stored last on writes
+    /// (release semantics) so readers observing the new value also see the corresponding slot.</summary>
+    private int _count;
+    /// <summary>Lazy lookup index, built when <see cref="_count"/> reaches <see cref="IndexThreshold"/>.
+    /// All access (including reads) is guarded by <see cref="_lock"/> because <see cref="Dictionary{TKey,TValue}"/>
+    /// is not safe for concurrent read+write.</summary>
+    private Dictionary<string, FieldDefinition>? _index;
+    private readonly object _lock = new();
 
     // ── Counts ────────────────────────────────────────────────────────────────
 
-    int IReadOnlyCollection<KeyValuePair<string, FieldDefinition>>.Count => _count;
-    internal int Count => _count;
+    int IReadOnlyCollection<KeyValuePair<string, FieldDefinition>>.Count => Volatile.Read(ref _count);
+    internal int Count => Volatile.Read(ref _count);
 
     // ── Span access ───────────────────────────────────────────────────────────
 
-    /// <summary>Returns a span over the items for zero-alloc iteration.</summary>
+    /// <summary>Returns a span over the items for zero-alloc iteration.
+    /// Reads count first, then items — combined with the writer's items-then-count publication this
+    /// guarantees the observed array contains every slot below the observed count.</summary>
     internal ReadOnlySpan<FieldDefinition> AsSpan()
     {
-        lock (_lock)
-        {
-            return _items == null ? ReadOnlySpan<FieldDefinition>.Empty : _items.AsSpan(0, _count);
-        }
+        var count = Volatile.Read(ref _count);
+        var items = Volatile.Read(ref _items);
+        return items == null ? ReadOnlySpan<FieldDefinition>.Empty : items.AsSpan(0, count);
     }
 
     // ── Lookup ────────────────────────────────────────────────────────────────
@@ -46,20 +58,46 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// <summary>Find a child by name (case-insensitive). Returns null if not found.</summary>
     internal FieldDefinition? Find(ReadOnlySpan<char> name)
     {
-        lock (_lock)
+        // Fast path: no index yet. Lock-free volatile snapshot + linear scan.
+        if (Volatile.Read(ref _index) == null)
         {
-            if (_items == null) return null;
-
-            if (_index != null)
-                return _index.TryGetValue(name.ToString(), out var indexed) ? indexed : null;
-
-            // Linear scan for small collections — avoids dictionary overhead.
-            for (int i = 0; i < _count; i++)
+            var count = Volatile.Read(ref _count);
+            var items = Volatile.Read(ref _items);
+            if (items == null) return null;
+            for (int i = 0; i < count; i++)
             {
-                if (name.Equals(_items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
-                    return _items[i];
+                if (name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                    return items[i];
             }
             return null;
+        }
+
+        // Slow path: indexed lookup needs the lock since Dictionary is not concurrent-read-safe.
+        lock (_lock)
+        {
+            return _index != null && _index.TryGetValue(name.ToString(), out var indexed) ? indexed : null;
+        }
+    }
+
+    /// <summary>Find a child by name (case-insensitive). String overload avoids span/string round-tripping.</summary>
+    internal FieldDefinition? Find(string name)
+    {
+        if (Volatile.Read(ref _index) == null)
+        {
+            var count = Volatile.Read(ref _count);
+            var items = Volatile.Read(ref _items);
+            if (items == null) return null;
+            for (int i = 0; i < count; i++)
+            {
+                if (string.Equals(items[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    return items[i];
+            }
+            return null;
+        }
+
+        lock (_lock)
+        {
+            return _index != null && _index.TryGetValue(name, out var indexed) ? indexed : null;
         }
     }
 
@@ -69,17 +107,23 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         return value != null;
     }
 
+    internal bool TryGetValue(string name, [MaybeNullWhen(false)] out FieldDefinition value)
+    {
+        value = Find(name)!;
+        return value != null;
+    }
+
     bool IReadOnlyDictionary<string, FieldDefinition>.TryGetValue(string key, [MaybeNullWhen(false)] out FieldDefinition value)
-        => TryGetValue(key.AsSpan(), out value);
+        => TryGetValue(key, out value);
 
     bool IReadOnlyDictionary<string, FieldDefinition>.ContainsKey(string key)
-        => Find(key.AsSpan()) != null;
+        => Find(key) != null;
 
     FieldDefinition IReadOnlyDictionary<string, FieldDefinition>.this[string key]
     {
         get
         {
-            var found = Find(key.AsSpan());
+            var found = Find(key);
             return found ?? throw new KeyNotFoundException($"Key '{key}' not found.");
         }
     }
@@ -94,21 +138,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         lock (_lock)
         {
-            if (_items == null)
-                _items = new FieldDefinition[InitialCapacity];
-            else if (_count == _items.Length)
-            {
-                var items = _items;
-                Array.Resize(ref items, _items.Length * 2);
-                _items = items;
-            }
-
-            _items[_count++] = child;
-
-            if (_index != null)
-                _index[child.Name] = child;
-            else if (_count >= IndexThreshold)
-                BuildIndex();
+            AppendLocked(child);
         }
     }
 
@@ -117,13 +147,14 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         lock (_lock)
         {
-            if (_items != null)
+            var items = _items;
+            if (items != null)
             {
                 for (int i = 0; i < _count; i++)
                 {
-                    if (string.Equals(_items[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(items[i].Name, name, StringComparison.OrdinalIgnoreCase))
                     {
-                        _items[i] = child;
+                        items[i] = child;
                         if (_index != null) _index[child.Name] = child;
                         return;
                     }
@@ -138,13 +169,14 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         lock (_lock)
         {
-            if (_items != null)
+            var items = _items;
+            if (items != null)
             {
                 for (int i = 0; i < _count; i++)
                 {
-                    if (name.Equals(_items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                    if (name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
                     {
-                        _items[i] = child;
+                        items[i] = child;
                         if (_index != null) _index[child.Name] = child;
                         return;
                     }
@@ -163,48 +195,48 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /// <summary>
-    /// Internal append logic used within locked sections.
-    /// Must only be called from within the _lock.
+    /// Append logic used within locked sections. Publishes the new slot before bumping
+    /// <see cref="_count"/> so concurrent readers always see fully-initialized data.
     /// </summary>
     private void AppendLocked(FieldDefinition child)
     {
-        if (_items == null)
-            _items = new FieldDefinition[InitialCapacity];
-        else if (_count == _items.Length)
+        var items = _items;
+        if (items == null)
         {
-            var items = _items;
-            Array.Resize(ref items, _items.Length * 2);
-            _items = items;
+            items = new FieldDefinition[InitialCapacity];
+            Volatile.Write(ref _items, items);
+        }
+        else if (_count == items.Length)
+        {
+            // Grow: allocate a new array, copy, then publish. Concurrent readers either see the old
+            // array (with their bounded count) or the new array — both are coherent snapshots.
+            var grown = new FieldDefinition[items.Length * 2];
+            Array.Copy(items, grown, _count);
+            items = grown;
+            Volatile.Write(ref _items, items);
         }
 
-        _items[_count++] = child;
+        items[_count] = child;
+        // Release-store the new count last so any reader that observes it also sees the slot above.
+        Volatile.Write(ref _count, _count + 1);
 
         if (_index != null)
+        {
             _index[child.Name] = child;
+        }
         else if (_count >= IndexThreshold)
-            BuildIndex();
+        {
+            BuildIndexLocked();
+        }
     }
 
-    // ── Clone ─────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Creates a shallow clone (array copy) for use during merge operations.
-    /// The clone shares the same <see cref="FieldDefinition"/> references as the original.
-    /// Note: Index is NOT copied; it rebuilds lazily on next insertion if needed.
-    /// </summary>
-    internal FieldChildren Clone()
+    private void BuildIndexLocked()
     {
-        lock (_lock)
-        {
-            if (_items == null) return new FieldChildren();
-
-            return new FieldChildren
-            {
-                _items = _items[.._count],
-                _count = _count,
-                _index = null  // Skip index copy — will rebuild lazily if needed
-            };
-        }
+        var built = new Dictionary<string, FieldDefinition>(_count, StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < _count; i++)
+            built[_items![i].Name] = _items[i];
+        // Publish the index pointer last so readers that observe non-null _index see a fully populated dict.
+        Volatile.Write(ref _index, built);
     }
 
     // ── IReadOnlyDictionary (Keys / Values / Enumerator) ─────────────────────
@@ -213,14 +245,13 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         get
         {
-            lock (_lock)
-            {
-                if (_items == null) return [];
-                var keys = new List<string>(_count);
-                for (int i = 0; i < _count; i++) 
-                    keys.Add(_items[i].Name);
-                return keys;
-            }
+            var count = Volatile.Read(ref _count);
+            var items = Volatile.Read(ref _items);
+            if (items == null) return [];
+            var keys = new List<string>(count);
+            for (int i = 0; i < count; i++)
+                keys.Add(items[i].Name);
+            return keys;
         }
     }
 
@@ -228,32 +259,24 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         get
         {
-            lock (_lock)
-            {
-                if (_items == null) return [];
-                var values = new List<FieldDefinition>(_count);
-                for (int i = 0; i < _count; i++) 
-                    values.Add(_items[i]);
-                return values;
-            }
+            var count = Volatile.Read(ref _count);
+            var items = Volatile.Read(ref _items);
+            if (items == null) return [];
+            var values = new List<FieldDefinition>(count);
+            for (int i = 0; i < count; i++)
+                values.Add(items[i]);
+            return values;
         }
     }
 
     /// <summary>
-    /// Returns a zero-alloc struct enumerator for this collection.
-    /// C# foreach will prefer this over the interface implementation, avoiding allocations.
+    /// Returns a zero-alloc struct enumerator over a snapshot of this collection.
     /// </summary>
     public FieldChildrenEnumerator GetEnumerator()
     {
-        // Take snapshot under lock to prevent TOCTOU race
-        FieldDefinition[]? snapshot;
-        int count;
-        lock (_lock)
-        {
-            snapshot = _items == null ? null : _items[.._count];
-            count = _count;
-        }
-        return new FieldChildrenEnumerator(snapshot, count);
+        var count = Volatile.Read(ref _count);
+        var items = Volatile.Read(ref _items);
+        return new FieldChildrenEnumerator(items, count);
     }
 
     // Explicit interface implementation — provides fallback for code that uses IEnumerable<T> directly
@@ -262,21 +285,12 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
 
     IEnumerator IEnumerable.GetEnumerator()
         => GetEnumerator();
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private void BuildIndex()
-    {
-        _index = new Dictionary<string, FieldDefinition>(_count, StringComparer.OrdinalIgnoreCase);
-        for (int i = 0; i < _count; i++)
-            _index[_items![i].Name] = _items[i];
-    }
 }
 
 /// <summary>
 /// Zero-allocation struct enumerator for <see cref="FieldChildren"/>.
-/// Implements IEnumerator to support foreach without heap allocation.
-/// Uses a snapshot taken under lock to prevent races during iteration.
+/// Operates on a snapshot taken at construction time, so concurrent appends do not
+/// affect an in-flight enumeration.
 /// </summary>
 internal struct FieldChildrenEnumerator : IEnumerator<KeyValuePair<string, FieldDefinition>>
 {
@@ -284,7 +298,6 @@ internal struct FieldChildrenEnumerator : IEnumerator<KeyValuePair<string, Field
     private readonly int _count;
     private int _index;
 
-    /// <summary>Constructor takes pre-snapshotted data (caller must acquire lock).</summary>
     internal FieldChildrenEnumerator(FieldDefinition[]? snapshot, int count)
     {
         _snapshot = snapshot;

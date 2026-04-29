@@ -11,16 +11,9 @@ internal sealed class QueryMap
     private readonly Dictionary<string, string> _mappings = new();
 
     /// <summary>
-    /// Updates multiple mappings at once.
+    /// Sets a single query-name → field-key mapping.
     /// </summary>
-    /// <param name="mappings">Dictionary of mappings to add or update</param>
-    public void UpdateMappings(Dictionary<string, string> mappings)
-    {
-        foreach (var (key, value) in mappings)
-        {
-            _mappings[key] = value;
-        }
-    }
+    public void SetMapping(string queryName, string fieldKey) => _mappings[queryName] = fieldKey;
 
     /// <summary>
     /// Gets the mapped path for a query name or returns the original name if no mapping exists.
@@ -45,9 +38,14 @@ internal sealed class QueryMap
                 return; // Keep the existing valid mapping
             }
 
-            // If we don't have a valid mapping, use the first field
-            var firstField = definition.Fields.Values.First();
-            _mappings[definition.Name] = firstField._effectiveName;
+            // If we don't have a valid mapping, use the first field. Iterate via the struct
+            // enumerator (Dictionary.Enumerator is a struct on the concrete Dictionary type) instead
+            // of LINQ First() which allocates an interface enumerator.
+            using var enumerator = definition.Fields.GetEnumerator();
+            if (enumerator.MoveNext())
+            {
+                _mappings[definition.Name] = enumerator.Current.Value._effectiveName;
+            }
         }
     }
 
@@ -64,7 +62,7 @@ internal sealed class QueryMap
         string queryName,
         string? nodePath,
         QueryDefinition queryDefinition,
-        Dictionary<string, string[]>? pathIndex = null)
+        Dictionary<string, Dictionary<string, string[]>>? pathIndex = null)
     {
         var rootPath = GetMappedPath(queryName);
         if (string.IsNullOrEmpty(rootPath))
@@ -77,25 +75,27 @@ internal sealed class QueryMap
             return [rootPath];
         }
 
-        // Phase 2 optimization: Lazy index initialization
-        // On first call, compute and cache paths; on subsequent calls, return from cache
-        var cacheKey = $"{rootPath}.{nodePath}";
-        
-        if (pathIndex?.TryGetValue(cacheKey, out var cachedPath) == true)
+        // Two-level cache lookup avoids the per-call "{rootPath}.{nodePath}" concat allocation.
+        Dictionary<string, string[]>? perRoot = null;
+        if (pathIndex != null && pathIndex.TryGetValue(rootPath, out perRoot)
+            && perRoot.TryGetValue(nodePath, out var cachedPath))
         {
             return cachedPath;
         }
 
-        // Compute path using DFS traversal
         var rootField = FindRootField(queryDefinition, rootPath);
         var computedPath = rootField == null ? [rootPath] : BuildPathToNode(rootField, nodePath);
-        
-        // Cache for future calls
+
         if (pathIndex != null)
         {
-            pathIndex[cacheKey] = computedPath;
+            if (perRoot == null)
+            {
+                perRoot = new Dictionary<string, string[]>(StringComparer.Ordinal);
+                pathIndex[rootPath] = perRoot;
+            }
+            perRoot[nodePath] = computedPath;
         }
-        
+
         return computedPath;
     }
 
@@ -151,32 +151,32 @@ internal sealed class QueryMap
     /// <returns>True if a target node was found, false otherwise</returns>
     private static bool FindPathToNodeOptimized(FieldDefinition field, ReadOnlySpan<char> targetNode, List<string> pathBuilder)
     {
-        // Check if any direct child matches the target node
-        foreach (var childField in field.Fields.Values)
+        // Iterate _children directly via the lock-free zero-alloc AsSpan() — going through Fields.Values
+        // would allocate a List wrapper on every recursion via the IReadOnlyDictionary.Values implementation.
+        var children = field._children;
+        if (children == null) return false;
+
+        var span = children.AsSpan();
+        for (int i = 0; i < span.Length; i++)
         {
-            // Optimization: Use the pre-calculated effective name for the primary match.
-            // This covers Name (if no alias) or Alias (if it exists).
+            var childField = span[i];
             var effectiveName = childField._effectiveName;
-                
-            // If it doesn't match the effective name, we only need to check the base Name 
-            // if the effective name was actually an alias (i.e., they aren't the same reference).
+
             var isMatch = targetNode.Equals(effectiveName.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
                           (!ReferenceEquals(effectiveName, childField.Name) && targetNode.Equals(childField.Name.AsSpan(), StringComparison.OrdinalIgnoreCase));
 
             pathBuilder.Add(effectiveName);
             if (isMatch)
             {
-                // Found the target node
                 return true;
             }
 
-            // Try searching in nested fields
             if (FindPathToNodeOptimized(childField, targetNode, pathBuilder))
             {
                 return true;
             }
 
-            // Backtrack: remove this field from a path since the target wasn't found here
+            // Backtrack: remove this field from the path since the target wasn't found here.
             pathBuilder.RemoveAt(pathBuilder.Count - 1);
         }
 

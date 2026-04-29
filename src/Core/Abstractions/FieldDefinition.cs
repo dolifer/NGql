@@ -19,6 +19,12 @@ public sealed record FieldDefinition
     internal Dictionary<string, object?>? _metadata;
     internal string Path { get; init; } = string.Empty;
 
+    /// <summary>
+    /// Cached result of "does this field's subtree contain any arguments?".
+    /// Null = not yet computed. Reset to null whenever the subtree mutates.
+    /// </summary>
+    internal bool? _subtreeHasAnyArguments;
+
     private bool? _isArray;
     private bool? _isNullable;
 

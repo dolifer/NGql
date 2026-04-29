@@ -44,20 +44,23 @@ public sealed class PreservationBuilder
     /// </summary>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
+        // Compute the last segment of nodePath ONCE outside the loop. If nodePath has no '.', the
+        // entire string is the last segment — pass nodePath itself to avoid re-allocating a substring.
+        var lastIndex = nodePath.LastIndexOf('.');
+        var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
+        var fieldPathHasDot = fieldPath.Contains('.');
+
         // For merged queries with multiple roots, preserve in all of them
         foreach (var rootField in _sourceQuery.Definition.Fields.Values)
         {
             var pathToNode = _sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
             if (pathToNode.Length == 0) continue;
 
-            // Extract last segment of nodePath without allocating array
-            var lastIndex = nodePath.LastIndexOf('.');
-            var lastSegment = lastIndex == -1 ? nodePath : nodePath[(lastIndex + 1)..];
-            var fullNodePath = string.Join(".", pathToNode) + "." + lastSegment;
+            var fullNodePath = JoinPath(pathToNode, lastSegment);
             var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
             if (nodeField == null || !nodeField.HasFields) continue;
 
-            if (fieldPath.Contains('.'))
+            if (fieldPathHasDot)
             {
                 var resolvedPath = QueryDefinitionExtensions.NavigatePath(nodeField.Fields, fieldPath.AsSpan(), out var resolved, fullNodePath)
                     != null ? resolved : null;
@@ -71,11 +74,34 @@ public sealed class PreservationBuilder
                 var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
                 if (match.HasValue)
                 {
-                    Preserve($"{fullNodePath}.{match.Value.Key}");
+                    Preserve(string.Concat(fullNodePath, ".", match.Value.Key));
                 }
             }
         }
         return this;
+    }
+
+    /// <summary>
+    /// Builds <c>{segments[0]}.{segments[1]}...{segments[N-1]}.{tail}</c> in a single allocation —
+    /// replaces the prior <c>string.Join + "." + tail</c> two-step.
+    /// </summary>
+    private static string JoinPath(string[] segments, string tail)
+    {
+        var totalLength = tail.Length + segments.Length; // dots between segments + before tail
+        for (int i = 0; i < segments.Length; i++) totalLength += segments[i].Length;
+
+        return string.Create(totalLength, (segments, tail), static (span, st) =>
+        {
+            var pos = 0;
+            for (int i = 0; i < st.segments.Length; i++)
+            {
+                var seg = st.segments[i].AsSpan();
+                seg.CopyTo(span[pos..]);
+                pos += seg.Length;
+                span[pos++] = '.';
+            }
+            st.tail.AsSpan().CopyTo(span[pos..]);
+        });
     }
 
     /// <summary>

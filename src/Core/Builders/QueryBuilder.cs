@@ -30,7 +30,11 @@ public sealed class QueryBuilder
     ///     Caches paths to fields for O(1) lookup in GetPathTo().
     ///     Maps field name/alias → string[] path segments from root.
     /// </summary>
-    private readonly Dictionary<string, string[]> _pathIndex = new();
+    /// <summary>
+    /// Two-level path cache: <c>rootPath → (nodePath → segments)</c>. The two-level structure avoids
+    /// allocating a concatenated <c>"{root}.{node}"</c> string on every <c>GetPathTo</c> cache hit.
+    /// </summary>
+    private readonly Dictionary<string, Dictionary<string, string[]>> _pathIndex = new();
 
     private QueryBuilder(QueryDefinition queryDefinition) => _definition = queryDefinition;
 

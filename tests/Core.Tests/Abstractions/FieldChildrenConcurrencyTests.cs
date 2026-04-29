@@ -333,30 +333,6 @@ public class FieldChildrenReadRaceConditionTests
     }
 
     [Fact]
-    public void FieldChildren_Clone_Should_Create_Independent_Copy()
-    {
-        var children = new FieldChildren();
-        for (int i = 0; i < 5; i++)
-        {
-            children.Append(new FieldDefinition($"field_{i}"));
-        }
-
-        var cloned = children.Clone();
-
-        // Verify cloned has all original fields
-        cloned.Count.Should().Be(5);
-        
-        var clonedNames = cloned.Select(f => f.Value.Name).ToList();
-        clonedNames.Should().Equal("field_0", "field_1", "field_2", "field_3", "field_4");
-
-        // Modify original
-        children.Append(new FieldDefinition("field_5"));
-
-        // Verify clone is independent
-        cloned.Count.Should().Be(5, "Clone should not be affected by original modifications");
-    }
-
-    [Fact]
     public async Task FieldChildren_Find_Should_Be_Thread_Safe()
     {
         // Tests Find method thread-safety (protected via locks)
