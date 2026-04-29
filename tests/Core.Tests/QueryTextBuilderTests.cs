@@ -691,4 +691,30 @@ public class QueryTextBuilderTests
         // Clean up
         QueryTextBuilder.ReturnToPool(nextBuilder);
     }
+
+    [Fact]
+    public void EnumValue_CompareTo_WithNonEnumObject_ThrowsArgumentException()
+    {
+        // Arrange
+        var enumVal = new EnumValue("Test");
+        object invalidObj = 123; // not an EnumValue
+
+        // Act & Assert
+        var action = () => enumVal.CompareTo(invalidObj);
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*Object must be of type*");
+    }
+
+    [Fact]
+    public void EnumValue_Equals_WithNonEnumObject_ThrowsArgumentException()
+    {
+        // Arrange
+        var enumVal = new EnumValue("Test");
+        object invalidObj = 123; // not an EnumValue
+
+        // Act & Assert
+        var action = () => enumVal.Equals(invalidObj);
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*Object must be of type*");
+    }
 }

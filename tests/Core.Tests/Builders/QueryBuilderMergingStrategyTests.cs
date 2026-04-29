@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Exceptions;
@@ -524,5 +526,57 @@ public class QueryBuilderMergingStrategyTests
         rootBuilder.GetPathTo("root").Should().BeEquivalentTo("users");
         rootBuilder.GetPathTo("child").Should().BeEquivalentTo("users"); // Should merge - null == empty
         rootBuilder.DefinitionsCount.Should().Be(1); // Root only (child merged)
+    }
+
+    [Fact]
+    public void Include_BothBuildersHaveVariables_MergesIntoUnion()
+    {
+        var userIdVar = new Variable("$userId", "ID");
+        var pageSizeVar = new Variable("$pageSize", "Int");
+
+        var rootBuilder = CreateDefaultBuilder("root", MergingStrategy.MergeByFieldPath)
+            .AddField("users", new Dictionary<string, object?> { ["id"] = userIdVar }, ["name"]);
+
+        var childBuilder = CreateDefaultBuilder("child")
+            .AddField("users", new Dictionary<string, object?> { ["limit"] = pageSizeVar }, ["email"]);
+
+        rootBuilder.Variables.Should().Contain(v => v.Name == "$userId");
+        childBuilder.Variables.Should().Contain(v => v.Name == "$pageSize");
+
+        rootBuilder.Include(childBuilder);
+
+        var names = rootBuilder.Variables.Select(v => v.Name).ToList();
+        names.Should().Contain(new[] { "$userId", "$pageSize" });
+    }
+
+    [Fact]
+    public void Include_WithInvalidStrategyCast_Throws()
+    {
+        var rootBuilder = CreateDefaultBuilder("root")
+            .WithMergingStrategy((MergingStrategy)999)
+            .AddField("users", ["id"]);
+
+        var childBuilder = CreateDefaultBuilder("child").AddField("users", ["name"]);
+
+        Action act = () => rootBuilder.Include(childBuilder);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void Include_NeverMergeChild_ProducesAliasedSecondField()
+    {
+        // Both root and child use the same root field name, but child is NeverMerge so it gets aliased.
+        var rootBuilder = CreateDefaultBuilder("rootQuery", MergingStrategy.MergeByDefault)
+            .AddField("rootQuery:users", ["id"]);
+
+        var childBuilder = CreateDefaultBuilder("childQuery", MergingStrategy.NeverMerge)
+            .AddField("childQuery:users", ["name"]);
+
+        rootBuilder.Include(childBuilder);
+
+        rootBuilder.Definition.Fields.Should().HaveCount(2);
+        rootBuilder.Definition.Fields.Values.Should().Contain(f => f.Alias == "rootQuery");
+        rootBuilder.Definition.Fields.Keys.Should().Contain(k => k.StartsWith("childQuery", StringComparison.OrdinalIgnoreCase));
     }
 }

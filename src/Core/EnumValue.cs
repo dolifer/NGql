@@ -13,7 +13,7 @@ public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatab
         Value = value switch
         {
             string str when !string.IsNullOrWhiteSpace(str) => str,
-            Enum enumValue => enumValue.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value)),
+            Enum enumValue => enumValue.ToString(),
             string => throw new ArgumentException("Enum value cannot be null or whitespace.", nameof(value)),
             _ => throw new ArgumentException($"Invalid enum value type: {value.GetType().Name}. Expected a non-empty string or Enum.", nameof(value))
         };

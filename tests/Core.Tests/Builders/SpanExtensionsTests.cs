@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using FluentAssertions;
+using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 using Xunit;
 
@@ -139,5 +141,93 @@ public class SpanExtensionsTests
 
         // Assert
         result.Should().Be(expected, $"HasLetterOrDigit for '{input}'");
+    }
+
+    [Theory]
+    [InlineData(240, "verylongfieldname", "String")]
+    [InlineData(250, "complexfield", "ComplexType")]
+    public void GetOrAddSimpleField_WithLongPathExceeds256_UsesStringConcatenation(int parentPathLength, string fieldName, string fieldType)
+    {
+        // Arrange - test both FieldChildren and Dictionary variants with different path lengths
+        var children = new FieldChildren();
+        var dict = new Dictionary<string, FieldDefinition>();
+        var longParentPath = new string('x', parentPathLength);
+        var fieldTypeSpan = fieldType.AsSpan();
+
+        // Act - FieldChildren variant
+        var resultFromChildren = children.GetOrAddSimpleField(fieldName.AsSpan(), fieldTypeSpan, null, longParentPath, null);
+
+        // Act - Dictionary variant
+        var resultFromDict = dict.GetOrAddSimpleField(fieldName.AsSpan(), fieldTypeSpan, null, longParentPath, null);
+
+        // Assert
+        resultFromChildren.Should().NotBeNull();
+        resultFromChildren.Name.Should().Be(fieldName);
+        resultFromChildren.Path.Should().Contain(longParentPath);
+
+        resultFromDict.Should().NotBeNull();
+        resultFromDict.Name.Should().Be(fieldName);
+        resultFromDict.Path.Should().Contain(longParentPath);
+        dict.Should().ContainKey(fieldName);
+    }
+
+    [Theory]
+    [InlineData(256, true)]
+    [InlineData(257, false)]
+    [InlineData(512, false)]
+    [InlineData(1024, false)]
+    public void GetOrAddSimpleField_LongPathBoundary_RendersCorrectly(int pathLength, bool shouldFitInBuffer)
+    {
+        // Arrange
+        var children = new FieldChildren();
+        var dict = new Dictionary<string, FieldDefinition>();
+        var fieldName = "field";
+        var fieldType = "String";
+        var parentPath = new string('p', pathLength);
+
+        // Act - FieldChildren variant
+        var resultChildren = children.GetOrAddSimpleField(fieldName.AsSpan(), fieldType.AsSpan(), null, parentPath, null);
+
+        // Act - Dictionary variant
+        var resultDict = dict.GetOrAddSimpleField(fieldName.AsSpan(), fieldType.AsSpan(), null, parentPath, null);
+
+        // Assert both render correctly regardless of buffer strategy
+        resultChildren.Should().NotBeNull();
+        resultChildren.Path.Should().StartWith(parentPath);
+        resultChildren.Name.Should().Be(fieldName);
+
+        resultDict.Should().NotBeNull();
+        resultDict.Path.Should().StartWith(parentPath);
+        resultDict.Name.Should().Be(fieldName);
+    }
+
+    [Fact]
+    public void GetOrAddSimpleField_WithMetadataOnExistingField_MergesMetadata()
+    {
+        var children = new FieldChildren();
+        var fieldName = "user";
+        var metadata1 = new Dictionary<string, object?> { ["key1"] = "value1" };
+        var metadata2 = new Dictionary<string, object?> { ["key2"] = "value2" };
+
+        var field1 = children.GetOrAddSimpleField(fieldName.AsSpan(), "User".AsSpan(), null, "", metadata1);
+        var field2 = children.GetOrAddSimpleField(fieldName.AsSpan(), "User".AsSpan(), null, "", metadata2);
+
+        field2.Metadata.Should().ContainKey("key1");
+        field2.Metadata.Should().ContainKey("key2");
+    }
+
+    [Theory]
+    [InlineData(200, "field123")]
+    [InlineData(240, "longfield")]
+    public void GetOrAddSimpleField_Dictionary_WithShortPath_UsesStackalloc(int parentPathLength, string fieldName)
+    {
+        var dict = new Dictionary<string, FieldDefinition>();
+        var parentPath = new string('x', parentPathLength);
+
+        var result = dict.GetOrAddSimpleField(fieldName.AsSpan(), "String".AsSpan(), null, parentPath, null);
+
+        result.Should().NotBeNull();
+        result.Name.Should().Be(fieldName);
+        dict.Should().ContainKey(fieldName);
     }
 }

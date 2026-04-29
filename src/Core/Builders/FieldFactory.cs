@@ -256,12 +256,6 @@ internal static class FieldFactory
         {
             ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
 
-            if (spanSegment.Name.IsWhiteSpace())
-            {
-                fieldPath = remainingPath;
-                continue;
-            }
-
             pathBuilder.Append(spanSegment.Name);
 
             if (parentField == null)
@@ -295,12 +289,6 @@ internal static class FieldFactory
         {
             ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
 
-            if (spanSegment.Name.IsWhiteSpace())
-            {
-                fieldPath = remainingPath;
-                continue;
-            }
-
             pathBuilder.Append(spanSegment.Name);
             var children = currentParent._children ??= new FieldChildren();
             result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
@@ -332,17 +320,17 @@ internal static class FieldFactory
             var segmentArgs = isLastSegment ? arguments : null;
             var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
             var segmentMetadata = isLastSegment ? metadata : null;
-            
+
             field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
             currentFields.SetValue(segment, field);
             return field;
         }
-        
-        if (isLastSegment && arguments?.Count > 0 && field != null)
-        {
-            field = field.MergeFieldArguments(arguments);
-            currentFields.SetValue(segment, field);
-        }
+
+        // NOTE: The isLastSegment branch for merging arguments is unreachable here because:
+        // - This Dictionary variant only processes the FIRST segment of dotted paths
+        // - The first segment always has isLastSegment=false for multi-segment paths
+        // - Single-segment paths use GetOrAddSimpleField instead
+        // The equivalent logic exists in the FieldChildren variant (lines 360-364) and IS reachable
 
         if (!isLastSegment && field?.ShouldConvertToObjectType() == true)
         {

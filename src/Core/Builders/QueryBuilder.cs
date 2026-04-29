@@ -19,16 +19,6 @@ public sealed class QueryBuilder
     public IEnumerable<Variable> Variables => Definition.Variables;
 
     /// <summary>
-    ///     Gets the internal path index for field lookups (internal use only).
-    /// </summary>
-    internal Dictionary<string, string[]> PathIndex => _pathIndex;
-
-    /// <summary>
-    ///     Gets the internal field lookup cache for O(1) field resolution during merges (internal use only).
-    /// </summary>
-    internal Dictionary<string, FieldDefinition?> FieldLookupCache => _fieldLookupCache;
-
-    /// <summary>
     ///     Maps original query names to their merged definition names.
     /// </summary>
     private QueryMap? _queryMap;
@@ -41,12 +31,6 @@ public sealed class QueryBuilder
     ///     Maps field name/alias → string[] path segments from root.
     /// </summary>
     private readonly Dictionary<string, string[]> _pathIndex = new();
-
-    /// <summary>
-    ///     Caches field lookups for O(1) lookup in FindExistingFieldByPath().
-    ///     Maps field path → FieldDefinition reference for quick merge target identification.
-    /// </summary>
-    private readonly Dictionary<string, FieldDefinition?> _fieldLookupCache = new(StringComparer.OrdinalIgnoreCase);
 
     private QueryBuilder(QueryDefinition queryDefinition) => _definition = queryDefinition;
 
@@ -320,8 +304,7 @@ public sealed class QueryBuilder
         if (arguments is { Count: > 0 })
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
-        var fieldSpan = field.AsSpan();
-        var type = DetermineFieldTypeOptimized(fieldSpan, hasSubFields);
+        var type = hasSubFields ? Constants.ObjectFieldType : Constants.DefaultFieldType;
         var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
 
         if (!hasSubFields)
@@ -362,7 +345,6 @@ public sealed class QueryBuilder
     /// </summary>
     private void InvalidateLookupCaches()
     {
-        _fieldLookupCache.Clear();
         _pathIndex.Clear();
     }
 
@@ -397,78 +379,4 @@ public sealed class QueryBuilder
     }
 
     public static implicit operator string(QueryBuilder query) => query.ToString();
-
-    /// <summary>
-    /// Optimized version using spans to reduce allocations
-    /// </summary>
-    private string DetermineFieldTypeOptimized(ReadOnlySpan<char> fieldSpan, bool hasSubFields)
-    {
-        // ULTRA FAST PATH: No subfields means default type
-        if (!hasSubFields)
-        {
-            return Constants.DefaultFieldType;
-        }
-
-        // ULTRA FAST PATH: Classify field characteristics once
-        var (hasSpaces, _, _) = fieldSpan.ClassifyFieldFast();
-        
-        // FAST PATH: No space means no explicit type, skip parsing
-        if (!hasSpaces)
-        {
-            return Constants.ObjectFieldType;
-        }
-
-        // OPTIMIZED PATH: Parse type from field path to check for explicit type
-        Helpers.ParseFieldTypeFromPath(fieldSpan, Constants.DefaultFieldTypeSpan, out var parsedType);
-        var hasExplicitType = !parsedType.EqualsIgnoreCase(Constants.DefaultFieldTypeSpan);
-
-        // FAST PATH: Use cached field lookup for better performance
-        var existingField = FindExistingFieldCached(fieldSpan);
-
-        // Priority 1: Preserve existing explicit types (non-default, non-object)
-        if (existingField?._type != null &&
-            !string.Equals(existingField._type, Constants.DefaultFieldType, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(existingField._type, Constants.ObjectFieldType, StringComparison.OrdinalIgnoreCase))
-        {
-            return existingField._type;
-        }
-
-        // Priority 2: Use newly specified explicit type with interning
-        if (hasExplicitType)
-        {
-            return Caching.TypeCache.InternType(parsedType);
-        }
-
-        // Priority 3: Preserve existing object type
-        if (existingField?._type == Constants.ObjectFieldType)
-        {
-            return Constants.ObjectFieldType;
-        }
-
-        // Priority 4: Default to object type for subfields
-        return Constants.ObjectFieldType;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private FieldDefinition? FindExistingFieldCached(ReadOnlySpan<char> fieldSpan)
-    {
-        // ULTRA FAST PATH: Simple field lookup
-        if (fieldSpan.IsSimpleField())
-        {
-            var fieldName = fieldSpan.ToString();
-            return Definition.Fields.GetValueOrDefault(fieldName);
-        }
-
-        // Phase 3: Check field lookup cache first
-        var fieldPath = fieldSpan.ToString();
-        if (_fieldLookupCache.TryGetValue(fieldPath, out var cachedField))
-        {
-            return cachedField;
-        }
-
-        // FAST PATH: Use optimized path traversal and cache result
-        var result = Helpers.FindExistingFieldByPath(Definition.Fields, fieldSpan);
-        _fieldLookupCache[fieldPath] = result;
-        return result;
-    }
 }

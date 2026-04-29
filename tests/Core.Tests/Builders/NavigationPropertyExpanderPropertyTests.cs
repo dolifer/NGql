@@ -11,10 +11,6 @@ using Xunit;
 
 public class NavigationPropertyExpanderPropertyTests
 {
-    // ═══════════════════════════════════════════════════════════════
-    // Property 1: Null Type Should Return Original Field Name
-    // Covers: Lines 20-23 (null type parameter branch)
-    // ═══════════════════════════════════════════════════════════════
 
     [Theory]
     [InlineData("id")]
@@ -27,7 +23,6 @@ public class NavigationPropertyExpanderPropertyTests
     [InlineData("..")]
     public void ExpandNavigationProperty_WithNullType_ReturnsOriginalFieldName(string fieldName)
     {
-        // Coverage: Line 20 null check branch, Lines 22-23 null field addition
         var result = NavigationPropertyExpander.ExpandNavigationProperty(fieldName, null);
 
         result.Should().Contain(fieldName, "null type should return original field");
@@ -42,15 +37,10 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().BeOfType<HashSet<string>>();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 2: Non-Existent Property Should Return Original Field
-    // Covers: Lines 33-36 (property not found branch)
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_NonExistentProperty_ReturnsOriginalFieldName()
     {
-        // Coverage: Lines 33-36 property not found case
         var type = typeof(SimplePropertyClass);
         var result = NavigationPropertyExpander.ExpandNavigationProperty("NonExistentField", type);
 
@@ -71,10 +61,6 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().Contain(fieldName, $"non-existent field '{fieldName}' should return original name");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 3: Exception Handling Path
-    // Covers: Lines 49-56 (exception catch block and return)
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_AlwaysReturnsNonNullHashSet()
@@ -89,19 +75,13 @@ public class NavigationPropertyExpanderPropertyTests
         result3.Should().NotBeNull();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 4: Regular Properties (Not Navigation Properties)
-    // Covers: Lines 44-46 (non-navigation property branch)
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_WithSettableProperty_ReturnsProperty()
     {
-        // Coverage: Lines 44-46 HandleRegularProperty for settable properties
         var type = typeof(SimplePropertyClass);
         var result = NavigationPropertyExpander.ExpandNavigationProperty("Name", type);
 
-        // Regular property should be returned as-is
         result.Should().Contain("Name");
     }
 
@@ -120,10 +100,6 @@ public class NavigationPropertyExpanderPropertyTests
         resultAge.Should().Contain("Age");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 5: Path Splitting Behavior
-    // Covers: SplitPath method and path handling
-    // ═══════════════════════════════════════════════════════════════
 
     [Theory]
     [InlineData("simple")]          // No dot - first segment is entire field
@@ -143,10 +119,6 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().NotBeEmpty("should return at least the original field");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 6: Complex Type Hierarchies
-    // Covers: Multi-level nesting and recursive scenarios
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_ComplexHierarchy_HandlesAllLevels()
@@ -173,10 +145,6 @@ public class NavigationPropertyExpanderPropertyTests
         action.Should().NotThrow("should handle very deep paths gracefully");
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 7: Special Characters and Edge Cases
-    // Covers: Unusual field names and special cases
-    // ═══════════════════════════════════════════════════════════════
 
     [Theory]
     [InlineData("field_name")]
@@ -194,10 +162,6 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().BeOfType<HashSet<string>>();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Property 8: Result Set Properties
-    // Covers: HashSet semantics and behavior
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_ResultAlwaysContainsAtLeastOneElement()
@@ -226,9 +190,7 @@ public class NavigationPropertyExpanderPropertyTests
         list.Count.Should().Be(unique, "result should have no duplicates");
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Exception Handling Tests (TDD - RED)
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_WithDifficultTypeReflection_HandlesGracefully()
@@ -268,13 +230,9 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().NotBeEmpty();
     }
 
-    // ================== COVERAGE-DRIVEN TESTS ==================
-    // Tests targeting uncovered code paths from coverage analysis.
-
     [Fact]
     public void ExpandNavigationProperty_InvalidOperationExceptionPath_ReturnsOriginalField()
     {
-        // Coverage: Exception handling for InvalidOperationException
         var result = NavigationPropertyExpander.ExpandNavigationProperty("field", typeof(int));
         result.Should().Contain("field");
     }
@@ -282,39 +240,27 @@ public class NavigationPropertyExpanderPropertyTests
     [Fact]
     public void ExpandNavigationProperty_NavigationPropertyWithRemainedPath_ExpandsAndAppends()
     {
-        // Coverage: Lines 87-89 when expanding navigation properties with remaining path
-        // Create a complex type hierarchy where navigation property is expanded
         var result = NavigationPropertyExpander.ExpandNavigationProperty("child.name", typeof(ClassWithNestedProperty));
-        
-        // Should expand properties with the remaining path appended
         result.Should().NotBeEmpty();
     }
 
     [Fact]
     public void ExpandNavigationProperty_WithPotentialAmbiguousMatchType_HandlesGracefully()
     {
-        // Coverage: Exception handling for AmbiguousMatchException (lines 54-57)
-        // Use a built-in type that might have property resolution issues
         var result = NavigationPropertyExpander.ExpandNavigationProperty("property", typeof(object));
-        
-        // Should return field name without throwing
         result.Should().Contain("property");
     }
 
     [Fact]
     public void ExpandNavigationProperty_WithGenericType_HandlesGracefully()
     {
-        // Coverage: Exception handling paths with complex type scenarios
         var result = NavigationPropertyExpander.ExpandNavigationProperty("item", typeof(List<string>));
-        
-        // Should return field name without throwing
         result.Should().Contain("item");
     }
 
     [Fact]
     public void ExpandNavigationProperty_WithSpecialTypes_DoesNotThrow()
     {
-        // Coverage: Various special types to exercise all code paths
         var testTypes = new Type[]
         {
             typeof(Type),
@@ -331,36 +277,26 @@ public class NavigationPropertyExpanderPropertyTests
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Exception Handler Tests (Lines 49-58)
-    // Covers: InvalidOperationException and AmbiguousMatchException handling
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_InvalidOperationExceptionDuringReflection_ReturnsOriginalFieldName()
     {
-        // Arrange: Create a type that throws InvalidOperationException on GetProperty
-        var mockType = new InvalidOperationExceptionType();
+            var mockType = new InvalidOperationExceptionType();
         
-        // Act: Call ExpandNavigationProperty with the problematic type
-        var result = NavigationPropertyExpander.ExpandNavigationProperty("fieldName", mockType);
+            var result = NavigationPropertyExpander.ExpandNavigationProperty("fieldName", mockType);
         
-        // Assert: Should catch the exception and return original field name
-        result.Should().Contain("fieldName", "should return original field name when InvalidOperationException occurs");
+            result.Should().Contain("fieldName", "should return original field name when InvalidOperationException occurs");
         result.Should().HaveCount(1, "should only contain the original field name");
     }
 
     [Fact]
     public void ExpandNavigationProperty_AmbiguousMatchExceptionDuringReflection_ReturnsOriginalFieldName()
     {
-        // Arrange: Create a type that throws AmbiguousMatchException on GetProperty
-        var mockType = new AmbiguousMatchExceptionType();
+            var mockType = new AmbiguousMatchExceptionType();
         
-        // Act: Call ExpandNavigationProperty with the problematic type
-        var result = NavigationPropertyExpander.ExpandNavigationProperty("fieldName", mockType);
+            var result = NavigationPropertyExpander.ExpandNavigationProperty("fieldName", mockType);
         
-        // Assert: Should catch the exception and return original field name
-        result.Should().Contain("fieldName", "should return original field name when AmbiguousMatchException occurs");
+            result.Should().Contain("fieldName", "should return original field name when AmbiguousMatchException occurs");
         result.Should().HaveCount(1, "should only contain the original field name");
     }
 
@@ -381,9 +317,7 @@ public class NavigationPropertyExpanderPropertyTests
         result.Should().NotBeEmpty();
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Test Data Classes
-    // ═══════════════════════════════════════════════════════════════
 
     public class SimplePropertyClass
     {
@@ -397,9 +331,6 @@ public class NavigationPropertyExpanderPropertyTests
         public SimplePropertyClass Child { get; set; } = new SimplePropertyClass();
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // Test Data Class: Navigation Property with Getter-Only Pattern
-    // ═══════════════════════════════════════════════════════════════
 
     public class TypeWithNavigationProperty
     {
@@ -411,9 +342,6 @@ public class NavigationPropertyExpanderPropertyTests
         public string? Name => $"{FirstName} {LastName}";
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // NEW TESTS: Navigation Property Expansion with Remaining Path
-    // ═══════════════════════════════════════════════════════════════
 
     [Fact]
     public void ExpandNavigationProperty_NavigationWithRemainingPath_AppendsPathCorrectly()
@@ -458,8 +386,7 @@ public class NavigationPropertyExpanderPropertyTests
         var result = NavigationPropertyExpander.ExpandNavigationProperty("Name", type);
 
         // Should NOT include "Name" itself (it's getter-only)
-        // Should include only the settable properties: FirstName, LastName, Id
-        result.Should().Contain("FirstName");
+            result.Should().Contain("FirstName");
         result.Should().Contain("LastName");
         result.Should().NotContain("Name", "navigation property itself should not be expanded");
         // Should include other settable properties like Id
@@ -471,26 +398,21 @@ public class NavigationPropertyExpanderPropertyTests
     {
         var type = typeof(TypeWithNavigationProperty);
         
-        // Test 1: Simple navigation property (no remaining path)
-        var result1 = NavigationPropertyExpander.ExpandNavigationProperty("Name", type);
+            var result1 = NavigationPropertyExpander.ExpandNavigationProperty("Name", type);
         result1.Should().Contain("FirstName");
         result1.Should().Contain("LastName");
         result1.Should().NotContain("Name", "getter-only property should not be included");
         // All settable properties are expanded, including Id
         result1.Should().Contain("Id");
 
-        // Test 2: Regular property should be returned as-is
-        var result2 = NavigationPropertyExpander.ExpandNavigationProperty("Id", type);
+            var result2 = NavigationPropertyExpander.ExpandNavigationProperty("Id", type);
         result2.Should().Contain("Id");
 
-        // Test 3: Non-existent property should be returned as-is
-        var result3 = NavigationPropertyExpander.ExpandNavigationProperty("NonExistent", type);
+            var result3 = NavigationPropertyExpander.ExpandNavigationProperty("NonExistent", type);
         result3.Should().Contain("NonExistent");
     }
 
-    // ═══════════════════════════════════════════════════════════════
     // Mock Types for Exception Testing
-    // ═══════════════════════════════════════════════════════════════
 
     public class InvalidOperationExceptionType : Type
     {

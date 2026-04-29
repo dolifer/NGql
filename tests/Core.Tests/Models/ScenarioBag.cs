@@ -25,3 +25,10 @@ public abstract class ScenarioBag<T, TSelf> where TSelf : ScenarioBag<T, TSelf>
 public class ExpressionsBag<TModel> : ScenarioBag<Expression<Func<TModel, bool>>, ExpressionsBag<TModel>>
 {
 }
+
+/// <summary>
+/// Generic expressions bag for expressions with any return type.
+/// </summary>
+public class ExpressionsBag<TModel, TReturn> : ScenarioBag<Expression<Func<TModel, TReturn>>, ExpressionsBag<TModel, TReturn>>
+{
+}

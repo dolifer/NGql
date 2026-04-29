@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using FluentAssertions;
+using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 using Xunit;
 
@@ -367,5 +368,73 @@ public class FieldFactoryCoverageTests
 
         // Assert
         qb.Definition.Fields.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void AddField_DottedPath_WithArguments_OnExistingField_MergesArguments()
+    {
+        var qb = QueryBuilder.CreateDefaultBuilder("query");
+
+        qb.AddField("user.posts");
+        qb.AddField("user.posts", new Dictionary<string, object?> { ["limit"] = 10 });
+
+        var posts = qb.Definition.Fields["user"].Fields["posts"];
+        posts.Arguments.Should().ContainKey("limit");
+        posts.Arguments["limit"].Should().Be(10);
+    }
+
+    [Fact]
+    public void AddField_DottedPath_IntermediateNode_ConvertsToObjectType()
+    {
+        var qb = QueryBuilder.CreateDefaultBuilder("query");
+
+        qb.AddField("user", "String");
+        qb.AddField("user.profile.name");
+
+        var user = qb.Definition.Fields["user"];
+        user.Type.Should().Be("object");
+        user.Fields.Should().ContainKey("profile");
+    }
+
+    [Fact]
+    public void AddField_DeepDottedPath_WithArgumentsOnMultipleLevels()
+    {
+        var qb = QueryBuilder.CreateDefaultBuilder("query");
+
+        qb.AddField("user.posts.comments", new Dictionary<string, object?> { ["filter"] = "recent" });
+        qb.AddField("user.posts", new Dictionary<string, object?> { ["limit"] = 5 });
+
+        var posts = qb.Definition.Fields["user"].Fields["posts"];
+        posts.Arguments.Should().ContainKey("limit");
+
+        var comments = posts.Fields["comments"];
+        comments.Arguments.Should().ContainKey("filter");
+    }
+
+    [Fact]
+    public void FieldBuilder_Create_WithDictionary_AndDottedPath_WithArguments_MergesOnExisting()
+    {
+        var fields = new Dictionary<string, FieldDefinition>();
+
+        // First call creates "user.posts" without arguments on last segment
+        var fb1 = FieldBuilder.Create(fields, "user.posts");
+        // Second call adds arguments to existing "posts" field (last segment)
+        var fb2 = FieldBuilder.Create(fields, "user.posts", arguments: new Dictionary<string, object?> { ["limit"] = 5 });
+
+        // Verify arguments were merged onto the existing posts field
+        fields["user"].Fields["posts"].Arguments.Should().ContainKey("limit");
+        fields["user"].Fields["posts"].Arguments["limit"].Should().Be(5);
+    }
+
+    [Fact]
+    public void FieldBuilder_Create_WithDictionary_ComplexFieldPath_WithTypeAnnotation()
+    {
+        var fields = new Dictionary<string, FieldDefinition>();
+
+        var fb = FieldBuilder.Create(fields, "userName", "User", arguments: new Dictionary<string, object?> { ["id"] = 123 });
+
+        fields.Should().ContainKey("userName");
+        fields["userName"].Type.Should().Be("User");
+        fields["userName"].Arguments.Should().ContainKey("id");
     }
 }

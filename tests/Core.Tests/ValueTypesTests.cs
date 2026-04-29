@@ -36,6 +36,15 @@ public class ValueTypesTests
         var action = () => new EnumValue(null);
         action.Should().Throw<ArgumentNullException>();
     }
+    
+    [Fact]
+    public void EnumValue_FromNullEnumValue_ShouldThrow()
+    {
+        // Arrange & Act & Assert
+        EnumValue? source = null; // TODO: deserialize from JSON so during serizalition it'll be null
+        var action = () => new EnumValue(source!); // so here we're go this branch Enum enumValue => enumValue.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value)),
+        action.Should().Throw<ArgumentNullException>();
+    }
 
     [Fact]
     public void EnumValue_FromEnum_Valid()
@@ -79,6 +88,17 @@ public class ValueTypesTests
         // Act & Assert
         (enum1 == enum2).Should().BeTrue();
         (enum1 != enum2).Should().BeFalse();
+        enum1.Equals(enum2).Should().BeTrue();
+    }
+    
+    [Fact]
+    public void EnumValue_Equality_SameObject_ShouldBeEqual()
+    {
+        // Arrange
+        var enum1 = new EnumValue("ACTIVE");
+        var enum2 = (object)enum1;
+
+        // Act & Assert
         enum1.Equals(enum2).Should().BeTrue();
     }
 
@@ -224,253 +244,6 @@ public class ValueTypesTests
 
     #endregion
 
-    #region Variable Tests
-
-    [Fact]
-    public void Variable_Valid_WithDollarSign()
-    {
-        // Arrange & Act
-        var variable = new Variable("$userId", "ID");
-
-        // Assert
-        variable.Name.Should().Be("$userId");
-        variable.Type.Should().Be("ID");
-    }
-
-    [Fact]
-    public void Variable_MissingDollarSign_ShouldThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => new Variable("userId", "ID");
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Variable name must start with '$'*");
-    }
-
-    [Fact]
-    public void Variable_NullName_ShouldThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => new Variable(null, "ID");
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Variable name cannot be null or whitespace*");
-    }
-
-    [Fact]
-    public void Variable_EmptyName_ShouldThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => new Variable("", "ID");
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Variable name cannot be null or whitespace*");
-    }
-
-    [Fact]
-    public void Variable_NullType_ShouldThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => new Variable("$id", null);
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Variable type cannot be null or whitespace*");
-    }
-
-    [Fact]
-    public void Variable_EmptyType_ShouldThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => new Variable("$id", "");
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Variable type cannot be null or whitespace*");
-    }
-
-    [Fact]
-    public void Variable_ToString_FormatsCorrectly()
-    {
-        // Arrange
-        var variable = new Variable("$userId", "ID!");
-
-        // Act
-        var result = variable.ToString();
-
-        // Assert
-        result.Should().Be("$userId:ID!");
-    }
-
-    [Fact]
-    public void Variable_Equality_SameNameAndType_ShouldBeEqual()
-    {
-        // Arrange
-        var var1 = new Variable("$id", "String");
-        var var2 = new Variable("$id", "String");
-
-        // Act & Assert
-        (var1 == var2).Should().BeTrue();
-        (var1 != var2).Should().BeFalse();
-        var1.Equals(var2).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_Equality_DifferentName_ShouldNotBeEqual()
-    {
-        // Arrange
-        var var1 = new Variable("$id", "String");
-        var var2 = new Variable("$name", "String");
-
-        // Act & Assert
-        (var1 == var2).Should().BeFalse();
-        (var1 != var2).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_Equality_DifferentType_ShouldNotBeEqual()
-    {
-        // Arrange
-        var var1 = new Variable("$id", "String");
-        var var2 = new Variable("$id", "Int");
-
-        // Act & Assert
-        (var1 == var2).Should().BeFalse();
-        (var1 != var2).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_Equality_CaseInsensitive()
-    {
-        // Arrange
-        var var1 = new Variable("$ID", "STRING");
-        var var2 = new Variable("$id", "string");
-
-        // Act & Assert
-        var1.Equals(var2).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_CompareTo_ByName()
-    {
-        // Arrange
-        var var1 = new Variable("$aaa", "Type");
-        var var2 = new Variable("$bbb", "Type");
-
-        // Act & Assert
-        (var1 < var2).Should().BeTrue();
-        (var2 > var1).Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_CompareTo_SameName_ByType()
-    {
-        // Arrange
-        var var1 = new Variable("$id", "Int");
-        var var2 = new Variable("$id", "String");
-
-        // Act & Assert
-        (var1 < var2).Should().BeTrue(); // "Int" < "String"
-    }
-
-    [Fact]
-    public void Variable_CompareTo_WithNull()
-    {
-        // Arrange
-        var variable = new Variable("$id", "String");
-
-        // Act
-        var result = variable.CompareTo(null);
-
-        // Assert
-        result.Should().Be(1); // Non-null is greater than null
-    }
-
-    [Fact]
-    public void Variable_CompareTo_WithIncompatibleType_ShouldThrow()
-    {
-        // Arrange
-        var variable = new Variable("$id", "String");
-
-        // Act & Assert
-        var action = () => variable.CompareTo("not-a-variable");
-        action.Should().Throw<ArgumentException>()
-            .WithMessage("*Object must be of type Variable*");
-    }
-
-    [Fact]
-    public void Variable_GetHashCode_SameCaseInsensitiveValues_ShouldMatch()
-    {
-        // Arrange
-        var var1 = new Variable("$ID", "STRING");
-        var var2 = new Variable("$id", "string");
-
-        // Act & Assert
-        var1.GetHashCode().Should().Be(var2.GetHashCode());
-    }
-
-    [Fact]
-    public void Variable_GetHashCode_DifferentValues_ShouldNotMatch()
-    {
-        // Arrange
-        var var1 = new Variable("$id", "String");
-        var var2 = new Variable("$name", "Int");
-
-        // Act & Assert
-        var1.GetHashCode().Should().NotBe(var2.GetHashCode());
-    }
-
-    [Fact]
-    public void Variable_InCollection_CanFindByEquality()
-    {
-        // Arrange
-        var variables = new[] 
-        {
-            new Variable("$id", "ID"),
-            new Variable("$name", "String"),
-            new Variable("$offset", "Int")
-        };
-        var searchVariable = new Variable("$ID", "id");
-
-        // Act
-        var found = System.Linq.Enumerable.Contains(variables, searchVariable);
-
-        // Assert
-        found.Should().BeTrue();
-    }
-
-    [Fact]
-    public void Variable_AdvancedName_WithUnderscore_ShouldBeValid()
-    {
-        // Arrange & Act
-        var variable = new Variable("$user_id_123", "String");
-
-        // Assert
-        variable.Name.Should().Be("$user_id_123");
-    }
-
-    [Fact]
-    public void Variable_ComplexType_WithNullable_ShouldBeValid()
-    {
-        // Arrange & Act
-        var variable = new Variable("$input", "[UserInput!]!");
-
-        // Assert
-        variable.Type.Should().Be("[UserInput!]!");
-    }
-
-    [Fact]
-    public void Variable_AllOperators_Comprehensive()
-    {
-        // Test all comparison operators work together
-        var v1 = new Variable("$a", "Type");
-        var v2 = new Variable("$b", "Type");
-
-        // Arrange & Assert - All operator combinations
-        (v1 < v2).Should().BeTrue();
-        (v1 <= v2).Should().BeTrue();
-        (v1 <= v1).Should().BeTrue(); // Equal case
-        (v2 > v1).Should().BeTrue();
-        (v2 >= v1).Should().BeTrue();
-        (v2 >= v2).Should().BeTrue(); // Equal case
-        (v1 == v1).Should().BeTrue();
-        (v1 != v2).Should().BeTrue();
-    }
-
-    #endregion
 
     #region Integration Tests
 

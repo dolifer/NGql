@@ -617,6 +617,50 @@ public class QueryTests
         output.Should().Contain("name");
         output.Should().Contain("John");
     }
+
+    [Fact]
+    public void Query_ParameterlessConstructor_Creates_Empty_Query()
+    {
+        // Act
+        var query = new Query();
+
+        // Assert
+        query.Name.Should().Be(string.Empty);
+        query.Alias.Should().BeNull();
+        query.Block.Should().NotBeNull();
+        query.FieldsList.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Query_Constructor_With_Name_And_Variables_Creates_Query()
+    {
+        // Arrange
+        var var1 = new Variable("$first", "String!");
+        var var2 = new Variable("$second", "Int");
+
+        // Act
+        var query = new Query("GetUser", var1, var2);
+
+        // Assert
+        query.Name.Should().Be("GetUser");
+        query.Alias.Should().BeNull();
+        query.Variables.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Query_Constructor_With_Name_Alias_And_Variables_Creates_Query()
+    {
+        // Arrange
+        var variable = new Variable("$id", "ID!");
+
+        // Act
+        var query = new Query("GetUser", "currentUser", variable);
+
+        // Assert
+        query.Name.Should().Be("GetUser");
+        query.Alias.Should().Be("currentUser");
+        query.Variables.Should().ContainSingle();
+    }
 }
 
 // Helper enum for testing

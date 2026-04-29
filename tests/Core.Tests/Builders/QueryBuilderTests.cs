@@ -1992,4 +1992,70 @@ public class QueryBuilderTests
         builder.Definition.Fields.Should().HaveCount(testNames.Length);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddField_WithSubFieldArray_InvalidFieldName_Throws(string invalidFieldName)
+    {
+        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+
+        Action act = () => builder.AddField(invalidFieldName!, new[] { "id" });
+
+        act.Should().Throw<ArgumentException>().WithParameterName("field");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddField_WithArgumentsAndSubFields_InvalidFieldName_Throws(string invalidFieldName)
+    {
+        var builder = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        var args = new Dictionary<string, object?> { ["limit"] = 10 };
+
+        Action act = () => builder.AddField(invalidFieldName!, args, new[] { "id" });
+
+        act.Should().Throw<ArgumentException>().WithParameterName("field");
+    }
+
+    [Fact]
+    public void AddField_TypePrefixedReAddWithDefaultType_PreservesExistingExplicitType()
+    {
+        // First add with type-prefix sets type to "String"; second add uses the default "String"
+        // type prefix on a no-op syntax — DetermineFieldTypeOptimized's Priority 1 keeps "String".
+        var builder = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("Custom user", subFields: ["id"])
+            .AddField("String user", subFields: new[] { "name" });
+
+        builder.Definition.Fields["user"].Type.Should().Be("Custom");
+        builder.Definition.Fields["user"].Fields.Should().ContainKeys("id", "name");
+    }
+
+    [Fact]
+    public void AddField_TypePrefixedReAddPreservingObjectType()
+    {
+        // Existing field has "object" type; re-add with default "String" prefix should keep "object"
+        // via the Priority 3 branch.
+        var builder = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user", subFields: ["id"])
+            .AddField("String user", subFields: new[] { "name" });
+
+        builder.Definition.Fields["user"].Type.Should().Be("object");
+        builder.Definition.Fields["user"].Fields.Should().ContainKeys("id", "name");
+    }
+
+    [Fact]
+    public void AddField_DottedPath_RepeatedAddition_UsesCachedLookup()
+    {
+        var builder = QueryBuilder.CreateDefaultBuilder("Q");
+
+        builder.AddField("user.profile.name");
+        builder.AddField("user.profile.age");
+        builder.AddField("user.profile.email");
+
+        var profile = builder.Definition.Fields["user"].Fields["profile"];
+        profile.Fields.Should().ContainKeys("name", "age", "email");
+    }
+
 }

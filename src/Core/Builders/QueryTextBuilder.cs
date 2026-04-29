@@ -305,40 +305,40 @@ internal sealed class QueryTextBuilder
 
     private static bool ExtractKeyValuePairProperties(StringBuilder builder, object value, Type valueType)
     {
-        if (valueType.IsGenericType && valueType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
+        if (!valueType.IsGenericType || valueType.GetGenericTypeDefinition() != typeof(KeyValuePair<,>))
         {
-            var kvpProps = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
-                valueType,
-                static t =>
-                {
-                    var keyProp = t.GetProperty("Key");
-                    var valueProp = t.GetProperty("Value");
-                    
-                    // Defensive: Validate that KeyValuePair has the expected properties
-                    // This should never happen for real KeyValuePair<,>, but protects against
-                    // reflection caching issues or corrupted type metadata
-                    if (keyProp is null || valueProp is null)
-                    {
-                        return null;
-                    }
-                    return (keyProp, valueProp);
-                });
+            return false;
+        }
 
-            // If we couldn't get the properties, fall through to default object handling
-            if (kvpProps is null)
+        var kvpProps = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
+            valueType,
+            static t =>
             {
-                WriteObjectReflection(builder, value, valueType);
-                return true;
-            }
+                var keyProp = t.GetProperty("Key");
+                var valueProp = t.GetProperty("Value");
+                    
+                // Defensive: Validate that KeyValuePair has the expected properties
+                // This should never happen for real KeyValuePair<,>, but protects against
+                // reflection caching issues or corrupted type metadata
+                if (keyProp is null || valueProp is null)
+                {
+                    return null;
+                }
+                return (keyProp, valueProp);
+            });
 
-            var (keyProp, valueProp) = kvpProps.Value;
-            builder.Append(keyProp.GetValue(value));
-            builder.Append(':');
-            WriteObject(builder, valueProp.GetValue(value));
+        // If we couldn't get the properties, fall through to default object handling
+        if (kvpProps is null)
+        {
+            WriteObjectReflection(builder, value, valueType);
             return true;
         }
 
-        return false;
+        var (keyProp, valueProp) = kvpProps.Value;
+        builder.Append(keyProp.GetValue(value));
+        builder.Append(':');
+        WriteObject(builder, valueProp.GetValue(value));
+        return true;
     }
 
     private static void WriteObjectReflection(StringBuilder builder, object value, Type valueType)

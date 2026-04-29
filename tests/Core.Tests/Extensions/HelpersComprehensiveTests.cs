@@ -2024,4 +2024,18 @@ public class HelpersComprehensiveTests
         testScenario.Assert(result);
     }
 
+    [Fact]
+    public void AreValuesEqual_WithDifferentTypesButEqualValues_UsesObjectEquals()
+    {
+        var value1 = "42";
+        var value2 = 42;
+
+        var result = Helpers.AreArgumentsEqual(
+            new SortedDictionary<string, object?> { ["key"] = value1 },
+            new SortedDictionary<string, object?> { ["key"] = value2 }
+        );
+
+        result.Should().BeFalse();
+    }
+
 }

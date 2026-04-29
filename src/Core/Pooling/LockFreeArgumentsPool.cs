@@ -26,21 +26,6 @@ internal static class LockFreeArgumentsPool
     }
 
     /// <summary>
-    /// Gets a pooled dictionary populated from source
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static PooledArguments GetPooled(SortedDictionary<string, object?>? source)
-    {
-        var dict = _pool.Get();
-        if (source != null)
-        {
-            foreach (var kvp in source)
-                dict[kvp.Key] = kvp.Value;
-        }
-        return new PooledArguments(dict);
-    }
-
-    /// <summary>
     /// Returns dictionary to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

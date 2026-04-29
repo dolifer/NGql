@@ -488,4 +488,40 @@ public class LockFreePoolingTests
             pool.Return(list);
         }
     }
+
+    [Fact]
+    public void LockFreeHashSetPool_GetPooledFromHashSetSource_PopulatesCorrectly()
+    {
+        var source = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "field1", "field2", "field3" };
+
+        using var pooled = LockFreeHashSetPool.GetPooled(source);
+
+        pooled.Set.Should().HaveCount(3);
+        pooled.Set.Should().Contain("field1");
+        pooled.Set.Should().Contain("field2");
+        pooled.Set.Should().Contain("field3");
+    }
+
+    [Fact]
+    public void ThreadLocalPool_GlobalPoolFallback_WhenThreadLocalFull()
+    {
+        var pool = new ThreadLocalPool<List<int>>(
+            factory: () => [],
+            reset: x => x.Clear(),
+            poolName: "FallbackTestPool"
+        );
+
+        var items = new List<List<int>>();
+        for (int i = 0; i < 100; i++)
+        {
+            items.Add(pool.Get());
+        }
+
+        foreach (var item in items)
+        {
+            pool.Return(item);
+        }
+
+        pool.ApproximateCount.Should().BeGreaterThan(0);
+    }
 }

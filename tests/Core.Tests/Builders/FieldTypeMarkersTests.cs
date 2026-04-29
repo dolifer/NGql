@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using FluentAssertions;
 using NGql.Core.Abstractions;
@@ -167,5 +168,16 @@ public class FieldTypeMarkersTests
         // Complex types should return false
         new FieldDefinition("friends", "Person[]").IsPureTypeMarker().Should().BeFalse();
         new FieldDefinition("address", "Address?").IsPureTypeMarker().Should().BeFalse();
+    }
+
+    [Fact]
+    public void Constants_ArrayTypeMarkerSpan_ReturnsArrayMarkerAsSpan()
+    {
+        // Act
+        ReadOnlySpan<char> span = Constants.ArrayTypeMarkerSpan;
+
+        // Assert
+        span.ToString().Should().Be("[]");
+        span.Length.Should().Be(2);
     }
 }

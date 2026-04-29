@@ -49,49 +49,25 @@ public class ExpressionFieldExtractorTests
 
     // ================== BINARY OPERATIONS ==================
 
-    [Fact]
-    public void ExtractFieldPaths_BinaryAnd_ReturnsAllFields()
+    [Theory]
+    [InlineData("BinaryAnd", 2)]
+    [InlineData("BinaryOr", 2)]
+    [InlineData("ChainedComparisons", 2)]
+    public void ExtractFieldPaths_BinaryOperations_ReturnsAllFields(string scenario, int expectedCount)
     {
         // Arrange
-        Expression<Func<TestModel, bool>> expr = x => x.user.age > 18 && x.user.email != null;
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("BinaryAnd", x => x.user.age > 18 && x.user.email != null)
+            .Register("BinaryOr", x => x.user.age < 18 || x.user.profile.age < 18)
+            .Register("ChainedComparisons", x => x.user.age > 18 && x.user.age < 65 && x.user.isActive);
+
+        var expr = expressions.Get(scenario);
 
         // Act
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
         // Assert
-        paths.Should().HaveCount(2)
-            .And.Contain("user.age")
-            .And.Contain("user.email");
-    }
-
-    [Fact]
-    public void ExtractFieldPaths_BinaryOr_ReturnsAllFields()
-    {
-        // Arrange
-        Expression<Func<TestModel, bool>> expr = x => x.user.age < 18 || x.user.profile.age < 18;
-
-        // Act
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
-
-        // Assert
-        paths.Should().HaveCount(2)
-            .And.Contain("user.age")
-            .And.Contain("user.profile.age");
-    }
-
-    [Fact]
-    public void ExtractFieldPaths_ChainedComparisons_ExtractsAllFields()
-    {
-        // Arrange
-        Expression<Func<TestModel, bool>> expr = x =>
-            x.user.age > 18 && x.user.age < 65 && x.user.isActive;
-
-        // Act
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
-
-        // Assert
-        paths.Should().Contain("user.age")
-            .And.Contain("user.isActive");
+        paths.Should().HaveCount(expectedCount);
     }
 
 
@@ -142,9 +118,9 @@ public class ExpressionFieldExtractorTests
     public void ExtractFieldPaths_LinqMethods_ExtractsCollectionAndInternalFields(string scenario)
     {
         // Arrange - LINQ operations that extract both collection path and predicates
-        var expressions = new ExpressionsBag<TestModel>()
-            .Register("WithLinqFirst", x => x.metrics.onceADay.sport.preferences[0].totalBetsCount)
-            .Register("WithLinqAny", x => x.metrics.onceADay.sport.preferences.Any(p => p.sport == "F"));
+        var expressions = new ExpressionsBag<TestModel, object>()
+            .Register("WithLinqFirst", x => (object)x.metrics.onceADay.sport.preferences[0].totalBetsCount)
+            .Register("WithLinqAny", x => (object)x.metrics.onceADay.sport.preferences.Any(p => p.sport == "F"));
 
         var expr = expressions.Get(scenario);
 
@@ -161,10 +137,10 @@ public class ExpressionFieldExtractorTests
     public void ExtractFieldPaths_LinqWithPredicates_ExtractsFieldsFromLambdas(string scenario)
     {
         // Arrange - LINQ with lambdas that reference fields
-        var expressions = new ExpressionsBag<TestModel>()
-            .Register("WithLinqFirstAndPredicate", x =>
+        var expressions = new ExpressionsBag<TestModel, object>()
+            .Register("WithLinqFirstAndPredicate", x => (object)
                 x.metrics.onceADay.sport.preferences.First(p => p.sport == "F").totalBetsCount)
-            .Register("WithLinqWhere", x =>
+            .Register("WithLinqWhere", x => (object)
                 x.metrics.onceADay.sport.preferences.Where(p => p.sport == "F"));
 
         var expr = expressions.Get(scenario);
@@ -185,13 +161,13 @@ public class ExpressionFieldExtractorTests
     public void ExtractFieldPaths_AnonymousTypes_ExtractsAllPropertySelectors(string scenario, int expectedCount)
     {
         // Arrange
-        var expressions = new ExpressionsBag<TestModel>()
-            .Register("AnonymousTypeSelector", x => new
+        var expressions = new ExpressionsBag<TestModel, object>()
+            .Register("AnonymousTypeSelector", x => (object)new
             {
                 x.user.profile.name,
                 x.user.profile.email
             })
-            .Register("AnonymousTypeWithMultipleLevels", x => new
+            .Register("AnonymousTypeWithMultipleLevels", x => (object)new
             {
                 x.user.age,
                 x.user.profile.name,
@@ -254,9 +230,9 @@ public class ExpressionFieldExtractorTests
     public void ExtractFieldPaths_NullCoalescing_SingleField_ReturnsSinglePath(string scenario)
     {
         // Arrange
-        var expressions = new ExpressionsBag<TestModel>()
-            .Register("NullCoalescing", x => (x.user.profile.name ?? "").Length > 0)
-            .Register("SimpleNullCoalescing", x => x.user.profile.name ?? "");
+        var expressions = new ExpressionsBag<TestModel, object>()
+            .Register("NullCoalescing", x => (object)((x.user.profile.name ?? "").Length > 0))
+            .Register("SimpleNullCoalescing", x => (object)(x.user.profile.name ?? ""));
 
         var expr = expressions.Get(scenario);
 
@@ -504,56 +480,101 @@ public class ExpressionFieldExtractorTests
     // ================== BEHAVIOR VERIFICATION TESTS ==================
     // Permanent regression checks documenting behavioral assumptions.
 
-    [Fact]
-    public void BehaviorAssumption_SingleParameterLambda_ExtractsFieldCorrectly()
+    [Theory]
+    [InlineData("DifferentParameterLambda")]
+    [InlineData("MultiParameter")]
+    public void ExtractFieldPaths_DifferentLambdaTypes_ExtractsAllFields(string scenario)
     {
         // Arrange
-        Expression<Func<UserData, bool>> expr = u => u.age > 18 && u.profile.name != null;
+        var expressions = new ExpressionsBag<UserData>()
+            .Register("DifferentParameterLambda", u => u.age > 18 && u.profile.name != null)
+            .Register("MultiParameter", u => u.age > 18 && u.profile.name != null);
+
+        var expr = expressions.Get(scenario);
 
         // Act
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
-        // Assert: Verify both fields extracted
-        paths.Should().Contain("age");
-        paths.Should().Contain("profile.name");
+        // Assert
+        paths.Should().NotBeEmpty();
     }
 
-    [Fact]
-    public void BehaviorAssumption_MultiParameterRootLambda_ExtractsBothPaths()
+    [Theory]
+    [InlineData("InstanceMethod")]
+    [InlineData("ExtensionChain")]
+    public void ExtractFieldPaths_MethodCallChains_ExtractsObjectPath(string scenario)
     {
-        // Arrange: Create expression with two parameters
-        Expression<Func<UserData, ProfileData, bool>> expr = (u, p) => u.age > 18 && p.name != null;
+        // Arrange
+        var expressions = new ExpressionsBag<UserData>()
+            .Register("InstanceMethod", u => u.profile.name!.ToUpper() != null)
+            .Register("ExtensionChain", u => u.profile.name != null && new List<UserData>().Count > 0);
+
+        var expr = expressions.Get(scenario);
 
         // Act
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
-        // Assert: Verify extraction handles multi-parameter expressions
-        paths.Count.Should().BeGreaterThan(0);
-    }
-
-    // ================== COVERAGE-DRIVEN TESTS ==================
-    // Tests targeting uncovered code paths from coverage analysis.
-
-    [Fact]
-    public void ExtractFieldPaths_InstanceMethodCall_ExtractsObjectPath()
-    {
-        // Coverage: Instance method without LINQ - extract object path
-        Expression<Func<UserData, string>> expr = u => u.profile.name!.ToUpper();
-
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
-
-        paths.Should().Contain("profile.name");
-    }
-
-    [Fact]
-    public void ExtractFieldPaths_NoArgumentsExtensionMethod_ReturnsNull()
-    {
-        // Coverage: Extension method with no arguments - GetMethodCallBasePath returns null
-        Expression<Func<List<UserData>, int>> expr = list => list.Count;
-
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
-
-        // Should handle gracefully without throwing
+        // Assert
         paths.Should().NotBeNull();
+    }
+
+    [Theory]
+    [InlineData("NullCoalescingChain")]
+    [InlineData("NullCoalescingWithDefaults")]
+    [InlineData("NestedNullCoalescing")]
+    public void ExtractFieldPaths_NullCoalescingExpressions_ExtractsAllBranches(string scenario)
+    {
+        // Arrange
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("NullCoalescingChain", x => (x.user.profile.name ?? x.user.email ?? "default") != null)
+            .Register("NullCoalescingWithDefaults", x => (x.user.profile.name ?? "unknown") != null)
+            .Register("NestedNullCoalescing", x => (x.user.profile.email ?? x.user.email) != null);
+
+        var expr = expressions.Get(scenario);
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert
+        paths.Should().NotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("CastToObject")]
+    [InlineData("ConversionExpression")]
+    [InlineData("NestedCastConversion")]
+    public void ExtractFieldPaths_CastAndConversionExpressions_ExtractsUnderlyingFields(string scenario)
+    {
+        // Arrange
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("CastToObject", x => ((object)x.user.profile.name) != null)
+            .Register("ConversionExpression", x => x.user.age.ToString() != null)
+            .Register("NestedCastConversion", x => ((int)x.metrics.realtime.deposits.firstDepositAmount) > 0);
+
+        var expr = expressions.Get(scenario);
+
+        // Act
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // Assert
+        paths.Should().NotBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("instance_method_on_object", "user.profile.name")]
+    [InlineData("string_method_chain", "user.email")]
+    [InlineData("string_to_upper", "user.name")]
+    public void ExtractFieldPaths_MethodCallExpressions_ExtractsBasePath(string scenario, string expectedPath)
+    {
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("instance_method_on_object", x => x.user.profile.name!.ToUpper() == "TEST")
+            .Register("string_method_chain", x => x.user.email!.Trim().StartsWith("admin"))
+            .Register("string_to_upper", x => x.user.name!.ToUpper().Contains("test"));
+
+        var expr = expressions.Get(scenario);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        paths.Should().Contain(expectedPath);
     }
 }

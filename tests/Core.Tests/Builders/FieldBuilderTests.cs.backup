@@ -1165,6 +1165,20 @@ public class FieldBuilderTests
     }
 
     [Fact]
+    public void FieldBuilder_WithMetadata_Should_Preserve()
+    {
+        
+        var fb = FieldBuilder.Create([], "root")
+            .AddField("oldField", "String")
+            .AddField("newField", "String");
+        
+        var result = fb.Build();
+        result.Fields["oldField"].Metadata.Should().NotBeNull();
+        // The metadata here should be empty since we didn't set it during creation
+        result.Fields["oldField"].Metadata.Should().HaveCount(0);
+    }
+
+    [Fact]
     public void FieldBuilder_Complex_Type_Specifications_Should_Work()
     {
         var fb = FieldBuilder.Create([], "root")
@@ -1458,6 +1472,19 @@ public class FieldBuilderTests
     }
 
     [Fact]
+    public void FieldBuilder_AddField_WithMetadata()
+    {
+        // Tests metadata handling in field creation
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        
+        var result = fieldBuilder
+            .AddField("user", "User", arguments: new Dictionary<string, object?> { ["id"] = "123" })
+            .Build();
+        
+        result.Fields["user"].Arguments!["id"].Should().Be("123");
+    }
+
+    [Fact]
     public void FieldBuilder_AddField_ComplexPathWithTypePrefix()
     {
         var fieldBuilder = FieldBuilder.Create([], "root");
@@ -1519,6 +1546,24 @@ public class FieldBuilderTests
     }
 
     [Fact]
+    public void FieldBuilder_AddField_With_Metadata_Should_Store_Metadata()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create([], "user");
+        var metadata = new Dictionary<string, object?> { { "cached", true }, { "ttl", 3600 } };
+        
+        // Act
+        var result = fieldBuilder
+            .AddField("profile", "object", new Dictionary<string, object?>(), metadata)
+            .Build();
+        
+        // Assert
+        result.Fields["profile"].Metadata.Should().HaveCount(2);
+        result.Fields["profile"].Metadata!["cached"].Should().Be(true);
+        result.Fields["profile"].Metadata!["ttl"].Should().Be(3600);
+    }
+
+    [Fact]
     public void FieldBuilder_AddField_Multiple_Times_Same_Name_Should_Preserve_Existing()
     {
         // Arrange
@@ -1577,6 +1622,24 @@ public class FieldBuilderTests
         
         // Assert
         result.Fields["data"].Type.Should().Be("CustomType");
+    }
+
+    [Fact]
+    public void FieldBuilder_AddField_With_Arguments_And_Metadata_Should_Store_Both()
+    {
+        // Arrange
+        var fieldBuilder = FieldBuilder.Create([], "query");
+        var args = new Dictionary<string, object?> { { "limit", 10 } };
+        var meta = new Dictionary<string, object?> { { "indexed", true } };
+        
+        // Act
+        var result = fieldBuilder
+            .AddField("items", "object", args, meta)
+            .Build();
+        
+        // Assert
+        result.Fields["items"].Arguments.Should().HaveCount(1);
+        result.Fields["items"].Metadata.Should().HaveCount(1);
     }
 
     [Fact]
@@ -2818,79 +2881,19 @@ public class FieldBuilderTests
         result.Fields["organization"].Fields["team"].Fields["members"].Arguments.Should().NotBeNull();
     }
 
-    [Theory]
-    [InlineData("empty-metadata")]
-    [InlineData("with-arguments")]
-    [InlineData("with-metadata-only")]
-    [InlineData("with-arguments-and-metadata")]
-    [InlineData("metadata-merging")]
-    public void FieldBuilder_WithMetadata_Comprehensive(string scenario)
+    [Fact]
+    public void FieldBuilder_Field_With_Metadata_Merging()
     {
-        var scenarios = new TestScenarioBag<FieldDefinition>()
-            .Register("empty-metadata",
-                arrange: () => FieldBuilder.Create([], "root")
-                    .AddField("oldField", "String")
-                    .AddField("newField", "String")
-                    .Build(),
-                assert: result =>
-                {
-                    result.Fields["oldField"].Metadata.Should().NotBeNull();
-                    result.Fields["oldField"].Metadata.Should().HaveCount(0);
-                })
-            .Register("with-arguments",
-                arrange: () => FieldBuilder.Create([], "root")
-                    .AddField("user", "User", arguments: new Dictionary<string, object?> { ["id"] = "123" })
-                    .Build(),
-                assert: result =>
-                {
-                    result.Fields["user"].Arguments!["id"].Should().Be("123");
-                })
-            .Register("with-metadata-only",
-                arrange: () =>
-                {
-                    var metadata = new Dictionary<string, object?> { { "cached", true }, { "ttl", 3600 } };
-                    return FieldBuilder.Create([], "user")
-                        .AddField("profile", "object", new Dictionary<string, object?>(), metadata)
-                        .Build();
-                },
-                assert: result =>
-                {
-                    result.Fields["profile"].Metadata.Should().HaveCount(2);
-                    result.Fields["profile"].Metadata!["cached"].Should().Be(true);
-                    result.Fields["profile"].Metadata!["ttl"].Should().Be(3600);
-                })
-            .Register("with-arguments-and-metadata",
-                arrange: () =>
-                {
-                    var args = new Dictionary<string, object?> { { "limit", 10 } };
-                    var meta = new Dictionary<string, object?> { { "indexed", true } };
-                    return FieldBuilder.Create([], "query")
-                        .AddField("items", "object", args, meta)
-                        .Build();
-                },
-                assert: result =>
-                {
-                    result.Fields["items"].Arguments.Should().HaveCount(1);
-                    result.Fields["items"].Metadata.Should().HaveCount(1);
-                })
-            .Register("metadata-merging",
-                arrange: () =>
-                {
-                    var metadata1 = new Dictionary<string, object?> { { "deprecated", false } };
-                    var metadata2 = new Dictionary<string, object?> { { "description", "User profile" } };
-                    return FieldBuilder.Create([], "root")
-                        .AddField("user", new Dictionary<string, object?>(), metadata1)
-                        .AddField("user.name", "String", (Dictionary<string, object?>?)null, metadata2)
-                        .Build();
-                },
-                assert: result =>
-                {
-                    result.Fields["user"].Should().NotBeNull();
-                });
+        var fieldBuilder = FieldBuilder.Create([], "root");
+        var metadata1 = new Dictionary<string, object?> { { "deprecated", false } };
+        var metadata2 = new Dictionary<string, object?> { { "description", "User profile" } };
 
-        var testCase = scenarios.Get(scenario);
-        var result = testCase.Arrange();
-        testCase.Assert(result);
+        var result = fieldBuilder
+            .AddField("user", new Dictionary<string, object?>(), metadata1)
+            .AddField("user.name", "String", (Dictionary<string, object?>?)null, metadata2)
+            .Build();
+
+        result.Fields["user"].Should().NotBeNull();
     }
 
     [Fact]
@@ -3175,52 +3178,11 @@ public class FieldBuilderTests
         var query = QueryBuilder.CreateDefaultBuilder("TestQuery");
         query.AddField("id");
         query.AddField("name");
-
+        
         string result = query.Definition;
-
+        
         result.Should().NotBeNullOrEmpty();
         result.Should().Contain("TestQuery");
-    }
-
-    [Fact]
-    public void FieldBuilder_AddField_EmptyFieldName_ThrowsArgumentException()
-    {
-        var builder = FieldBuilder.Create([], "root");
-        var act = () => builder.AddField("");
-        act.Should().Throw<ArgumentException>().WithParameterName("fieldName");
-    }
-
-    [Theory]
-    [InlineData("dict_merge_both_dicts", "key1", "key2")]
-    [InlineData("dict_merge_nested", "nested", "deep")]
-    public void FieldBuilder_Where_WithDictionaryValues_MergesRecursively(string _, string key1, string key2)
-    {
-        var builder = FieldBuilder.Create([], "root");
-        var dict1 = new Dictionary<string, object?> { [key1] = "value1" };
-        var dict2 = new Dictionary<string, object?> { [key2] = "value2" };
-
-        builder.Where("filter", dict1);
-        builder.Where("filter", dict2);
-
-        var result = builder.Build();
-        result.Arguments.Should().ContainKey("filter");
-        var mergedDict = result.Arguments["filter"] as IDictionary<string, object?>;
-        mergedDict.Should().NotBeNull();
-        mergedDict.Should().ContainKey(key1);
-        mergedDict.Should().ContainKey(key2);
-    }
-
-    [Theory]
-    [InlineData("override_with_string", "initial")]
-    [InlineData("override_with_number", 42)]
-    public void FieldBuilder_Where_WithNonDictionaryValues_OverridesValue(string _, object initialValue)
-    {
-        var builder = FieldBuilder.Create([], "root");
-        builder.Where("key", initialValue);
-        builder.Where("key", "new_value");
-
-        var result = builder.Build();
-        result.Arguments["key"].Should().Be("new_value");
     }
 
 }

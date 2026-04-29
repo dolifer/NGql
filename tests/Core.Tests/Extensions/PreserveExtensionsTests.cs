@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
+using NGql.Core.Features;
 using Xunit;
 
 namespace NGql.Core.Tests.Extensions;
@@ -373,5 +375,137 @@ public class PreserveExtensionsTests
         // Assert
         result.Should().NotBeNull();
         result.Definition.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Preserve_WithMetadata_PreservesQueryMetadata()
+    {
+        // Arrange
+        var query = QueryBuilder.CreateDefaultBuilder("TestQuery");
+        query.Definition.Metadata["version"] = "1.0";
+        query.Definition.Metadata["public"] = true;
+        query.AddField("TestQuery:data.id")
+             .AddField("data.name");
+
+        // Act
+        var result = PreservationBuilder.Create(query)
+            .Preserve("TestQuery.data.id")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.Metadata.Should().NotBeEmpty();
+        result.Definition.Metadata["version"].Should().Be("1.0");
+        result.Definition.Metadata["public"].Should().Be(true);
+    }
+
+    [Fact]
+    public void Preserve_WithQueryLevelMetadata_CopiesMetadata()
+    {
+        // Arrange
+        var query = QueryBuilder.CreateDefaultBuilder("Query");
+        query.Definition.Metadata["role"] = "admin";
+        query.Definition.Metadata["level"] = 5;
+        query.AddField("Query:profile.name")
+             .AddField("profile.bio");
+
+        // Act
+        var result = PreservationBuilder.Create(query)
+            .Preserve("Query.profile.name")
+            .Build();
+
+        // Assert
+        result.Definition.Metadata.Count.Should().Be(2);
+        result.Definition.Metadata["role"].Should().Be("admin");
+        result.Definition.Metadata["level"].Should().Be(5);
+    }
+
+    [Fact]
+    public void Preserve_ComplexNesting_MaintainsMetadata()
+    {
+        // Arrange
+        var query = QueryBuilder.CreateDefaultBuilder("Q");
+        query.Definition.Metadata["depth"] = "complex";
+        query.AddField("Q:a.b.c.d.e")
+             .AddField("a.b.x");
+
+        // Act
+        var result = PreservationBuilder.Create(query)
+            .Preserve("Q.a.b.c.d.e")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.Metadata["depth"].Should().Be("complex");
+    }
+
+    [Fact]
+    public void Preserve_MultiplePathsPreservesMergingStrategy()
+    {
+        // Arrange
+        var query = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
+        query.Definition.Metadata["strategy"] = "field-path";
+        query.AddField("Q:a")
+             .AddField("b")
+             .AddField("c");
+
+        // Act
+        var result = PreservationBuilder.Create(query)
+            .Preserve("Q.a", "Q.b")
+            .Build();
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Definition.MergingStrategy.Should().Be(MergingStrategy.MergeByFieldPath);
+        result.Definition.Metadata["strategy"].Should().Be("field-path");
+    }
+
+    [Fact]
+    public void Preserve_NullFieldPaths_ReturnsSameBuilder()
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Q").AddField("user", ["id"]);
+
+        var result = query.Preserve(null);
+
+        result.Should().BeSameAs(query);
+    }
+
+    [Fact]
+    public void Preserve_EmptyFieldPaths_ReturnsSameBuilder()
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Q").AddField("user", ["id"]);
+
+        var result = query.Preserve();
+
+        result.Should().BeSameAs(query);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(".user")]
+    public void Preserve_EmptySegmentInPath_ProducesEmptyResult(string path)
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Q").AddField("user", ["id"]);
+
+        var result = query.Preserve(path);
+
+        result.Definition.Fields.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Preserve_NestedFieldWithArguments_ExtractsVariablesFromAllLevels()
+    {
+        var pageSizeVar = new Variable("$pageSize", "Int");
+
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user", ["name"])
+            .AddField("user.posts",
+                new Dictionary<string, object?> { ["limit"] = pageSizeVar },
+                new[] { "title" });
+
+        var result = query.Preserve("user.posts");
+
+        var names = result.Variables.Select(v => v.Name).ToList();
+        names.Should().Contain("$pageSize");
     }
 }
