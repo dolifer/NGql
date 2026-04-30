@@ -70,6 +70,7 @@ test: build
 
 tools:
 	@command -v reportgenerator >/dev/null 2>&1 || dotnet tool install -g dotnet-reportgenerator-globaltool
+	@command -v dotnet-gitversion >/dev/null 2>&1 || dotnet tool install -g GitVersion.Tool
 
 report: tools
 	reportgenerator \
@@ -79,8 +80,19 @@ report: tools
 
 coverage: test report
 
-pack: build
-	dotnet pack $(CORE_PROJECT) --configuration $(CONFIG) --no-build --output $(PACKAGES_DIR)
+pack: build tools
+	@base=$$(dotnet-gitversion /showvariable MajorMinorPatch); \
+	label=$$(dotnet-gitversion /showvariable PreReleaseLabel); \
+	commits=$$(dotnet-gitversion /showvariable CommitsSinceVersionSource); \
+	if [ -n "$$label" ]; then \
+		version="$$base-$$label.$$commits"; \
+	else \
+		version="$$base"; \
+	fi; \
+	echo "==> Packing $(CORE_PROJECT) as $$version"; \
+	dotnet pack $(CORE_PROJECT) --configuration $(CONFIG) --no-build --output $(PACKAGES_DIR) \
+		/p:PackageVersion=$$version \
+		/p:UpdateVersionProperties=false
 
 publish: pack
 	@test -n "$(NUGET_API_KEY)" || (echo "NUGET_API_KEY is required" && exit 1)
