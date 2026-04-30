@@ -6,8 +6,9 @@ A **zero-dependency**, schema-less GraphQL query builder for .NET. Compose Graph
 
 [![NuGet](https://img.shields.io/nuget/v/NGql.Core)](https://www.nuget.org/packages/NGql.Core/)
 [![Downloads](https://img.shields.io/nuget/dt/NGql.Core)](https://www.nuget.org/packages/NGql.Core/)
-[![Build](https://img.shields.io/github/actions/workflow/status/dolifer/NGql/ci.yml?branch=main)](https://github.com/dolifer/NGql/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/codecov/c/github/dolifer/NGql?branch=main)](https://codecov.io/gh/dolifer/NGql)
+[![Build](https://img.shields.io/github/actions/workflow/status/dolifer/NGql/build-and-test.yml?branch=main)](https://github.com/dolifer/NGql/actions/workflows/build-and-test.yml)
+[![Line coverage](https://dolifer.github.io/NGql/badge_linecoverage.svg)](https://dolifer.github.io/NGql/)
+[![Branch coverage](https://dolifer.github.io/NGql/badge_branchcoverage.svg)](https://dolifer.github.io/NGql/)
 ![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-blue)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 

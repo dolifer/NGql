@@ -8,23 +8,26 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0      
+          fetch-depth: 0
       - name: Install net8.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
       - name: Install net9.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
       - name: Install net10.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
       - name: Run ./build.sh Coverage
@@ -36,3 +39,11 @@ jobs:
         with:
           name: coverage-report
           path: artifacts/coverage-report
+      - name: Publish coverage report to GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: artifacts/coverage-report
+          publish_branch: gh-pages
+          force_orphan: true
