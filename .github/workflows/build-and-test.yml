@@ -20,18 +20,13 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-      - name: Install net8.x
+      - name: Install .NET SDKs (8, 9, 10)
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x'
-      - name: Install net9.x
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '9.0.x'
-      - name: Install net10.x
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
       - name: Build, test, and generate coverage report
         run: make ci
       - name: Upload Coverage report
