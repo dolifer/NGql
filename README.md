@@ -660,7 +660,7 @@ Classic-API examples.
 - **[Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md)** — detailed upgrade path from 1.5.x to 2.x
 - **[Legacy API Reference](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md)** — `Query` / `Mutation` Classic-API documentation
 - **[Test Suite](https://github.com/dolifer/NGql/tree/main/tests)** — runnable usage examples for every feature
-- **[Contributor Guide](https://github.com/dolifer/NGql/blob/main/.github/copilot-instructions.md)** — architecture, build commands, conventions
+- **[Contributor Guide](https://github.com/dolifer/NGql/blob/main/CLAUDE.md)** — architecture, build commands, conventions
 
 ---
 
@@ -669,8 +669,8 @@ Classic-API examples.
 Contributions welcome! Please:
 
 1. Read the existing code style
-2. Add tests for new features (see [.github/copilot-instructions.md](./.github/copilot-instructions.md) for the test-consolidation conventions)
-3. Run `./build.sh Coverage` and ensure no production-line coverage regression
+2. Add tests for new features (see [CLAUDE.md](./CLAUDE.md) for the test-consolidation conventions)
+3. Run `dotnet test NGql.sln /p:CollectCoverage=true /p:CoverletOutputFormat=cobertura` and ensure no production-line coverage regression
 4. Open a descriptive pull request
 
 ---

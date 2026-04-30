@@ -53,9 +53,9 @@
   </PropertyGroup>
 
   <ItemGroup Condition="'$(IsPackable)' != 'False'">
-    <None Include="$(SolutionDir)\icon.png" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)icon.png" Pack="true" PackagePath="" Visible="false" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.1.1" PrivateAssets="All"/>
-    <None Include="$(SolutionDir)\README.md" Pack="true" PackagePath=""/>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath=""/>
   </ItemGroup>
 
   <!-- tests projects -->

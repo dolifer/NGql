@@ -9,22 +9,23 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
-        with: 
+      - uses: actions/checkout@v4
+        with:
           fetch-depth: 0
+          fetch-tags: true
       - name: Install net8.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
       - name: Install net9.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
       - name: Install net10.x
-        uses: actions/setup-dotnet@v1
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - name: Run NugetPublish
-        run: ./build.sh publish
-        env:
-          NugetApiKey: ${{ secrets.NUGET_API_KEY }}
+      - name: Pack
+        run: dotnet pack src/Core/Core.csproj --configuration Release --output artifacts/packages
+      - name: Push to NuGet
+        run: dotnet nuget push 'artifacts/packages/*.nupkg' --skip-duplicate --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
