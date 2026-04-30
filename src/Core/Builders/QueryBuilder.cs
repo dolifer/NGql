@@ -289,6 +289,17 @@ public sealed class QueryBuilder
         return this;
     }
 
+    /// <summary>
+    /// Merges <paramref name="queryBuilder"/>'s fields and variables into this builder.
+    /// Merge behavior is governed by this builder's <see cref="MergingStrategy"/>:
+    /// <see cref="NGql.Core.MergingStrategy.MergeByDefault"/> appends fragments,
+    /// <see cref="NGql.Core.MergingStrategy.MergeByFieldPath"/> merges compatible same-path
+    /// fields and auto-aliases on argument conflict, and
+    /// <see cref="NGql.Core.MergingStrategy.NeverMerge"/> always aliases the included fields
+    /// as <c>name_1</c>, <c>name_2</c>, …
+    /// </summary>
+    /// <param name="queryBuilder">Builder whose fields will be merged into this one.</param>
+    /// <returns>This builder, for chaining.</returns>
     public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
 
     /// <summary>
@@ -353,6 +364,14 @@ public sealed class QueryBuilder
         _pathIndex.Clear();
     }
 
+    /// <summary>
+    /// Merges <paramref name="metadata"/> into the query definition's metadata bag, deeply
+    /// combining nested dictionaries. Existing keys are overwritten by <paramref name="metadata"/>
+    /// only when the new value is not itself a dictionary; nested dictionaries are recursively
+    /// merged.
+    /// </summary>
+    /// <param name="metadata">Metadata to merge in.</param>
+    /// <returns>This builder, for chaining.</returns>
     public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
     {
         var mergedMetadata = Helpers.MergeMetadata(_definition._metadata, metadata);

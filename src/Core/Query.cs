@@ -3,6 +3,14 @@ using NGql.Core.Extensions;
 
 namespace NGql.Core;
 
+/// <summary>
+/// Classic-API query builder. Compose with <c>.Where(...)</c> for arguments and
+/// <c>.Select(...)</c> for fields; nest queries by passing a <see cref="Query"/> to a parent's
+/// <c>Select</c>. The new <see cref="NGql.Core.Builders.QueryBuilder"/> is independent of
+/// this type — they both render to GraphQL but go through separate code paths. Use
+/// <see cref="Query"/> when you want hand-built selection sets or when embedding a
+/// sub-query inside a <see cref="Mutation"/>.
+/// </summary>
 public sealed class Query
 {
     public QueryBlock Block { get; }

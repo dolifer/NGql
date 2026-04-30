@@ -331,7 +331,21 @@ ASALocalRun/
 # NVidia Nsight GPU debugger configuration file
 *.nvuser
 
-# MFractors (Xamarin productivity tool) working folder 
+# MFractors (Xamarin productivity tool) working folder
 .mfractor/
 .DS_Store
 *.received.txt
+
+# Coverlet / dotCover artifacts that occasionally land in the workdir.
+# (The build's primary artifact dir is `artifacts/`, already ignored above.)
+coverage.*.json
+coverage_last_dotcover.xml
+
+# Local analysis / refactoring scratch — never commit.
+test_refactoring_candidates.md
+consolidation_plan.txt
+refactored_tests.txt
+view_uncovered_source.py
+
+# Claude Code working directory
+.claude/

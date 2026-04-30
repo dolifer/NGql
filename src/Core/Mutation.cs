@@ -2,6 +2,13 @@
 
 namespace NGql.Core;
 
+/// <summary>
+/// Builds a GraphQL <c>mutation</c> operation. Use <see cref="Select(NGql.Core.Query)"/> to
+/// embed a sub-<see cref="Query"/> that carries arguments via <see cref="Query.Where(string, object)"/>,
+/// or <see cref="Select(string[])"/> for plain field names.
+/// </summary>
+/// <param name="name">Operation name (rendered as <c>mutation Name(...)</c>).</param>
+/// <param name="variables">Operation variables; their <c>$name:Type</c> declarations appear in the operation signature.</param>
 public sealed class Mutation(string name, params Variable[] variables)
 {
     private readonly QueryBlock _block = new(name, "mutation", variables: variables);

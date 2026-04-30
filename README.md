@@ -2,23 +2,26 @@
 
 # NGql - GraphQL Query Builder for .NET
 
-A **zero-dependency**, schema-less GraphQL query builder with a fluent, powerful API. Build type-safe GraphQL queries in C# with automatic query merging, field preservation, and intelligent composition.
+A **zero-dependency**, schema-less GraphQL query builder for .NET. Compose GraphQL operations from C# with a fluent API, merge fragments at runtime, and extract subsets via field-path or LINQ expression — without an SDL or codegen step.
 
-[![GitHub license](https://img.shields.io/badge/license-mit-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 [![NuGet](https://img.shields.io/nuget/v/NGql.Core)](https://www.nuget.org/packages/NGql.Core/)
-![.NET Version](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-blue)
+[![Downloads](https://img.shields.io/nuget/dt/NGql.Core)](https://www.nuget.org/packages/NGql.Core/)
+[![Build](https://img.shields.io/github/actions/workflow/status/dolifer/NGql/ci.yml?branch=main)](https://github.com/dolifer/NGql/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/codecov/c/github/dolifer/NGql?branch=main)](https://codecov.io/gh/dolifer/NGql)
+![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-blue)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/dolifer/NGql/blob/main/LICENSE)
 
 ---
 
 ## Why NGql?
 
-- **Schemaless**: No GraphQL schema required—perfect for dynamic queries
-- **Zero Dependencies**: Self-contained, no external packages
-- **Type-Safe Syntax**: Compile-time checking for field paths and types
-- **Automatic Merging**: Intelligently combine query fragments
-- **Field Preservation**: Extract specific fields from complex queries
-- **Performance Optimized**: Minimal allocations with `Span<T>` and zero-copy patterns
-- **Easy to Read**: Fluent API that produces clean, maintainable code
+- **Schemaless** — runs without an SDL, code-gen step, or build-time schema validation
+- **Zero runtime dependencies** — single assembly, multi-targets `net8.0` / `net9.0` / `net10.0`
+- **Fluent composition** — `QueryBuilder` / `FieldBuilder` keeps query construction inline with C# control flow
+- **Runtime fragment merging** — `Include(otherBuilder)` joins disjoint fragments; `MergingStrategy` picks how to handle duplicates (default merge, never merge, or merge-by-field-path with auto-aliasing on conflict)
+- **Field preservation** — keep a subset of an existing query by string path (`PreservationBuilder.Preserve`) or by C# expression (`PreserveFromExpression<T>(x => x.user.profile.email != null)`)
+- **Variables, enums, nested arguments** — `Variable`/`EnumValue` types render to native GraphQL syntax; nested `Dictionary<string, object?>` arguments produce nested input objects
+- **Hot-path optimized** — span-based path parsing, lock-free reads on `FieldChildren`, in-place merge in `Include()`. Reflection is used only by the LINQ-expression preservation path; query rendering itself is reflection-free
 
 ---
 
@@ -34,9 +37,14 @@ dotnet add package NGql.Core
 
 ## Quick Start
 
+> All sample output blocks below are pasted verbatim from `QueryBuilder.ToString()`.
+> Field order follows insertion-independent canonical sorting (alphabetical, with aliased
+> duplicates appended after the un-aliased one).
+
 ### 1. Build a Simple Query
 
 ```csharp
+using NGql.Core;
 using NGql.Core.Builders;
 
 var query = QueryBuilder
@@ -49,11 +57,11 @@ Console.WriteLine(query);
 
 **Output:**
 ```graphql
-query GetUsers {
-  users {
-    name
-    email
-  }
+query GetUsers{
+    users{
+        email
+        name
+    }
 }
 ```
 
@@ -64,50 +72,58 @@ var query = QueryBuilder
     .CreateDefaultBuilder("SearchUsers")
     .AddField("users", new Dictionary<string, object?>
     {
-        { "first", 10 },
-        { "search", "john" }
-    })
-    .AddField("users.name")
-    .AddField("users.email");
+        ["first"] = 10,
+        ["search"] = "john"
+    },
+    subFields: new[] { "name", "email" });
 ```
 
 **Output:**
 ```graphql
-query SearchUsers {
-  users(first: 10, search: "john") {
-    name
-    email
-  }
+query SearchUsers{
+    users(first:10, search:"john"){
+        email
+        name
+    }
 }
 ```
 
 ### 3. Use Variables
 
+`Variable` lives in `NGql.Core` (not `NGql.Core.Builders`) — make sure both `using`
+directives are in scope. Pass a `Variable` instance as an argument value and it is
+auto-promoted to the operation signature.
+
 ```csharp
+using NGql.Core;
+using NGql.Core.Builders;
+
+var userId = new Variable("$userId", "ID!");
+
 var query = QueryBuilder
     .CreateDefaultBuilder("GetUser")
     .AddField("user", new Dictionary<string, object?>
     {
-        { "id", new Variable("$userId", "ID!") }
-    })
-    .AddField("user.name")
-    .AddField("user.email");
+        ["id"] = userId
+    },
+    subFields: new[] { "name", "email" });
 ```
 
 **Output:**
 ```graphql
-query GetUser($userId: ID!) {
-  user(id: $userId) {
-    name
-    email
-  }
+query GetUser($userId:ID!){
+    user(id:$userId){
+        email
+        name
+    }
 }
 ```
 
 **Note on Variables:**
-- Variable names start with `$` (e.g., `$userId`)
-- Types follow GraphQL syntax: `ID!` means required ID, `String` means optional string
-- Variables are declared in the query signature and passed at runtime
+- Variable names must start with `$` (the `Variable` constructor throws otherwise)
+- The type string is opaque to NGql and emitted verbatim — your GraphQL server validates it
+- Variables appear in the operation signature; passing values at execution time is the
+  HTTP/transport layer's responsibility (NGql renders the operation text, it does not execute it)
 
 ---
 
@@ -125,22 +141,22 @@ var query = QueryBuilder
 
 **Output:**
 ```graphql
-query DeepQuery {
-  organization {
-    departments {
-      teams {
-        members {
-          name
+query DeepQuery{
+    organization{
+        departments{
+            teams{
+                members{
+                    name
+                }
+            }
         }
-      }
     }
-  }
 }
 ```
 
 ### 2. Field Type Annotations
 
-Specify field types for better schema compliance:
+Specify field types as documentation metadata:
 
 ```csharp
 var query = QueryBuilder
@@ -150,171 +166,120 @@ var query = QueryBuilder
     .AddField("User user.profile")          // Object type
     .AddField("[] tags")                    // Array marker
     .AddField("Post[] user.posts");         // Typed array
-
-Console.WriteLine(query);
 ```
 
 **Output:**
 ```graphql
-query TypedFields {
-  user {
-    name
-    age
-    profile
-    posts
-  }
-  tags
+query TypedFields{
+    tags
+    user{
+        age
+        name
+        posts
+        profile
+    }
 }
 ```
 
 **About Type Annotations:**
-- Type annotations (`String`, `Int`, `Post[]`) are preserved in metadata but don't appear in the GraphQL output
-- They help document field types for maintainability and clarity
-- Optional: Use types as comments/documentation when working with typed APIs
-- Since NGql is schemaless, type annotations are metadata-only—no runtime validation
-- The field names and structure are what matters for GraphQL execution
+- Type annotations (`String`, `Int`, `Post[]`) are stored in metadata; they do **not** appear in the rendered GraphQL output
+- Use them as inline documentation when round-tripping through serializers, or to drive your own tooling that reads `FieldDefinition.Type`
+- NGql does **not** validate types against a schema — they are metadata only
 
 ### 3. Field Aliases
 
-Give fields alternative names in the response. Aliases can be at any part of the dot notation:
+Use `alias:name` syntax inside any segment of a dotted path to alias the corresponding
+node. Subsequent additions that share the same path **merge into the same node**, so
+adding more subfields under an aliased root accumulates them under that single alias.
 
 ```csharp
 var query = QueryBuilder
     .CreateDefaultBuilder("AliasedQuery")
-    .AddField("primaryName:user.name")              // Alias at the end
-    .AddField("userAlias:user.email")               // Alias at the end
-    .AddField("recent:user.posts.title")            // Alias at the end
-    .AddField("author:user.profile.name")           // Alias at the end
-    .AddField("userData:user.id")                   // Alias at the end
-    .AddField("allPosts:user.posts");               // Alias for entire nested path
+    .AddField("primaryName:user.name")
+    .AddField("primaryName:user.email")
+    .AddField("primaryName:user.posts.title");
 ```
 
 **Output:**
 ```graphql
-query AliasedQuery {
-  primaryName: user {
-    name
-  }
-  userAlias: user {
-    email
-  }
-  recent: user {
-    posts {
-      title
-    }
-  }
-  author: user {
-    profile {
-      name
-    }
-  }
-  userData: user {
-    id
-  }
-  allPosts: user {
-    posts
-  }
-}
-```
-
-**Aliases at Any Part of the Dot Notation:**
-
-You can also place aliases at any intermediate level in the path:
-
-```csharp
-var query = QueryBuilder
-    .CreateDefaultBuilder("IntermediateAliases")
-    .AddField("mainUser:user.profile.settings.privacy")  // Alias on first level
-    .AddField("user.prof:profile.info.email")            // Alias in the middle
-    .AddField("user.profile.sec:settings.security");     // Alias near the end
-```
-
-**Output:**
-```graphql
-query IntermediateAliases {
-  mainUser: user {
-    profile {
-      settings {
-        privacy
-      }
-    }
-  }
-  user {
-    prof: profile {
-      info {
+query AliasedQuery{
+    primaryName:user{
         email
-      }
+        name
+        posts{
+            title
+        }
     }
-  }
-  user {
-    profile {
-      sec: settings {
-        security
-      }
-    }
-  }
 }
 ```
 
-**Use Cases:**
-- **Name conflicts**: Avoid field name collisions when querying the same field with different arguments
-- **Clarity**: Use readable aliases in responses (e.g., `currentUser` instead of `user`)
-- **Nested navigation**: Alias intermediate levels for cleaner response structures
+**Aliasing the same field with conflicting arguments** triggers `MergeByFieldPath` to
+auto-suffix duplicates as `name_1`, `name_2`, … (see *Merging Strategies* below).
+
+**Use cases:**
+- Name conflicts when the same field appears with different arguments
+- Renaming a field for the response without changing the schema-side name
 
 ### 4. Nested Arguments
 
-Build complex argument structures for filtering, sorting, and pagination:
+Build complex argument structures for filtering, sorting, and pagination. Nested
+`Dictionary<string, object?>` values render as nested GraphQL input objects; anonymous
+types and POCOs are also decomposed via reflection (their property names become input
+keys), but using `Dictionary` keeps things explicit and avoids surprises.
 
 ```csharp
+var cursor = new Variable("$cursor", "String");
 var query = QueryBuilder
     .CreateDefaultBuilder("ComplexArgs")
     .AddField("searchUsers", new Dictionary<string, object?>
     {
-        { "filter", new Dictionary<string, object?>
+        ["filter"] = new Dictionary<string, object?>
         {
-            { "name", "john" },
-            { "age", new Dictionary<string, object?> 
+            ["name"] = "john",
+            ["age"] = new Dictionary<string, object?>
             {
-                { "gte", 18 },
-                { "lte", 65 }
-            }}
-        }},
-        { "pagination", new 
+                ["gte"] = 18,
+                ["lte"] = 65
+            }
+        },
+        ["pagination"] = new Dictionary<string, object?>
         {
-            first = 20,
-            after = new Variable("$cursor", "String")
-        }}
+            ["first"] = 20,
+            ["after"] = cursor
+        }
     })
     .AddField("searchUsers.edges.node.name");
 ```
 
 **Output:**
 ```graphql
-query ComplexArgs($cursor: String) {
-  searchUsers(
-    filter: { name: "john", age: { gte: 18, lte: 65 } },
-    pagination: { first: 20, after: $cursor }
-  ) {
-    edges {
-      node {
-        name
-      }
+query ComplexArgs($cursor:String){
+    searchUsers(filter:{age:{gte:18, lte:65}, name:"john"}, pagination:{after:$cursor, first:20}){
+        edges{
+            node{
+                name
+            }
+        }
     }
-  }
 }
 ```
 
+Notes:
+- Argument keys are sorted alphabetically for stable output (helps cache keys / snapshot tests)
+- Variables nested inside argument objects are still hoisted to the operation signature
+- Lists / arrays render as `[a, b, c]` GraphQL input lists
+
 **When to use this:**
-- **Filtering**: Pass filter objects to narrow results (e.g., `filter: { status: "active" }`)
+- **Filtering**: Pass filter objects to narrow results
 - **Sorting**: Specify sort order (e.g., `orderBy: { field: "created", direction: "DESC" }`)
 - **Pagination**: Pass pagination args (e.g., `first: 20, after: cursor`)
-- **Nested arguments**: Arguments can contain objects and arrays just like GraphQL
 
 ---
 
-## Query Composition & Merging 🚀
+## Query Composition & Merging
 
-The most powerful feature: combine query fragments with automatic, intelligent merging.
+Combine query fragments with `Include()`. Merge behavior is controlled by the
+`MergingStrategy` set on the **target** builder (the one calling `Include`).
 
 ### Basic Composition
 
@@ -334,79 +299,71 @@ var combined = QueryBuilder
     .CreateDefaultBuilder("UserProfile", MergingStrategy.MergeByFieldPath)
     .Include(userFields)
     .Include(profileFields);
-
-Console.WriteLine(combined);
 ```
 
 **Output:**
 ```graphql
-query UserProfile {
-  user {
-    id
-    name
-    email
-    profile {
-      bio
-      avatar
+query UserProfile{
+    user{
+        email
+        id
+        name
+        profile{
+            avatar
+            bio
+        }
     }
-  }
 }
 ```
-
-All three queries merged into a single efficient query!
 
 ### Merging Strategies
 
 | Strategy | Behavior | Use Case |
 |----------|----------|----------|
-| **`MergeByDefault`** | Inherits from parent | Most flexible (default) |
-| **`MergeByFieldPath`** | Merges compatible paths | Optimize similar queries |
-| **`NeverMerge`** | Always separate | Enforce separation |
+| `MergeByDefault` | Default — append fragments without alias collision detection | Compose disjoint fragments |
+| `MergeByFieldPath` | Merge compatible same-path fields; auto-alias on argument conflict | Optimize overlapping queries |
+| `NeverMerge` | Each fragment becomes its own auto-aliased copy | Force separation |
 
 #### MergeByFieldPath (Optimizing)
 
-**Use this when:** You want to combine query fragments with compatible paths to minimize output size and network traffic.
+Compatible fragments collapse; argument conflicts auto-alias as `name_1`, `name_2`, …
 
 ```csharp
 var query = QueryBuilder
     .CreateDefaultBuilder("OptimizedQuery", MergingStrategy.MergeByFieldPath)
-    .AddField("users", ["id", "name"]);
+    .AddField("users", subFields: new[] { "id", "name" });
 
 // Same path, no args → MERGES
-query.Include(QueryBuilder.CreateDefaultBuilder("F1")
-    .AddField("users", ["email"]));
+query.Include(QueryBuilder.CreateDefaultBuilder("F1", MergingStrategy.MergeByFieldPath)
+    .AddField("users", subFields: new[] { "email" }));
 
-// Different path → MERGES as nested
-query.Include(QueryBuilder.CreateDefaultBuilder("F2")
-    .AddField("users.profile", ["bio"]));
+// Nested path → MERGES into the existing "users"
+query.Include(QueryBuilder.CreateDefaultBuilder("F2", MergingStrategy.MergeByFieldPath)
+    .AddField("users.profile", subFields: new[] { "bio" }));
 
-// Same path, different args → DOESN'T MERGE (different filters)
-query.Include(QueryBuilder.CreateDefaultBuilder("F3")
-    .AddField("users", new { status = "active" }, ["role"]));
+// Same field, conflicting args → AUTO-ALIASED
+query.Include(QueryBuilder.CreateDefaultBuilder("F3", MergingStrategy.MergeByFieldPath)
+    .AddField("users", new Dictionary<string, object?> { ["status"] = "active" }, subFields: new[] { "role" }));
 ```
 
 **Output:**
 ```graphql
-query OptimizedQuery {
-  users {
-    id
-    name
-    email
-    profile {
-      bio
+query OptimizedQuery{
+    users{
+        email
+        id
+        name
+        profile{
+            bio
+        }
     }
-  }
-  users_1(status: "active") {
-    role
-  }
+    users_1:users(status:"active"){
+        role
+    }
 }
 ```
 
-**Result:** Three fragments combined into one optimized query (except the one with different arguments).
-
 #### NeverMerge (Enforce Separation)
-
-**Use this when:** You need separate field instances (e.g., for debugging, different caching strategies, or GraphQL specifications that forbid merging).
 
 ```csharp
 var mainQuery = QueryBuilder
@@ -422,22 +379,25 @@ mainQuery.Include(separate);
 
 **Output:**
 ```graphql
-query MainQuery {
-  users {
-    name
-  }
-  users_1 {
-    email
-  }
+query MainQuery{
+    users{
+        name
+    }
+    users_1:users{
+        email
+    }
 }
 ```
 
-**Result:** Despite compatible paths, the second fragment is always separate due to `NeverMerge`.
+The included `Separate` builder declares `NeverMerge`, so its fields are aliased rather
+than merged into `mainQuery`'s `users`.
 
-### Advanced: Dynamic Query Building
+### Dynamic Query Building
 
 ```csharp
-public QueryBuilder BuildUserQuery(UserQueryOptions options)
+record UserQueryOptions(bool IncludeEmail, bool IncludeProfile, bool IncludePosts);
+
+QueryBuilder BuildUserQuery(UserQueryOptions options)
 {
     var query = QueryBuilder
         .CreateDefaultBuilder("DynamicUser", MergingStrategy.MergeByFieldPath)
@@ -469,231 +429,237 @@ Extract specific fields from complex queries—perfect for filtering data by use
 
 ### Basic Preservation
 
+The public entry point is `PreservationBuilder.Create(query)`. Add field paths via
+`Preserve(...)` (string paths) or `PreserveFromExpression<T>(...)` (LINQ predicate),
+then `.Build()` returns a new `QueryBuilder` containing only the preserved subtree.
+
 ```csharp
 var fullQuery = QueryBuilder
     .CreateDefaultBuilder("FullProfile")
     .AddField("user.id")
     .AddField("user.name")
     .AddField("user.email")
-    .AddField("user.ssn")           // Sensitive
-    .AddField("user.salary")        // Sensitive
+    .AddField("user.ssn")           // sensitive
+    .AddField("user.salary")        // sensitive
     .AddField("user.profile.bio");
 
-// Extract public fields only
-var publicQuery = fullQuery.Preserve("user.name", "user.profile.bio");
-```
-
-**Input:**
-```graphql
-query FullProfile {
-  user {
-    id
-    name
-    email
-    ssn
-    salary
-    profile {
-      bio
-    }
-  }
-}
+var publicQuery = PreservationBuilder.Create(fullQuery)
+    .Preserve("user.name", "user.profile.bio")
+    .Build();
 ```
 
 **Output:**
 ```graphql
-query FullProfile {
-  user {
-    name
-    profile {
-      bio
+query FullProfile{
+    user{
+        name
+        profile{
+            bio
+        }
     }
-  }
 }
 ```
 
-### Real-World: Role-Based Field Filtering
+### Role-Based Field Filtering
 
 ```csharp
-public class QueryFilter
-{
-    public static QueryBuilder FilterByRole(QueryBuilder query, UserRole role)
-    {
-        return role switch
-        {
-            UserRole.Public => query.Preserve(
-                "user.name",
-                "user.profile.bio",
-                "user.profile.avatar"
-            ),
-            UserRole.Admin => query.Preserve(
-                "user.id",
-                "user.name",
-                "user.email",
-                "user.profile.bio",
-                "user.createdAt",
-                "user.lastLogin"
-            ),
-            UserRole.Self => query,  // Full access
-            _ => query.Preserve()    // Empty - no fields
-        };
-    }
-}
+enum UserRole { Public, Admin, Self }
 
-// Usage
-var adminQuery = QueryFilter.FilterByRole(fullQuery, UserRole.Admin);
-var publicQuery = QueryFilter.FilterByRole(fullQuery, UserRole.Public);
+static QueryBuilder FilterByRole(QueryBuilder source, UserRole role) => role switch
+{
+    UserRole.Public => PreservationBuilder.Create(source)
+        .Preserve("user.name", "user.profile.bio", "user.profile.avatar")
+        .Build(),
+    UserRole.Admin => PreservationBuilder.Create(source)
+        .Preserve("user.id", "user.name", "user.email",
+                  "user.profile.bio", "user.createdAt", "user.lastLogin")
+        .Build(),
+    UserRole.Self => source,                                  // full access
+    _ => PreservationBuilder.Create(source).Build(),          // empty subset
+};
+
+var adminQuery  = FilterByRole(fullQuery, UserRole.Admin);
+var publicQuery = FilterByRole(fullQuery, UserRole.Public);
 ```
+
+### Expression-based Preservation
+
+If you have a typed model that mirrors the query shape, you can preserve fields via
+a C# expression — useful when the predicate already lives in a permission rule or
+validation method:
+
+```csharp
+class UserView { public Profile profile { get; set; } = null!; public string? email { get; set; } }
+class Profile  { public string? bio { get; set; } public string? name { get; set; } }
+
+var preserved = PreservationBuilder.Create(fullQuery)
+    .PreserveFromExpression<UserView>(x => x.profile.bio != null && x.email != null)
+    .Build();
+```
+
+`PreserveFromExpression<T>` walks the expression tree, extracts every member access
+chain, and preserves the corresponding field paths. Comparisons, logical operators,
+ternaries, null-coalescing, and LINQ method calls (`Any`, `Where`, `First`) are all
+supported. This path uses reflection on `T` once per call.
 
 ---
 
 ## Mutations
 
-Create mutations using the `Mutation` class:
+`Mutation` follows the Classic API shape: pass variables to the constructor, then
+`.Select(...)` either field names directly or a nested `Query` (which carries its own
+arguments via `.Where(...)`).
 
 ```csharp
-var mutation = new Mutation("CreateUser",
-    new Variable("$name", "String!"),
-    new Variable("$email", "String!")
-)
-.Select("createUser(name: $name, email: $email)")
-.Select("createUser.id")
-.Select("createUser.name")
-.Select("createUser.email");
+var nameVar  = new Variable("$name", "String!");
+var emailVar = new Variable("$email", "String!");
+
+var createUser = new Query("createUser")
+    .Where("name", nameVar)
+    .Where("email", emailVar)
+    .Select("id", "createdAt");
+
+var mutation = new Mutation("CreateUser", nameVar, emailVar)
+    .Select(createUser);
 
 Console.WriteLine(mutation);
 ```
 
 **Output:**
 ```graphql
-mutation CreateUser($name: String!, $email: String!) {
-  createUser(name: $name, email: $email) {
-    id
-    name
-    email
-  }
+mutation CreateUser($email:String!, $name:String!){
+    createUser(email:$email, name:$name){
+        createdAt
+        id
+    }
 }
 ```
 
 **Mutation API:**
-- `new Mutation(name, params variables)` - Create a mutation with a name and optional variables
-- `.Variable(name, type)` - Add a variable to the mutation
-- `.Select(selects)` - Add fields to the mutation (supports dot notation like `"field.subfield"` and GraphQL syntax like `"field(arg: value)"`)
-- `.Variable(variable)` - Add a pre-created Variable object
+- `new Mutation(name, params Variable[])` — declare the operation and its variables
+- `.Variable(name, type)` / `.Variable(Variable)` — add more variables incrementally
+- `.Select(params string[])` — add plain field names
+- `.Select(Query subQuery)` — embed a `Query` (with its `Where`/`Select` arguments and subfields)
+- `.Select(IEnumerable<object>)` — mixed list of strings and `QueryBlock`s
 
 ---
 
 ## Best Practices
 
-### 1. **Use Dot Notation for Readability**
+### Prefer dot notation for hierarchical paths
+
+`AddField("user.profile.avatar.url")` produces the same field tree as four chained
+`AddField` calls but reads as one line. Both forms compose with arguments and the same
+field path — pick whichever is clearer in context.
 
 ```csharp
-// ✅ Good: Clear hierarchy
+// Equivalent shapes:
 query.AddField("user.profile.avatar.url");
-
-// ❌ Avoid: Multiple arguments
-query.AddField("user", ["profile"]);
+query.AddField("user", fb => fb
+    .AddField("profile", fb2 => fb2
+        .AddField("avatar", fb3 => fb3
+            .AddField("url"))));
 ```
 
-### 2. **Create Reusable Fragments**
+### Build small reusable fragments
 
 ```csharp
-public static class QueryFragments
+static class QueryFragments
 {
-    public static QueryBuilder UserBaseFields()
-        => QueryBuilder.CreateDefaultBuilder("UserBase")
+    public static QueryBuilder UserBaseFields() =>
+        QueryBuilder.CreateDefaultBuilder("UserBase")
             .AddField("user.id")
             .AddField("user.name")
             .AddField("user.email");
 
-    public static QueryBuilder UserProfileFields()
-        => QueryBuilder.CreateDefaultBuilder("UserProfile")
+    public static QueryBuilder UserProfileFields() =>
+        QueryBuilder.CreateDefaultBuilder("UserProfile")
             .AddField("user.profile.bio")
             .AddField("user.profile.avatar");
 }
 
-// Reuse
 var combined = QueryBuilder
     .CreateDefaultBuilder("FullUser", MergingStrategy.MergeByFieldPath)
     .Include(QueryFragments.UserBaseFields())
     .Include(QueryFragments.UserProfileFields());
 ```
 
-### 3. **Choose the Right Merging Strategy**
+### Pick the right merging strategy
 
 ```csharp
-// For optimization (most cases)
-QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+// Most common — duplicates auto-alias on argument conflict
+QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
 
-// For guaranteed separation
-QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.NeverMerge)
+// Force every fragment into its own aliased field
+QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.NeverMerge);
 
-// For flexibility (inherits from parent)
-QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByDefault)
+// Default — append fragments without alias-conflict detection
+QueryBuilder.CreateDefaultBuilder("Q");
+// or explicitly:
+QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByDefault);
 ```
 
-### 4. **Use Type Annotations for Documentation**
+### Reuse `Variable` instances across calls
+
+A single `Variable` instance can be passed as an argument value in many places — NGql
+detects it via reference and adds it to the operation signature exactly once.
 
 ```csharp
-// ✅ Good: Types document the expected structure
-query.AddField("User user")
-     .AddField("String user.name")
-     .AddField("Post[] user.posts");
+var userId = new Variable("$userId", "ID!");
 
-// ❌ Avoid: No type information
-query.AddField("user")
-     .AddField("user.name")
-     .AddField("user.posts");
-```
-
-### 5. **Type Variables for Reusability**
-
-```csharp
-// ✅ Good: Variables are dynamic
-.AddField("user", new { id = new Variable("$userId", "ID!") })
-
-// ❌ Avoid: Hardcoded values
-.AddField("user", new { id = "123" })
+var query = QueryBuilder.CreateDefaultBuilder("DualLookup")
+    .AddField("user", new Dictionary<string, object?> { ["id"] = userId },
+              subFields: new[] { "name" })
+    .AddField("posts", new Dictionary<string, object?> { ["authorId"] = userId },
+              subFields: new[] { "title" });
 ```
 
 ---
 
 ## Performance Notes
 
-NGql is optimized for performance:
+Hot-path design choices, in rough order of impact:
 
-- **Zero-Copy Spans**: Uses `Span<T>` and `ReadOnlySpan<T>` to avoid allocations
-- **Smart Field Caching**: Lazy initialization of field structures
-- **Efficient Merging**: Linear-time query merging algorithm
-- **No Reflection**: All operations are compile-time safe
-- **Minimal GC Pressure**: Designed for hot-path query building
+- **Span-based field-path parsing** — dotted paths are walked over `ReadOnlySpan<char>`, not `string.Split`, with stack-allocated buffers up to 256 chars and a pooled fallback above that
+- **Lock-free reads on `FieldChildren`** — small collections use a volatile array snapshot; the lookup index activates only past 16 children
+- **In-place merge in `Include()`** — `MergeFieldsInPlace` mutates the existing field tree instead of cloning, so merging N fragments into a parent is O(N) work, not O(N²)
+- **Path-and-field-lookup caches** — `_pathIndex` caches `GetPathTo(rootName, nodePath)` results; both invalidate on field mutation
+- **Reflection is opt-in** — `QueryBuilder`/`FieldBuilder` rendering is reflection-free. Reflection runs only when you call `PreserveFromExpression<T>(...)` or `Include<T>(...)`, where it walks the expression tree / type's properties
+- **`BenchmarkRunner`** project ships with the repo if you want to measure your own scenarios
 
 ---
 
 ## Migration from NGql 1.5.x
 
-If you're upgrading from version 1.5.x (Classic API), see the **[Migration Guide](docs/reference/MIGRATION.md)** for step-by-step examples.
+If you're upgrading from version 1.5.x (Classic API), see the **[Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md)** for step-by-step examples.
 
 **Key Differences:**
 
-| Feature | 1.5.x | 2.x |
-|---------|-------|-----|
-| Query creation | `new Query()` | `QueryBuilder.CreateDefaultBuilder()` |
-| Nested fields | `.Select(new Query())` | `.AddField("parent.child")` |
-| Arguments | `.Where("key", value)` | `.AddField("field", new Dict { ... })` |
-| Merging | Manual | Automatic |
-| Field types | ❌ | ✅ |
-| Preservation | ❌ | ✅ |
+| Feature | 1.5.x (Classic) | 2.x (QueryBuilder) |
+|---------|-----------------|--------------------|
+| Query creation | `new Query("name")` | `QueryBuilder.CreateDefaultBuilder("name")` |
+| Nested fields | `.Select(new Query("child"))` | `.AddField("parent.child")` |
+| Field arguments | `.Where("key", value)` | `.AddField("field", new Dictionary<string, object?> { … })` |
+| Composing fragments | manual stitching | `Include(otherBuilder)` with `MergingStrategy` |
+| Field-path subset | not available | `PreservationBuilder.Create(...).Preserve(...).Build()` |
+| Type-annotation metadata | not available | `AddField("String user.name")` (metadata only — does not appear in rendered GraphQL) |
 
-The Classic API is still fully functional but deprecated. [Learn more](docs/reference/LEGACY.md).
+The Classic API (`Query`, `Mutation`) is still fully supported in 2.x and renders independently —
+it is **not** the internal representation `QueryBuilder` uses; both APIs produce GraphQL
+text through separate code paths. Use whichever fits your use case (or mix them: a
+`Mutation` can `Select` a hand-built `Query`, while `QueryBuilder` is the typical entry
+point for composable, dynamic queries). See
+[LEGACY.md](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md) for
+Classic-API examples.
 
 ---
 
 ## Examples & Documentation
 
-- **[Migration Guide](docs/reference/MIGRATION.md)** - Detailed upgrade from 1.5.x to 2.x
-- **[Legacy API Reference](docs/reference/LEGACY.md)** - Classic API documentation for existing code
-- **[Test Suite](tests/)** - Comprehensive examples in test files
-- **[API Docs](src/Core/)** - Source code with inline documentation
+- **[Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md)** — detailed upgrade path from 1.5.x to 2.x
+- **[Legacy API Reference](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md)** — `Query` / `Mutation` Classic-API documentation
+- **[Test Suite](https://github.com/dolifer/NGql/tree/main/tests)** — runnable usage examples for every feature
+- **[Contributor Guide](https://github.com/dolifer/NGql/blob/main/.github/copilot-instructions.md)** — architecture, build commands, conventions
 
 ---
 
@@ -702,25 +668,12 @@ The Classic API is still fully functional but deprecated. [Learn more](docs/refe
 Contributions welcome! Please:
 
 1. Read the existing code style
-2. Add tests for new features
-3. Ensure all 343+ tests pass
+2. Add tests for new features (see [.github/copilot-instructions.md](./.github/copilot-instructions.md) for the test-consolidation conventions)
+3. Run `./build.sh Coverage` and ensure no production-line coverage regression
 4. Open a descriptive pull request
 
 ---
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) file for details.
-
----
-
-## Roadmap & Future Work
-
-- [ ] GraphQL subscription support
-- [ ] Schema introspection integration
-- [ ] Advanced caching strategies
-- [ ] Performance profiling dashboards
-
----
-
-**Made with ❤️ for .NET developers building GraphQL clients.**
+MIT — see [LICENSE](https://github.com/dolifer/NGql/blob/main/LICENSE).

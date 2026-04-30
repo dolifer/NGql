@@ -4,6 +4,12 @@ using NGql.Core.Extensions;
 
 namespace NGql.Core.Builders;
 
+/// <summary>
+/// Fluent helper passed to the <c>fieldBuilder</c> action overloads of
+/// <see cref="QueryBuilder.AddField(string, Action{FieldBuilder})"/>. Use it to add
+/// nested fields, configure a parent field's type/arguments/metadata, or compose
+/// sub-trees without leaving the outer chain.
+/// </summary>
 public sealed class FieldBuilder
 {
     private FieldDefinition _fieldDefinition;

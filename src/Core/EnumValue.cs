@@ -1,12 +1,22 @@
 namespace NGql.Core;
 
+/// <summary>
+/// Wraps a GraphQL enum value so it renders unquoted (e.g. <c>role:ADMIN</c>) instead of as
+/// a string literal. Pass an <see cref="EnumValue"/> as an argument value to opt out of
+/// string quoting in the rendered query.
+/// </summary>
 public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatable<EnumValue>
 {
-    /// <summary>
-    /// The value for the enum.
-    /// </summary>
+    /// <summary>The enum identifier as it will appear in the rendered GraphQL.</summary>
     public string Value { get; }
 
+    /// <summary>
+    /// Creates an <see cref="EnumValue"/> from a non-empty string identifier or a CLR
+    /// <see cref="System.Enum"/> instance (its <c>ToString()</c> becomes the rendered value).
+    /// </summary>
+    /// <param name="value">A non-empty string or an <see cref="Enum"/> instance.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value"/> is an empty/whitespace string or an unsupported type.</exception>
     public EnumValue(object value)
     {
         ArgumentNullException.ThrowIfNull(value);

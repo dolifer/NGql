@@ -139,34 +139,43 @@ var query = QueryBuilder
 
 ### 5. Mutations
 
+The `Mutation` class is part of both APIs — there is no `QueryBuilder.CreateMutationBuilder`.
+The 2.x improvements are around how you build the inner selection (`Query` with
+`Where(...)` arguments and `Select(...)` subfields).
+
 **Before (1.5.x):**
 ```c#
 var mutation = new Mutation("CreateUser")
     .Select(new Query("createUser")
         .Where("name", "John")
         .Where("email", "john@example.com")
-        .Select("id")
-        .Select("name")
-        .Select("email"));
+        .Select("id", "name", "email"));
 ```
 
-**After (2.x):**
+**After (2.x):** functionally identical for plain string arguments. To use variables,
+declare them on the mutation and pass the same instance into `Where(...)`:
+
 ```c#
-var mutation = QueryBuilder
-    .CreateMutationBuilder("CreateUser")
-    .AddField("createUser", new Dictionary<string, object?>
-    {
-        { "name", "John" },
-        { "email", "john@example.com" }
-    })
-    .AddField("createUser.id")
-    .AddField("createUser.name")
-    .AddField("createUser.email");
+var nameVar  = new Variable("$name", "String!");
+var emailVar = new Variable("$email", "String!");
+
+var mutation = new Mutation("CreateUser", nameVar, emailVar)
+    .Select(new Query("createUser")
+        .Where("name", nameVar)
+        .Where("email", emailVar)
+        .Select("id", "name", "email"));
 ```
 
-**Key Changes:**
-- Use `QueryBuilder.CreateMutationBuilder()` instead of `new Mutation()`
-- Same argument dictionary pattern as queries
+**Output:**
+```graphql
+mutation CreateUser($email:String!, $name:String!){
+    createUser(email:$email, name:$name){
+        email
+        id
+        name
+    }
+}
+```
 
 ---
 
@@ -290,28 +299,26 @@ if (includePosts)
 }
 ```
 
-### Filtered Queries (Type Safety)
+### Type-annotated field paths
 
-**Before (1.5.x):**
-```c#
-// No type support - hope the server validates
-var query = new Query("TypedUsers")
-    .Select(new Query("users")
-        .Select("name"));
-```
+2.x accepts an optional type prefix in the field-path string. The type is stored as
+metadata on `FieldDefinition.Type` and **does not** appear in the rendered GraphQL —
+it is documentation for your own tooling, not a schema-validation feature.
 
-**After (2.x):**
 ```c#
-// Explicit types for better schema compliance
 var query = QueryBuilder
     .CreateDefaultBuilder("TypedUsers")
-    .AddField("[] User users")  // Array of User type
-    .AddField("String users.name");
+    .AddField("[] User users")        // metadata: "[] User"
+    .AddField("String users.name");   // metadata: "String"
+
+// Output: same shape as untyped — { users { name } }
 ```
 
-### Query Preservation (New Feature!)
+### Query Preservation (new feature)
 
-Extract specific fields from complex queries:
+Extract a subset of an existing query via `PreservationBuilder`. The entry point is
+`PreservationBuilder.Create(builder)`; chain `.Preserve(...)` /
+`.PreserveFromExpression<T>(...)` and call `.Build()` to materialize a new builder.
 
 ```c#
 var complexQuery = QueryBuilder
@@ -322,19 +329,21 @@ var complexQuery = QueryBuilder
     .AddField("user.profile.bio")
     .AddField("user.profile.avatar");
 
-// Extract only public fields
-var publicQuery = complexQuery.Preserve("user.name", "user.profile.avatar");
-// Result: Preserves only name and avatar, drops bio and email
+// String paths
+var publicQuery = PreservationBuilder.Create(complexQuery)
+    .Preserve("user.name", "user.profile.avatar")
+    .Build();
 
-// Extract fields using lambda expression (advanced)
-var adminQuery = complexQuery
-    .Preserve(x => x
-        .Field("user.id")
-        .Field("user.name")
-        .Field("user.email"));
+// LINQ expression — preserves every field touched by the predicate
+class UserView { public string? name { get; set; } public Profile profile { get; set; } = null!; }
+class Profile  { public string? bio { get; set; } }
+
+var derived = PreservationBuilder.Create(complexQuery)
+    .PreserveFromExpression<UserView>(x => x.name != null && x.profile.bio != null)
+    .Build();
 ```
 
-This is **completely new** to 2.x and impossible in 1.5.x.
+This is **new in 2.x** and has no Classic-API equivalent.
 
 ---
 
@@ -344,33 +353,34 @@ This is **completely new** to 2.x and impossible in 1.5.x.
 
 **Problem:**
 ```c#
-var base = QueryBuilder
+var baseQuery = QueryBuilder
     .CreateDefaultBuilder("Q")
     .AddField("user.name");
 
 var more = QueryBuilder
     .CreateDefaultBuilder("M")
-    .AddField("user", new { id = 123 })  // Different arguments
+    .AddField("user", new Dictionary<string, object?> { ["id"] = 123 })  // different arguments
     .AddField("user.email");
 
-var combined = base.Include(more);
-// Creates two separate "user" fields because arguments differ
+baseQuery.Include(more);
+// Renders two distinct "user" fields (the second is auto-aliased "user_1")
+// because the argument shapes differ.
 ```
 
 **Solution:** Use `NeverMerge` strategy if you want guaranteed separation, or ensure arguments are identical for merging:
 ```c#
-var base = QueryBuilder
+var baseQuery = QueryBuilder
     .CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-    .AddField("user", new { id = 123 })
+    .AddField("user", new Dictionary<string, object?> { ["id"] = 123 })
     .AddField("user.name");
 
 var more = QueryBuilder
-    .CreateDefaultBuilder("M")
-    .AddField("user", new { id = 123 })  // Same arguments
+    .CreateDefaultBuilder("M", MergingStrategy.MergeByFieldPath)
+    .AddField("user", new Dictionary<string, object?> { ["id"] = 123 })  // same arguments
     .AddField("user.email");
 
-var combined = base.Include(more);
-// Now merges into single "user" field!
+baseQuery.Include(more);
+// Both calls share one "user" field with merged subfields.
 ```
 
 ### Issue: "Variables aren't being detected"

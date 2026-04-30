@@ -7,7 +7,7 @@ namespace NGql.Core.Extensions;
 /// <summary>
 /// Extension methods for QueryDefinition and field navigation/lookup utilities.
 /// </summary>
-public static class QueryDefinitionExtensions
+internal static class QueryDefinitionExtensions
 {
     /// <summary>
     /// Navigates through a dot-separated path using name or alias matching.

@@ -5,8 +5,18 @@ using NGql.Core.Features;
 namespace NGql.Core.Builders;
 
 /// <summary>
-/// Builder for preserving specific fields from a QueryBuilder using functional composition.
+/// Builds a derived <see cref="QueryBuilder"/> that contains only a chosen subset of an
+/// existing query's fields.
 /// </summary>
+/// <remarks>
+/// Use <see cref="Create(QueryBuilder)"/> to start, accumulate paths via <see cref="Preserve(string[])"/>
+/// or <see cref="PreserveFromExpression{T}(Expression{Func{T, bool}}, string?)"/>, then call
+/// <see cref="Build"/> to materialize the trimmed query. The source builder is never mutated.
+/// <para>
+/// Typical use: role-based field filtering — start from a "full" query and emit a smaller
+/// projection per caller without re-building from scratch.
+/// </para>
+/// </remarks>
 public sealed class PreservationBuilder
 {
     private readonly QueryBuilder _sourceQuery;
@@ -18,11 +28,18 @@ public sealed class PreservationBuilder
         _pathsToPreserve = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Creates a new <see cref="PreservationBuilder"/> over <paramref name="query"/>.</summary>
+    /// <param name="query">The source query to project from. Not mutated.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="query"/> is null.</exception>
     public static PreservationBuilder Create(QueryBuilder query) => new(query);
 
     /// <summary>
-    /// Core method: adds paths to preserve with automatic cleanup of parent/child relationships.
+    /// Adds dotted field paths to the preservation set. When a more-specific child path is
+    /// added, any previously-added parent paths are dropped automatically (you don't end up
+    /// preserving both <c>user</c> and <c>user.name</c> — only the more specific wins).
     /// </summary>
+    /// <param name="fieldPaths">Dot-separated field paths to preserve. Null/whitespace entries are skipped.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder Preserve(params string[]? fieldPaths)
     {
         if (fieldPaths == null || fieldPaths.Length == 0) return this;
@@ -40,8 +57,13 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
-    /// Preserve fields at a specific node path.
+    /// Preserves <paramref name="fieldPath"/> within the subtree at <paramref name="nodePath"/>.
+    /// Useful when the same field name appears multiple times in the tree and you want to
+    /// scope the preservation to one specific parent.
     /// </summary>
+    /// <param name="fieldPath">Field name (or dotted relative path) inside the node.</param>
+    /// <param name="nodePath">Dotted path identifying which parent node to scope to.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
         var lastIndex = nodePath.LastIndexOf('.');
@@ -117,23 +139,69 @@ public sealed class PreservationBuilder
     }
 
     /// <summary>
-    /// Preserve fields from typed expression.
+    /// Preserves every field touched by the predicate <paramref name="expression"/>. The
+    /// expression is walked (not executed) to collect member access chains; comparisons,
+    /// logical operators, ternaries, null-coalescing, and LINQ method calls (<c>Any</c>,
+    /// <c>Where</c>, <c>First</c>) are all supported.
     /// </summary>
+    /// <typeparam name="T">CLR type whose property hierarchy mirrors the query tree.</typeparam>
+    /// <param name="expression">Predicate expression whose member access chains identify fields to preserve.</param>
+    /// <param name="nodePath">Optional dotted path to scope preservation to a specific subtree.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string? nodePath = null)
         => PreserveFromExpressionCore(expression, nodePath, null, typeof(T), null);
 
+    /// <summary>
+    /// Same as <see cref="PreserveFromExpression{T}(Expression{Func{T, bool}}, string?)"/>
+    /// but adds a <paramref name="localMap"/> that translates expression parameter names
+    /// to relative dotted paths inside <paramref name="nodePath"/>'s subtree. Useful when
+    /// the predicate references multiple sibling fields.
+    /// </summary>
+    /// <param name="expression">Predicate expression.</param>
+    /// <param name="nodePath">Dotted path to scope preservation to.</param>
+    /// <param name="localMap">Map of expression-parameter name to relative path segments.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveFromExpression<T>(Expression<Func<T, bool>> expression, string nodePath, Dictionary<string, string[]> localMap)
         => PreserveFromExpressionCore(expression, nodePath, localMap, typeof(T), null);
 
+    /// <summary>
+    /// Untyped overload of <see cref="PreserveFromExpression{T}(Expression{Func{T, bool}}, string?)"/>.
+    /// Useful when the predicate is constructed dynamically (e.g. via DynamicExpresso) and
+    /// you don't have a compile-time <c>T</c>.
+    /// </summary>
+    /// <param name="expression">Lambda expression whose body is walked for member-access chains.</param>
+    /// <param name="nodePath">Optional dotted path to scope preservation to.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveFromExpression(Expression expression, string? nodePath = null)
         => PreserveFromExpressionCore(expression, nodePath, null, InferTypeFromLambda(expression), null);
 
+    /// <summary>Untyped overload accepting a parameter-name-to-path <paramref name="localMap"/>.</summary>
+    /// <param name="expression">Lambda expression.</param>
+    /// <param name="nodePath">Dotted path to scope preservation to.</param>
+    /// <param name="localMap">Map of expression-parameter name to relative path segments.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveFromExpression(Expression expression, string nodePath, Dictionary<string, string[]> localMap)
         => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression), null);
 
+    /// <summary>
+    /// Untyped overload that, in addition to expression-derived paths, unconditionally
+    /// preserves <paramref name="alwaysPreserveFields"/> at <paramref name="nodePath"/> —
+    /// useful for IDs and tracking columns that callers always want regardless of predicate.
+    /// </summary>
+    /// <param name="expression">Lambda expression.</param>
+    /// <param name="nodePath">Dotted path to scope preservation to.</param>
+    /// <param name="localMap">Map of expression-parameter name to relative path segments.</param>
+    /// <param name="alwaysPreserveFields">Field names always added under <paramref name="nodePath"/>.</param>
+    /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveFromExpression(Expression expression, string nodePath, Dictionary<string, string[]> localMap, params string[] alwaysPreserveFields)
         => PreserveFromExpressionCore(expression, nodePath, localMap, InferTypeFromLambda(expression), alwaysPreserveFields);
 
+    /// <summary>
+    /// Materializes a new <see cref="QueryBuilder"/> containing only the accumulated
+    /// preserved paths. Returns the source builder unchanged when no paths were added.
+    /// The source builder is never mutated.
+    /// </summary>
+    /// <returns>A new builder containing the preserved subset, or the source if no paths were added.</returns>
     public QueryBuilder Build()
         => _pathsToPreserve.Count == 0
             ? _sourceQuery

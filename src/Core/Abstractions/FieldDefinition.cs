@@ -28,12 +28,27 @@ public sealed record FieldDefinition
     private bool? _isArray;
     private bool? _isNullable;
 
-    // Constructors
+    /// <summary>
+    /// Creates a field definition with a name and optional type and alias.
+    /// <paramref name="type"/> defaults to <see cref="Constants.DefaultFieldType"/> when null.
+    /// </summary>
+    /// <param name="name">Field name as it appears in the rendered GraphQL.</param>
+    /// <param name="type">Optional type-annotation metadata (rendered nowhere; consumed by tooling).</param>
+    /// <param name="alias">Optional response-side alias.</param>
     public FieldDefinition(string name, string? type = null, string? alias = null)
         : this(name, type ?? Constants.DefaultFieldType, alias, null)
     {
     }
 
+    /// <summary>
+    /// Creates a field definition with a pre-sorted argument dictionary and an optional
+    /// child-field collection. Used internally on the hot path to avoid re-sorting.
+    /// </summary>
+    /// <param name="name">Field name.</param>
+    /// <param name="type">Type-annotation metadata.</param>
+    /// <param name="alias">Optional response-side alias.</param>
+    /// <param name="sortedArguments">Pre-sorted argument map (case-insensitive); null/empty stores null.</param>
+    /// <param name="fields">Optional initial children; null/empty leaves the field as a leaf.</param>
     public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
@@ -44,6 +59,16 @@ public sealed record FieldDefinition
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
+    /// <summary>
+    /// Creates a field definition from an unsorted argument dictionary (e.g. one produced by
+    /// callers using collection initializers). The dictionary is copied into a case-insensitive
+    /// sorted store so output ordering is stable.
+    /// </summary>
+    /// <param name="name">Field name.</param>
+    /// <param name="type">Type-annotation metadata.</param>
+    /// <param name="alias">Optional response-side alias.</param>
+    /// <param name="arguments">Unsorted argument map; null/empty stores null.</param>
+    /// <param name="fields">Optional initial children; null/empty leaves the field as a leaf.</param>
     public FieldDefinition(string name, string type, string? alias, IDictionary<string, object?>? arguments, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
@@ -117,7 +142,10 @@ public sealed record FieldDefinition
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary></summary>
+    /// <summary>
+    /// Sorted, case-insensitive view of the field's GraphQL arguments. Returns an empty
+    /// dictionary (never null) when the field has no arguments.
+    /// </summary>
     [JsonPropertyName("arguments")]
     public IReadOnlyDictionary<string, object?> Arguments
         => _arguments ?? EmptyReadOnlyArguments;
@@ -153,6 +181,12 @@ public sealed record FieldDefinition
     [JsonIgnore]
     public bool HasFields => _children is { Count: > 0 };
 
+    /// <summary>
+    /// When <c>true</c>, the merger treats this field as opaque — it will not be merged with
+    /// other fields of the same path; instead it gets aliased (<c>name_1</c>, <c>name_2</c>, …)
+    /// during <see cref="NGql.Core.Builders.QueryBuilder.Include(NGql.Core.Builders.QueryBuilder)"/>.
+    /// The setter is internal; the flag is set by <see cref="MergingStrategy.NeverMerge"/>.
+    /// </summary>
     [JsonIgnore]
     public bool IsNeverMerge { get; internal set; }
 
