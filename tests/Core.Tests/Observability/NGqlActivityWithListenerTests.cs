@@ -24,7 +24,7 @@ public class NGqlActivityWithListenerTests
     };
 
     [Fact]
-    public void StartQuery_WithListener_ProducesActiveActivity()
+    public void StartQuery_WithListener_ProducesActiveActivityWithIdAndTraceId()
     {
         var listener = CreateAllDataListener();
         ActivitySource.AddActivityListener(listener);
@@ -43,52 +43,19 @@ public class NGqlActivityWithListenerTests
     }
 
     [Fact]
-    public void WithStatus_WithListener_RoutesToActivity()
+    public void Chaining_WithListener_RoutesAllMethodsToUnderlyingActivity()
     {
+        // Single chained scenario covers WithStatus, WithException, AddEvent (all overloads)
+        // — each method internally calls `_activity?.X`; with a registered listener, _activity
+        // is non-null and every chained call routes to the real Activity.
         var listener = CreateAllDataListener();
         ActivitySource.AddActivityListener(listener);
         try
         {
-            using var activity = NGqlActivity.StartQuery("with_listener_status")
+            using var activity = NGqlActivity.StartQuery("with_listener_chain")
                 .WithStatus(ActivityStatusCode.Ok)
-                .WithStatus(ActivityStatusCode.Error, "failure");
-
-            activity.IsRecording.Should().BeTrue();
-        }
-        finally
-        {
-            listener.Dispose();
-        }
-    }
-
-    [Fact]
-    public void WithException_WithListener_RecordsAllFourTagsBranches()
-    {
-        var listener = CreateAllDataListener();
-        ActivitySource.AddActivityListener(listener);
-        try
-        {
-            var ex = new InvalidOperationException("boom");
-
-            using var activity = NGqlActivity.StartQuery("with_listener_exception")
-                .WithException(ex);
-
-            activity.IsRecording.Should().BeTrue();
-        }
-        finally
-        {
-            listener.Dispose();
-        }
-    }
-
-    [Fact]
-    public void AddEvent_BothOverloads_WithListener_RouteToActivity()
-    {
-        var listener = CreateAllDataListener();
-        ActivitySource.AddActivityListener(listener);
-        try
-        {
-            using var activity = NGqlActivity.StartQuery("with_listener_addevent")
+                .WithStatus(ActivityStatusCode.Error, "failure")
+                .WithException(new InvalidOperationException("boom"))
                 .AddEvent("ev1")
                 .AddEvent("ev2", DateTimeOffset.UtcNow)
                 .AddEvent("ev3", new ActivityTagsCollection { { "k", "v" } })

@@ -826,47 +826,23 @@ public class ExpressionFieldExtractorTests
     }
 
     [Fact]
-    public void ExtractFieldPaths_QueryableExpression_ProcessesLikeEnumerable()
+    public void ExtractFieldPaths_QueryableAndAnonymousType_CoverBothLinqMethodAndNamespaceArms()
     {
-        // IsLinqMethod accepts both System.Linq.Enumerable AND Queryable. Build a Queryable
-        // expression to exercise the Queryable arm of the `Name: "Enumerable" or "Queryable"`
-        // pattern match.
-        var source = new TestModel[0].AsQueryable();
-
+        // IsLinqMethod accepts both System.Linq.Enumerable and Queryable. The Queryable arm
+        // is hit by visiting an IQueryable.Where expression. ShouldExcludeProperty does
+        // `DeclaringType!.Namespace?.StartsWith("System")` — anonymous types live in the
+        // null namespace, so accessing a property OF an anonymous type via Expression.Lambda
+        // exercises the null-conditional null arm directly.
+        var queryable = new TestModel[0].AsQueryable();
         Expression<Func<TestModel, bool>> predicate = x => x.user.profile.name == "tennis";
-        var queryableFiltered = source.Where(predicate);
+        var queryablePaths = ExpressionFieldExtractor.ExtractFieldPaths(queryable.Where(predicate).Expression);
+        queryablePaths.Should().Contain("user.profile.name");
 
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(queryableFiltered.Expression);
-
-        paths.Should().Contain("user.profile.name");
-    }
-
-    [Fact]
-    public void ExtractFieldPaths_AnonymousType_DeclaringTypeNamespaceIsNull()
-    {
-        // ShouldExcludeProperty does `DeclaringType!.Namespace?.StartsWith("System")`. Anonymous
-        // types live in the null namespace, exercising the null-arm of the null-conditional.
-        Expression<Func<TestModel, object>> selector = x => new { x.user.profile.name };
-
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
-
-        paths.Should().Contain("user.profile.name");
-    }
-
-    [Fact]
-    public void ExtractFieldPaths_AccessAnonymousTypeMemberDirectly_HitsNullNamespaceArm()
-    {
-        // Build an expression that selects a property OF an anonymous type — the member's
-        // DeclaringType IS the anonymous type itself, which has a null/empty Namespace.
-        // This exercises ShouldExcludeProperty's null-namespace arm of the
-        // `Namespace?.StartsWith("System")` null-conditional.
         var anon = new { Title = "x" };
         var paramExpr = Expression.Parameter(anon.GetType(), "a");
         var member = Expression.Property(paramExpr, "Title");
         var lambda = Expression.Lambda(member, paramExpr);
-
-        var paths = ExpressionFieldExtractor.ExtractFieldPaths(lambda);
-
-        paths.Should().NotBeNull();
+        var anonPaths = ExpressionFieldExtractor.ExtractFieldPaths(lambda);
+        anonPaths.Should().NotBeNull();
     }
 }

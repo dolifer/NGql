@@ -17,10 +17,18 @@ namespace NGql.Core.Tests.Observability;
 [Collection("ObservabilityListener")]
 public class NGqlActivityNoListenerTests
 {
-    [Fact]
-    public void StartQuery_NoListener_ProducesInactiveActivity()
+    [Theory]
+    [InlineData("query")]
+    [InlineData("field")]
+    [InlineData("pooling")]
+    public void Start_NoListener_ProducesInactiveActivity(string kind)
     {
-        using var activity = NGqlActivity.StartQuery("no_listener_query");
+        using var activity = kind switch
+        {
+            "query" => NGqlActivity.StartQuery("no_listener"),
+            "field" => NGqlActivity.StartField("no_listener"),
+            _ => NGqlActivity.StartPooling("pool", "operation"),
+        };
 
         activity.IsRecording.Should().BeFalse();
         activity.Id.Should().BeNull();
@@ -28,26 +36,11 @@ public class NGqlActivityNoListenerTests
     }
 
     [Fact]
-    public void StartField_NoListener_ProducesInactiveActivity()
-    {
-        using var activity = NGqlActivity.StartField("no_listener_field");
-
-        activity.IsRecording.Should().BeFalse();
-    }
-
-    [Fact]
-    public void StartPooling_NoListener_ProducesInactiveActivity()
-    {
-        using var activity = NGqlActivity.StartPooling("pool", "operation");
-
-        activity.IsRecording.Should().BeFalse();
-    }
-
-    [Fact]
     public void Chaining_NoListener_AllMethodsAreNoOps()
     {
-        // Every method below internally invokes `_activity?.X`. With no listener,
-        // _activity is null and the null-conditional short-circuit branch is taken.
+        // Every chained method invokes `_activity?.X`. With no listener, _activity is null
+        // and every null-conditional short-circuit branch is taken. This single test covers
+        // all the With*/AddEvent overloads at once via the fluent chain.
         var act = () =>
         {
             using var activity = NGqlActivity.StartQuery("chain_no_listener")
@@ -69,36 +62,23 @@ public class NGqlActivityNoListenerTests
     }
 
     [Fact]
-    public void WithObservability_NoListener_StillExecutesAction()
+    public void WithObservability_NoListener_Action_ExecutesAndPropagatesException()
     {
+        // Cover both overloads (Action / Func<T>) and both outcomes (success / throw).
+        // A ref-struct activity can't be captured in a lambda, so each scenario invokes
+        // the chained method directly and inspects the side effect.
         var executed = false;
-
-        using var activity = NGqlActivity.StartQuery("obs_no_listener_action");
-        activity.WithObservability(() => executed = true, "op");
-
+        using (var ok = NGqlActivity.StartQuery("obs_no_listener_action_ok"))
+        {
+            ok.WithObservability(() => executed = true, "op");
+        }
         executed.Should().BeTrue();
-    }
 
-    [Fact]
-    public void WithObservability_NoListener_ReturnsFuncResult()
-    {
-        using var activity = NGqlActivity.StartQuery("obs_no_listener_func");
-
-        var result = activity.WithObservability(() => 42, "op");
-
-        result.Should().Be(42);
-    }
-
-    [Fact]
-    public void WithObservability_NoListener_PropagatesActionException()
-    {
         bool caught = false;
         try
         {
-            using var activity = NGqlActivity.StartQuery("obs_no_listener_throw_action");
-            activity.WithObservability(
-                () => throw new InvalidOperationException("boom"),
-                "op");
+            using var bad = NGqlActivity.StartQuery("obs_no_listener_action_throw");
+            bad.WithObservability(() => throw new InvalidOperationException("boom"), "op");
         }
         catch (InvalidOperationException ex)
         {
@@ -109,15 +89,18 @@ public class NGqlActivityNoListenerTests
     }
 
     [Fact]
-    public void WithObservability_NoListener_PropagatesFuncException()
+    public void WithObservability_NoListener_Func_ReturnsResultAndPropagatesException()
     {
+        using (var ok = NGqlActivity.StartQuery("obs_no_listener_func_ok"))
+        {
+            ok.WithObservability(() => 42, "op").Should().Be(42);
+        }
+
         bool caught = false;
         try
         {
-            using var activity = NGqlActivity.StartQuery("obs_no_listener_throw_func");
-            _ = activity.WithObservability<int>(
-                () => throw new ArgumentException("nope"),
-                "op");
+            using var bad = NGqlActivity.StartQuery("obs_no_listener_func_throw");
+            _ = bad.WithObservability<int>(() => throw new ArgumentException("nope"), "op");
         }
         catch (ArgumentException ex)
         {

@@ -212,17 +212,14 @@ public class LockFreePoolingTests
         action.Should().NotThrow("High frequency operations should not cause pooling issues");
     }
 
-    [Fact]
-    public void ThreadLocalPool_Constructor_NullFactory_Throws()
+    [Theory]
+    [InlineData("factory")]
+    [InlineData("reset")]
+    public void ThreadLocalPool_Constructor_NullDelegate_Throws(string nullParam)
     {
-        var act = () => new ThreadLocalPool<StringBuilder>(null!, sb => sb.Clear());
-        act.Should().Throw<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void ThreadLocalPool_Constructor_NullReset_Throws()
-    {
-        var act = () => new ThreadLocalPool<StringBuilder>(() => new StringBuilder(), null!);
+        Func<StringBuilder>? factory = nullParam == "factory" ? null : () => new StringBuilder();
+        Action<StringBuilder>? reset = nullParam == "reset" ? null : sb => sb.Clear();
+        var act = () => new ThreadLocalPool<StringBuilder>(factory!, reset!);
         act.Should().Throw<ArgumentNullException>();
     }
 

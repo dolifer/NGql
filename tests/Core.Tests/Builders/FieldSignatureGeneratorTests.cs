@@ -1112,34 +1112,29 @@ public class FieldSignatureGeneratorTests
         sig.Should().NotBe(0);
     }
 
-    [Fact]
-    public void GenerateSignature_FieldNameLongerThanStackBuffer_FallsBackToHeapAllocation()
+    // The internal 256-char stack buffer in AppendFieldSignature has a fallback path
+    // when the accumulated path overflows. Two scenarios push it past the buffer:
+    // a top-level field with a 300-char name (parentPath.IsEmpty=true arm of the fallback
+    // ternary), and a 50+250-char parent.child path (parentPath.IsEmpty=false arm).
+    [Theory]
+    [InlineData("top-level-long-name")]
+    [InlineData("nested-overflow")]
+    public void GenerateSignature_PathExceedsStackBuffer_FallsBackToHeapAllocation(string scenario)
     {
-        // Internal stack buffer is 256 chars; using a field name > 256 forces the fallback
-        // string-concatenation path in AppendFieldSignature.
-        var longName = new string('x', 300);
-        var fields = new Dictionary<string, FieldDefinition>
+        Dictionary<string, FieldDefinition> fields;
+        if (scenario == "top-level-long-name")
         {
-            [longName] = new(longName, "String")
-        };
-
-        var sig = FieldSignatureGenerator.GenerateSignature(fields);
-
-        sig.Should().NotBe(0);
-    }
-
-    [Fact]
-    public void GenerateSignature_DeepNestingExceedsStackBuffer_RoutesParentPathThroughFallback()
-    {
-        // A nested child where parent's accumulated path is non-empty AND the total length
-        // exceeds the 256-char stack buffer — exercises the `parentPath.IsEmpty ? Name : ...`
-        // ternary's non-empty arm in AppendFieldSignature's fallback.
-        var leafName = new string('z', 250);
-        var leaf = new FieldDefinition(leafName, "String");
-        var parentName = new string('p', 50);
-        var parent = new FieldDefinition(parentName, "Object");
-        parent._children = new FieldChildren { leaf };
-        var fields = new Dictionary<string, FieldDefinition> { [parentName] = parent };
+            var name = new string('x', 300);
+            fields = new() { [name] = new FieldDefinition(name, "String") };
+        }
+        else
+        {
+            var leaf = new FieldDefinition(new string('z', 250), "String");
+            var parentName = new string('p', 50);
+            var parent = new FieldDefinition(parentName, "Object");
+            parent._children = new FieldChildren { leaf };
+            fields = new() { [parentName] = parent };
+        }
 
         var sig = FieldSignatureGenerator.GenerateSignature(fields);
 

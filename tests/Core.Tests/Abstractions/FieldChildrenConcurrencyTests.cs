@@ -506,18 +506,6 @@ public class FieldChildrenReadRaceConditionTests
     }
 
     [Fact]
-    public void FieldChildren_Indexer_Should_Throw_For_Missing_Key()
-    {
-        var children = new FieldChildren();
-        children.Append(new FieldDefinition("data"));
-
-        var dict = (IReadOnlyDictionary<string, FieldDefinition>)children;
-        var act = () => dict["missing"];
-
-        act.Should().Throw<KeyNotFoundException>().WithMessage("*missing*");
-    }
-
-    [Fact]
     public void FieldChildren_Empty_Keys_Values_Enumerator_Count_Should_Be_Zero()
     {
         var dict = (IReadOnlyDictionary<string, FieldDefinition>)new FieldChildren();
@@ -530,9 +518,11 @@ public class FieldChildrenReadRaceConditionTests
     }
 
     [Fact]
-    public void FieldChildren_Indexed_Find_Should_Return_Null_For_Missing_Key()
+    public void FieldChildren_Indexed_Lookup_HitAndMiss_BothBranchesCovered()
     {
-        // Threshold is 16; push past it to force the indexed lookup path.
+        // Threshold is 16; push past it to force the lazy-built lookup index path.
+        // Once on the indexed path, exercise hit (TryGetValue=true), miss (returns null,
+        // ContainsKey=false), and the indexer's KeyNotFoundException branch in one fixture.
         var children = new FieldChildren();
         for (int i = 0; i < 20; i++)
         {
@@ -540,53 +530,37 @@ public class FieldChildrenReadRaceConditionTests
         }
         var dict = (IReadOnlyDictionary<string, FieldDefinition>)children;
 
-        // Indexed path: hit
         dict.TryGetValue("f10", out var found).Should().BeTrue();
         found!.Name.Should().Be("f10");
 
-        // Indexed path: miss (covers the false branch of _index!.TryGetValue)
         dict.TryGetValue("missing", out _).Should().BeFalse();
         dict.ContainsKey("missing").Should().BeFalse();
+
         var act = () => dict["missing"];
-        act.Should().Throw<KeyNotFoundException>();
+        act.Should().Throw<KeyNotFoundException>().WithMessage("*missing*");
     }
 
     [Fact]
-    public void FieldChildren_Indexed_Find_Span_Overload_Miss_Path_Through_QueryBuilder()
+    public void FieldChildren_QueryBuilder_PastIndexThreshold_FindAndSet_BothExerciseIndex()
     {
-        // Add 20 nested fields under "user" to force FieldChildren past the index threshold,
-        // then add a brand-new nested field — this routes through Find(ReadOnlySpan<char>)
-        // and exercises the indexed-path miss branch in production code.
+        // 20 child fields under "user" forces FieldChildren past the 16-child index threshold.
+        // Adding a brand-new leaf routes through Find(ReadOnlySpan<char>) miss + Append; re-adding
+        // an existing leaf with new arguments routes through Find hit + MergeFieldArguments +
+        // Set(ReadOnlySpan<char>). Both code paths exercise the indexed lookup AND the index
+        // mutation in one production-style scenario.
         var builder = NGql.Core.Builders.QueryBuilder.CreateDefaultBuilder("Test");
         for (int i = 0; i < 20; i++)
         {
             builder.AddField($"user.field{i}");
         }
         builder.AddField("user.brand_new_leaf");
+        builder.AddField("user.field5", new Dictionary<string, object?> { ["limit"] = 10 });
 
         var user = builder.Definition.Fields["user"];
-        ((IReadOnlyDictionary<string, FieldDefinition>)user.Fields).ContainsKey("brand_new_leaf").Should().BeTrue();
-        ((IReadOnlyDictionary<string, FieldDefinition>)user.Fields).ContainsKey("nope_not_here").Should().BeFalse();
-    }
-
-    [Fact]
-    public void FieldChildren_Indexed_Set_Span_Should_Update_Lookup_Index()
-    {
-        // Build past the index threshold under a parent, then re-add an existing dotted leaf
-        // with new arguments. ProcessDottedSegment routes through Set(ReadOnlySpan<char>) and
-        // must update the lookup index — verified by the merged-arguments outcome.
-        var builder = NGql.Core.Builders.QueryBuilder.CreateDefaultBuilder("Test");
-        for (int i = 0; i < 20; i++)
-        {
-            builder.AddField($"user.leaf{i}");
-        }
-
-        // Re-add an existing leaf with new arguments — triggers MergeFieldArguments + Set(span).
-        builder.AddField("user.leaf5", new Dictionary<string, object?> { ["limit"] = 10 });
-
-        var user = builder.Definition.Fields["user"];
-        var leaf5 = user.Fields["leaf5"];
-        leaf5.Arguments.Should().ContainKey("limit");
+        var userFields = (IReadOnlyDictionary<string, FieldDefinition>)user.Fields;
+        userFields.ContainsKey("brand_new_leaf").Should().BeTrue();
+        userFields.ContainsKey("nope_not_here").Should().BeFalse();
+        user.Fields["field5"].Arguments.Should().ContainKey("limit");
     }
 
     [Fact]

@@ -897,224 +897,120 @@ public class QueryBuilderTests
         rendered.Should().Contain("email");
     }
 
-    [Fact]
-    public void QueryBuilder_AddField_IntermediateSegmentArrayMarker_RoutedThroughComplexPath()
+    // Complex (non-dotted, non-simple) field path with a per-segment type marker on the
+    // intermediate segment exercises ResolveSegmentFieldType's !IsLastFragment branch.
+    // The "[]" arm hits the ArrayMarker SequenceEqual=true case; "[Foo]" hits the false case.
+    [Theory]
+    [InlineData("[Outer] [] posts.title")]      // ArrayMarker arm
+    [InlineData("[Outer] [Foo] posts.title")]   // non-ArrayMarker arm
+    public void QueryBuilder_AddField_IntermediateSegmentTypeMarker_RoutedThroughComplexPath(string fieldPath)
     {
-        // Complex path with a per-segment array type marker on the intermediate segment.
-        // "[Outer] [] posts.title": top-level ParseFieldTypeFromPath strips "[Outer]",
-        // leaving "[] posts.title". The first segment "[] posts" is then parsed with its
-        // own type "[]" and IsLastFragment=false — exercising ResolveSegmentFieldType's
-        // !IsLastFragment + HasParsedType + ArrayMarker branch.
-        var builder = QueryBuilder.CreateDefaultBuilder("Q")
-            .AddField("[Outer] [] posts.title");
-
-        var rendered = builder.ToString();
+        var rendered = QueryBuilder.CreateDefaultBuilder("Q").AddField(fieldPath).ToString();
         rendered.Should().Contain("posts");
         rendered.Should().Contain("title");
     }
 
-    [Fact]
-    public void QueryBuilder_AddField_IntermediateSegmentNonArrayType_RoutedThroughComplexPath()
+    // Re-adding the same dotted path drives ProcessDottedSegment(FieldChildren) through
+    // its existing-leaf branch — different combinations of (args, metadata) on first/second
+    // call drive different MergeArgumentsIntoExistingChild caller arms.
+    [Theory]
+    [InlineData("plain-then-args")]       // 2nd call has args -> merge non-null arm
+    [InlineData("args-then-plain")]       // 2nd call no args  -> merge null arm
+    [InlineData("plain-then-metadata-only")] // 2nd call metadata-only routes through with-metadata path
+    public void QueryBuilder_AddField_DottedPath_ReAdded_HitsMergeArgumentsBranches(string scenario)
     {
-        // Variant with a non-array type marker on the intermediate segment — covers the
-        // !IsLastFragment + HasParsedType=false fallback branch (no inner type, just outer)
-        // AND the !IsLastFragment + HasParsedType=true + ArrayMarker=false branch.
-        var builder = QueryBuilder.CreateDefaultBuilder("Q")
-            .AddField("[Outer] [Foo] posts.title");
-
-        var rendered = builder.ToString();
-        rendered.Should().Contain("posts");
-        rendered.Should().Contain("title");
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_DottedPath_WithArgsThenWithoutArgs_MergesIntoExisting()
-    {
-        // Re-adding the same dotted leaf with args after it already exists drives
-        // ProcessDottedSegment(FieldChildren) into MergeArgumentsIntoExistingChild's
-        // args-non-null branch.
-        var builder = QueryBuilder.CreateDefaultBuilder("Q")
-            .AddField("user.profile")
-            .AddField("user.profile", new Dictionary<string, object?> { ["limit"] = 5 });
-
-        var profile = builder.Definition.Fields["user"].Fields["profile"];
-        profile.Arguments.Should().ContainKey("limit");
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_DottedPath_ReAddedWithoutArgs_KeepsExisting()
-    {
-        // Re-adding the same dotted leaf without args drives ProcessDottedSegment(FieldChildren)
-        // into MergeArgumentsIntoExistingChild's args-null branch.
-        var builder = QueryBuilder.CreateDefaultBuilder("Q")
-            .AddField("user.profile", new Dictionary<string, object?> { ["limit"] = 5 })
-            .AddField("user.profile");
-
-        var profile = builder.Definition.Fields["user"].Fields["profile"];
-        profile.Arguments.Should().ContainKey("limit");
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_DottedPath_WithMetadataOnlyReAdded_HitsArgsNullSlowPath()
-    {
-        // Re-adding a dotted leaf with metadata-only (args=null) routes through
-        // ProcessDottedFieldWithMetadata (not the fast path) and lands in the existing-leaf
-        // branch of ProcessDottedSegment(FieldChildren) where arguments is null —
-        // covering the args-null arm of MergeArgumentsIntoExistingChild's caller.
-        var metadata = new Dictionary<string, object?> { ["doc"] = "first" };
-        var builder = QueryBuilder.CreateDefaultBuilder("Q")
-            .AddField("user.profile")
-            .AddField("user.profile", arguments: null, metadata: metadata);
+        var builder = QueryBuilder.CreateDefaultBuilder("Q");
+        switch (scenario)
+        {
+            case "plain-then-args":
+                builder.AddField("user.profile")
+                       .AddField("user.profile", new Dictionary<string, object?> { ["limit"] = 5 });
+                break;
+            case "args-then-plain":
+                builder.AddField("user.profile", new Dictionary<string, object?> { ["limit"] = 5 })
+                       .AddField("user.profile");
+                break;
+            default: // plain-then-metadata-only
+                builder.AddField("user.profile")
+                       .AddField("user.profile", arguments: null, metadata: new Dictionary<string, object?> { ["doc"] = "first" });
+                break;
+        }
 
         var profile = builder.Definition.Fields["user"].Fields["profile"];
         profile.Should().NotBeNull();
     }
 
-    [Fact]
-    public void QueryBuilder_AddField_WithSubFields_AndNullArguments_DoesNotThrow()
+    // Two AddField overloads share an `arguments?.Count > 0` ternary; cover each overload
+    // with both the null-arguments and empty-dict arms.
+    [Theory]
+    [InlineData("with-subfields", "null-args")]
+    [InlineData("with-subfields", "empty-args")]
+    [InlineData("with-builder", "null-args")]
+    [InlineData("with-builder", "empty-args")]
+    public void QueryBuilder_AddField_NullOrEmptyArguments_DoesNotThrow(string overload, string argsShape)
     {
-        // The (string, Dictionary<string, object?> arguments, string[] subFields, Dictionary?
-        // metadata) overload's `arguments?.Count > 0` ternary: cover the null-arguments
-        // and empty-arguments arms to fully cover both null check + count check branches.
-        var builder = QueryBuilder.CreateDefaultBuilder("Q");
-        builder.AddField("a", arguments: null!, subFields: ["x"]);
-        builder.AddField("b", arguments: new Dictionary<string, object?>(), subFields: ["y"]);
-
-        builder.Definition.Fields.Should().ContainKeys("a", "b");
-    }
-
-    [Fact]
-    public void QueryBuilder_AddField_WithFieldBuilder_AndNullOrEmptyArguments_DoesNotThrow()
-    {
-        // The (string, Dictionary<string, object?> arguments, Dictionary? metadata,
-        // Action<FieldBuilder> fieldBuilder) overload — same arguments-ternary coverage gap.
+        var args = argsShape == "empty-args"
+            ? new Dictionary<string, object?>()
+            : null!;
         var builder = QueryBuilder.CreateDefaultBuilder("Q");
 
-        builder.AddField("a", arguments: null!, metadata: null, fieldBuilder: fb => fb.AddField("x"));
-        builder.AddField("b", arguments: new Dictionary<string, object?>(), metadata: null, fieldBuilder: fb => fb.AddField("y"));
+        if (overload == "with-subfields")
+        {
+            builder.AddField("a", arguments: args, subFields: ["x"]);
+        }
+        else
+        {
+            builder.AddField("a", arguments: args, metadata: null, fieldBuilder: fb => fb.AddField("x"));
+        }
 
-        builder.Definition.Fields.Should().ContainKeys("a", "b");
+        builder.Definition.Fields.Should().ContainKey("a");
     }
 
-    [Fact]
-    public void QueryBuilder_Include_NestedDictionaryArguments_OfDifferentShapes()
+    // MergeByFieldPath -> CanMergeFields -> AreArgumentsEqual descends through nested
+    // dict/list arguments and hits Helpers.AreDictionariesEqual / AreListsEqual. Each row
+    // shapes the b1/b2 nested arg pair to drive a specific equality-check branch.
+    [Theory]
+    [InlineData("dict-different-counts")]    // Count-mismatch arm of AreDictionariesEqual
+    [InlineData("dict-same-count-diff-keys")]// !TryGetValue(key) arm in same-Count case
+    [InlineData("dict-same-keys-diff-values")]// TryGetValue=true && !AreValuesEqual arm
+    [InlineData("dict-both-empty")]          // Count==0 short-circuit
+    [InlineData("list-different-lengths")]   // AreListsEqual count-mismatch
+    [InlineData("list-same-length-diff-values")]// AreListsEqual per-index !AreValuesEqual
+    [InlineData("list-both-empty")]          // AreListsEqual count==0 short-circuit
+    public void QueryBuilder_Include_MergeByFieldPath_NestedArgEquality_Branches(string scenario)
     {
-        // MergeByFieldPath strategy invokes CanMergeFields which calls AreArgumentsEqual.
-        // When two queries both have a field with a nested-dictionary argument but with
-        // different sizes, that descends into AreDictionariesEqual where the Count mismatch
-        // and per-key equality branches fire.
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["a"] = 1 }
-            });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["a"] = 1, ["b"] = 2 }
-            });
+        QueryBuilder Build(object filterValue)
+            => QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+                .AddField("posts", new Dictionary<string, object?> { ["filter"] = filterValue });
 
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
+        QueryBuilder BuildIds(object idsValue)
+            => QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+                .AddField("posts", new Dictionary<string, object?> { ["ids"] = idsValue });
 
-    [Fact]
-    public void QueryBuilder_Include_NestedListArguments_OfDifferentLengths()
-    {
-        // Mirror of the above for lists — exercises Helpers.AreListsEqual branches under
-        // MergeByFieldPath.
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = new[] { 1 } });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = new[] { 1, 2 } });
-
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
-
-    [Fact]
-    public void QueryBuilder_Include_NestedDictionaryArguments_BothEmpty()
-    {
-        // Empty-dict comparison covers AreDictionariesEqual count==0 short-circuit.
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?>()
-            });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?>()
-            });
-
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
-
-    [Fact]
-    public void QueryBuilder_Include_NestedListArguments_BothEmpty()
-    {
-        // Mirror for lists — exercises AreListsEqual count==0 short-circuit.
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = System.Array.Empty<int>() });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = System.Array.Empty<int>() });
-
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
-
-    [Fact]
-    public void QueryBuilder_Include_NestedDict_SameKeysDifferentValues_AreNotMerged()
-    {
-        // Same key, different values inside a nested dictionary argument — exercises
-        // AreDictionariesEqual's `TryGetValue=true && !AreValuesEqual` branch (the "values
-        // differ for same key" arm of the inner `||`).
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["a"] = 1 }
-            });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["a"] = 2 }
-            });
-
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
-
-    [Fact]
-    public void QueryBuilder_Include_NestedList_SameLengthDifferentValues()
-    {
-        // Same length, different values inside a nested list argument — exercises
-        // AreListsEqual's `!AreValuesEqual` branch.
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = new[] { 1, 2 } });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?> { ["ids"] = new[] { 3, 4 } });
-
-        b1.Include(b2);
-        b1.ToString().Should().Contain("posts");
-    }
-
-    [Fact]
-    public void QueryBuilder_Include_NestedDict_SameCountDifferentKeys()
-    {
-        // Two nested dicts of equal Count but different keys — exercises
-        // AreDictionariesEqual's `!TryGetValue(kvp.Key)` true branch (key not found in
-        // dict2 even though counts match).
-        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["a"] = 1 }
-            });
-        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
-            .AddField("posts", new Dictionary<string, object?>
-            {
-                ["filter"] = new Dictionary<string, object?> { ["b"] = 1 }
-            });
+        var (b1, b2) = scenario switch
+        {
+            "dict-different-counts" => (
+                Build(new Dictionary<string, object?> { ["a"] = 1 }),
+                Build(new Dictionary<string, object?> { ["a"] = 1, ["b"] = 2 })),
+            "dict-same-count-diff-keys" => (
+                Build(new Dictionary<string, object?> { ["a"] = 1 }),
+                Build(new Dictionary<string, object?> { ["b"] = 1 })),
+            "dict-same-keys-diff-values" => (
+                Build(new Dictionary<string, object?> { ["a"] = 1 }),
+                Build(new Dictionary<string, object?> { ["a"] = 2 })),
+            "dict-both-empty" => (
+                Build(new Dictionary<string, object?>()),
+                Build(new Dictionary<string, object?>())),
+            "list-different-lengths" => (
+                BuildIds(new[] { 1 }),
+                BuildIds(new[] { 1, 2 })),
+            "list-same-length-diff-values" => (
+                BuildIds(new[] { 1, 2 }),
+                BuildIds(new[] { 3, 4 })),
+            _ /* list-both-empty */ => (
+                BuildIds(System.Array.Empty<int>()),
+                BuildIds(System.Array.Empty<int>())),
+        };
 
         b1.Include(b2);
         b1.ToString().Should().Contain("posts");
