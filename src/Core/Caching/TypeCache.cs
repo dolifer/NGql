@@ -78,8 +78,10 @@ internal static class TypeMetadataCache
 {
     /// <summary>
     /// Caches PropertyInfo pairs (Key, Value) for KeyValuePair&lt;,&gt; generic types.
+    /// Caller must guarantee the cached type is a closed KeyValuePair&lt;TKey,TValue&gt; — those
+    /// always expose Key and Value properties, so the cached pair is non-nullable.
     /// </summary>
-    internal static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)?> KvpPropertyCache = new();
+    internal static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)> KvpPropertyCache = new();
 
     /// <summary>
     /// Caches PropertyInfo[] per object type for the default WriteObject reflection branch.

@@ -97,18 +97,17 @@ internal readonly ref struct NGqlActivity
     }
 
     /// <summary>
-    /// Records an exception in the activity
+    /// Records an exception in the activity. Each call site uses the null-conditional operator
+    /// so an inactive activity (no listener registered) is a single null-test branch that's
+    /// always reachable in tests.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly NGqlActivity WithException(Exception exception)
     {
-        if (_activity != null)
-        {
-            _activity.SetStatus(ActivityStatusCode.Error, exception.Message);
-            _activity.SetTag("exception.type", exception.GetType().Name);
-            _activity.SetTag("exception.message", exception.Message);
-            _activity.SetTag("exception.stacktrace", exception.StackTrace);
-        }
+        _activity?.SetStatus(ActivityStatusCode.Error, exception.Message);
+        _activity?.SetTag("exception.type", exception.GetType().Name);
+        _activity?.SetTag("exception.message", exception.Message);
+        _activity?.SetTag("exception.stacktrace", exception.StackTrace);
         return this;
     }
 

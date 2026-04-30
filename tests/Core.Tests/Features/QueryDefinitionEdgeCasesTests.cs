@@ -8,6 +8,7 @@ using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 using NGql.Core.Extensions;
 using NGql.Core.Features;
+using NGql.Core.Tests.Models;
 using Xunit;
 
 namespace NGql.Core.Tests.Features;
@@ -91,8 +92,395 @@ public class QueryDefinitionEdgeCasesTests
         var field = new FieldDefinition("test", "String");
         var hash1 = field.GetHashCode();
         var hash2 = field.GetHashCode();
-        
+
         hash1.Should().Be(hash2);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("String", null)]
+    [InlineData(null, "myAlias")]
+    [InlineData("String", "myAlias")]
+    public void FieldDefinition_GetHashCode_HandlesNullableFields(string? type, string? alias)
+    {
+        var field = new FieldDefinition("test", type ?? Constants.DefaultFieldType, alias);
+
+        var hash = field.GetHashCode();
+
+        hash.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void FieldDefinition_Equals_DifferentNames_ReturnsFalse()
+    {
+        var a = new FieldDefinition("nameA");
+        var b = new FieldDefinition("nameB");
+
+        a.Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_Equals_DifferentTypes_ReturnsFalse()
+    {
+        var a = new FieldDefinition("name", "String");
+        var b = new FieldDefinition("name", "Int");
+
+        a.Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_Equals_DifferentAliases_ReturnsFalse()
+    {
+        var a = new FieldDefinition("name", "String", "aliasA");
+        var b = new FieldDefinition("name", "String", "aliasB");
+
+        a.Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_Equals_DifferentNeverMergeFlag_ReturnsFalse()
+    {
+        var a = new FieldDefinition("name") { IsNeverMerge = true };
+        var b = new FieldDefinition("name") { IsNeverMerge = false };
+
+        a.Equals(b).Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_IsArray_NullType_ReturnsFalse()
+    {
+        // FieldDefinition.Type's init accessor allows `with { Type = null }` to leave _type
+        // null, exercising the null guard in TypeExtensions.IsArrayType.
+        var field = new FieldDefinition("x") { Type = null };
+
+        field.IsArray.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_IsNullable_NullType_ReturnsFalse()
+    {
+        var field = new FieldDefinition("x") { Type = null };
+
+        field.IsNullable.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData("aliased")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void FieldDefinition_AliasInit_AllowsAllShapes(string? aliasValue)
+    {
+        // Init-accessor on Alias has a `IsNullOrEmpty(value) ? value : Name` branch — cover
+        // null, empty, and non-empty values via `with` expressions on a record-like field.
+        var field = new FieldDefinition("name") { Alias = aliasValue };
+
+        if (string.IsNullOrEmpty(aliasValue))
+        {
+            field._effectiveName.Should().Be("name");
+        }
+        else
+        {
+            field._effectiveName.Should().Be(aliasValue);
+        }
+    }
+
+    [Fact]
+    public void FieldDefinition_Constructor_WithEmptyArguments_StoresNull()
+    {
+        // FieldDefinition's secondary constructor uses `arguments is not { Count: > 0 } ? null : ...`
+        // — pass an explicitly empty argument dictionary to cover the Count==0 branch.
+        var field = new FieldDefinition("name", "String", null, new Dictionary<string, object?>());
+
+        field._arguments.Should().BeNull();
+    }
+
+    [Fact]
+    public void FieldDefinition_Constructor_IDictionary_NullArguments_StoresNull()
+    {
+        // The IDictionary constructor's `arguments is null` arm of ToSortedArguments — the
+        // most common merge path normalizes to non-null, so explicit null tests this branch.
+        IDictionary<string, object?>? args = null;
+        var field = new FieldDefinition("name", "String", null, args);
+
+        field._arguments.Should().BeNull();
+    }
+
+    [Fact]
+    public void FieldDefinition_Constructor_NullFieldsDictionary_StoresNullChildren()
+    {
+        // AsChildren's `fields is null` arm — same pattern.
+        Dictionary<string, FieldDefinition>? fields = null;
+        var field = new FieldDefinition("name", "String", null, (IDictionary<string, object?>?)null, fields);
+
+        field.HasFields.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldDefinition_GetHashCode_WithNullTypeAndAlias_DoesNotThrow()
+    {
+        // GetHashCode does `_type?.ToLowerInvariant(), _alias?.ToLowerInvariant()` — covering
+        // the null arms of both null-conditional accesses.
+        var field = new FieldDefinition("name") { Type = null, Alias = null };
+
+        var hash = field.GetHashCode();
+        hash.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void PreservationBuilder_Create_WithNullQuery_ThrowsArgumentNullException()
+    {
+        var act = () => PreservationBuilder.Create(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void QueryBuilder_GetPathTo_UnknownQueryName_ReturnsRootMappedFallback()
+    {
+        // QueryMap.GetPathTo invokes FindRootField; when the rootPath isn't in
+        // queryDefinition.Fields and no field's alias/name matches, FindRootField returns null
+        // and BuildPathToNode is skipped — covers the null-rootField branch.
+        var builder = QueryBuilder.CreateDefaultBuilder("Q").AddField("a");
+        var path = builder.GetPathTo("UnmappedQuery", "some.node");
+
+        path.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_GetPathTo_FieldAliasMatchedByName_FindsRootField()
+    {
+        // QueryMap.FindRootField falls back to a Linq Find by alias-or-name when
+        // queryDefinition.Fields.TryGetValue misses; this exercises the alias-match branch.
+        var builder = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("u:user");
+
+        // Pass the original (un-aliased) name; the field is keyed by its effective alias "u".
+        var path = builder.GetPathTo("user", "");
+
+        path.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_EmptyIncomingQuery_NoOp()
+    {
+        // Including a definition whose _fields is null (no AddField calls) takes
+        // QueryMerger.MergeQuery's early-return path — covers the _fields == null arm.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q").AddField("user");
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q");
+
+        b1.Include(b2);
+
+        b1.Definition.Fields.Should().ContainKey("user");
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_ObjectFieldMergeAddsChildren_UnderMergeByFieldPath()
+    {
+        // Two queries with the same parent and disjoint nested fields under MergeByFieldPath
+        // — exercises FieldDefinitionExtensions.MergeFieldsInPlace ->
+        // MergeIncomingChildrenInPlace, mutating the existing field's children dict in place.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("posts.title");
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("posts.body");
+
+        b1.Include(b2);
+
+        b1.Definition.Fields["posts"].Fields.Should().ContainKeys("title", "body");
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_DeeplyNestedSameLeaf_PromotesLeafToObjectAndAllocatesChildren()
+    {
+        // b1's leaf "posts.title" has type String; b2 makes "title" an object via subfields.
+        // Under MergeByFieldPath, MergeFieldsInPlace recursively merges. When it reaches the
+        // "title" leaf and tries to merge in incoming title's children, MergeIncomingChildrenInPlace
+        // hits `existing._children ??= new FieldChildren()` — the null arm we want covered.
+        // We force matching types by giving b1's title an explicit object type via subFields.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
+        b1.AddField("posts", subFields: new[] { "title" });
+        // Now posts.title exists as a String leaf with no children.
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
+        b2.AddField("posts.title.byline");
+        // After merge, b1's title gets promoted to object and gains a "byline" child.
+
+        var act = () => b1.Include(b2);
+
+        // Type-conflict expected (String vs object) — the catch path inside ApplyMergeByFieldPath
+        // wraps it as QueryMergeException and rethrows. Suffices to assert the merge runs.
+        act.Should().Throw<NGql.Core.Exceptions.QueryMergeException>();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_TwoFieldsWithNestedArguments_DeepCanMergeRequiresRecursion()
+    {
+        // Two queries with the same nested-field path that both have arguments at the leaf
+        // — drives FieldDefinitionExtensions.HasAnyArguments to recurse into children.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user.profile", new Dictionary<string, object?> { ["x"] = 1 });
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user.profile", new Dictionary<string, object?> { ["x"] = 1 });
+
+        var act = () => b1.Include(b2);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void QueryBuilder_Preserve_AliasOnly_RoutesThroughAliasMatchBranch()
+    {
+        // Preserve("alias") on a query whose field has this string as ALIAS (not name)
+        // — covers the alias-match arm in QueryDefinitionExtensions.FindFieldRecursivelyCore
+        // and PreserveExtensions.FindFieldByNameOrAlias.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("currentUser:user");
+
+        var preserved = query.Preserve("currentUser");
+        preserved.Definition.Fields.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveFromExpression_NestedAliasField_RecursivelyMatchesByAlias()
+    {
+        // FindFieldRecursivelyCore's `!IsNullOrEmpty(Alias) && Equals(Alias, name)` arm fires
+        // when a deep field is found by ALIAS via a recursive lookup from
+        // ExpressionPreservationProcessor.PreserveRecursiveMatches.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("u", subFields: new[] { "displayName:fullName" });
+
+        var preserved = query.Preserve("u.displayName");
+
+        preserved.Definition.Fields.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveFromExpression_RootFieldWithoutAlias_UsesName()
+    {
+        // ExpressionPreservationProcessor.PreserveFromRoot does
+        // `sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath)`. A query whose
+        // root field has NO alias hits the Name fallback arm of the null-coalesce.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user.profile.name");
+
+        var preserved = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestModel>(x => x.user.profile.name == null, nodePath: "profile")
+            .Build();
+
+        preserved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveFromExpression_ReadOnlyProperty_ExpandsAsNavigationProperty()
+    {
+        // TestModel has read-only properties (Name, Parent) — selecting one drives
+        // NavigationPropertyExpander.IsNavigationProperty into its
+        // `SetMethod == null && GetGetMethod()?.IsPublic == true` true arm.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("Name");
+
+        var preserved = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestModel>(x => x.Name == null)
+            .Build();
+
+        preserved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveFromExpression_NodePathDoesNotMatchAnyField_TraversesNoAliasFields()
+    {
+        // ExpressionPreservationProcessor's recursive search through fields without aliases
+        // — drives FindFieldRecursivelyCore into NameOrAliasMatches with fields whose
+        // Alias is null AND Name doesn't match the searched name. Covers the
+        // `IsNullOrEmpty(Alias) -> return false` arm.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user.profile.name");
+
+        // Search for a name that doesn't exist anywhere; FindFieldRecursivelyCore visits
+        // every field in the tree, all of which have null aliases.
+        var preserved = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestModel>(
+                x => x.user.email != null,  // "email" doesn't exist on the query tree
+                nodePath: "profile")
+            .Build();
+
+        preserved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveFromExpression_RecursiveAliasNonMatch_ContinuesToAliasComparison()
+    {
+        // Tree has aliased fields ("alias:name"); searching for a name that's neither the
+        // Name nor the Alias of any field drives NameOrAliasMatches's "Alias non-empty +
+        // Equals(Alias, name)=false" arm — the path past the IsNullOrEmpty(Alias) gate.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("u:user.profile.alias_field:fullName");
+
+        var preserved = PreservationBuilder.Create(query)
+            .PreserveFromExpression<TestModel>(x => x.user.email != null, nodePath: "profile")
+            .Build();
+
+        preserved.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_NestedChildHasArgs_HitsHasAnyArgumentsRecursion()
+    {
+        // MergeByFieldPath strategy invokes CanMergeFields for every existing field. When the
+        // incoming field has nested-child arguments and the existing target structure differs,
+        // HasAnyArguments recurses through child spans — covering its recursive-true branch.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user");
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user.profile", new Dictionary<string, object?> { ["k"] = 1 });
+
+        var act = () => b1.Include(b2);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_GrandchildHasArgs_RecurseThroughGrandparent()
+    {
+        // For HasAnyArguments(parent)'s recursive `if (HasAnyArguments(child)) return true;`
+        // arm to fire, the parent must have no args of its own but a deeper descendant must.
+        // user (no args) -> profile (no args) -> x (has args).
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user");
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user.profile.x", new Dictionary<string, object?> { ["k"] = 1 });
+
+        var act = () => b1.Include(b2);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_ExistingHasChildrenIncomingIsLeaf_HitsExistingExtrasNullPath()
+    {
+        // For IsExistingExtraCompatible's `incomingChildren is null` arm to fire under a
+        // CanMergeFields call, existing must have children (with args via subtree) and
+        // incoming must have NO children (be a leaf).
+        var b1 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user.profile", new Dictionary<string, object?> { ["k"] = 1 });
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .AddField("user");
+
+        var act = () => b1.Include(b2);
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void QueryBuilder_Include_NeverMerge_AlreadyMarkedField_FastPath()
+    {
+        // MarkAsNeverMerge has `field.IsNeverMerge ? field : field with { IsNeverMerge = true }`.
+        // First Include marks "a" as NeverMerge in b1. Including a SECOND time with the same
+        // (already-marked) field exercises the IsNeverMerge=true short-circuit arm.
+        var b1 = QueryBuilder.CreateDefaultBuilder("Outer", MergingStrategy.NeverMerge);
+        var b2 = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.NeverMerge).AddField("a");
+
+        b1.Include(b2);
+        // The fields in b1 carry IsNeverMerge=true now. Re-Include b1 into a fresh builder —
+        // each MarkAsNeverMerge call sees a field that's already flagged.
+        var b3 = QueryBuilder.CreateDefaultBuilder("Outer2", MergingStrategy.NeverMerge);
+        b3.Include(b1);
+
+        b3.Definition.Fields.Count.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -330,13 +718,20 @@ public class QueryDefinitionEdgeCasesTests
     [Fact]
     public void QueryTextBuilder_ExtractKeyValuePairProperties_WithMultipleFields_ExtractsAll()
     {
+        // Sibling to SpanExtensions_GetOrAddSimpleField_WithMultiplePaths_AddsAll: same setup, but
+        // assert the ordering is preserved (insertion order, not alphabetical) so we exercise the
+        // KeyValuePair extraction codepath rather than just "contains all three names".
         var builder = QueryBuilder.CreateDefaultBuilder("Test")
             .AddField("field1")
             .AddField("field2")
             .AddField("field3");
-        
+
         var result = builder.ToString();
-        result.Should().Contain("field1").And.Contain("field2").And.Contain("field3");
+        var idxField1 = result.IndexOf("field1", StringComparison.Ordinal);
+        var idxField2 = result.IndexOf("field2", StringComparison.Ordinal);
+        var idxField3 = result.IndexOf("field3", StringComparison.Ordinal);
+        idxField1.Should().BeLessThan(idxField2);
+        idxField2.Should().BeLessThan(idxField3);
     }
 
     #endregion
@@ -347,8 +742,7 @@ public class QueryDefinitionEdgeCasesTests
     public void FieldChildren_Set_WithNewChild_AddsToCollection()
     {
         var parent = new FieldDefinition("parent", "Parent");
-        var child = new FieldDefinition("child", "Child");
-        
+
         // Access Fields property (returns IReadOnlyDictionary)
         var fields = parent.Fields;
         fields.Count.Should().Be(0); // Should be empty initially
@@ -417,9 +811,43 @@ public class QueryDefinitionEdgeCasesTests
     {
         var builder = QueryBuilder.CreateDefaultBuilder("Test")
             .AddField("a.b.c.d.e.f.g.h");
-        
+
         var result = builder.ToString();
         result.Should().Contain("a").And.Contain("h");
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveAtPath_DescendingThroughLeaf_TerminatesEarly()
+    {
+        // PreserveAtPath calls NavigatePath which walks the path segment by segment. When a
+        // mid-path field exists but has no children (a leaf), the walk has to stop early —
+        // exercises NavigatePath's "_children == null mid-path" return-null branch.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("data.edges.cursor") // cursor is a leaf (no children)
+            .AddField("data.edges.node.id");
+
+        // Preserve targets "cursor.somethingElse" under the data.edges node — but "cursor" is a
+        // leaf, so NavigatePath stops mid-walk and the preservation is silently dropped.
+        var result = PreservationBuilder.Create(query)
+            .PreserveAtPath("cursor.somethingElse", "edges")
+            .Build();
+
+        result.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreserveAtPath_NodeWithoutChildren_ReturnsEarly()
+    {
+        // The "nodeField is null or has no fields" early-return inside PreserveAtPath: target node
+        // exists but has no children to preserve under.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("user.id"); // user has children, but "id" is a leaf
+
+        var result = PreservationBuilder.Create(query)
+            .PreserveAtPath("anything", "id") // "id" has no children
+            .Build();
+
+        result.Should().NotBeNull();
     }
 
     #endregion
@@ -603,7 +1031,7 @@ public class QueryDefinitionEdgeCasesTests
     [InlineData("mutation_with_name", "CreatePost", "CreatePost")]
     public void QueryBlock_ToString_ProducesCorrectRepresentation(string _, string name, string expectedName)
     {
-        var block = new QueryBlock(string.IsNullOrEmpty(name) ? "query" : name, null);
+        var block = new QueryBlock(string.IsNullOrEmpty(name) ? "query" : name);
 
         var result = block.ToString();
 
@@ -660,11 +1088,19 @@ public class QueryDefinitionEdgeCasesTests
         }
 
         var result = query.Definition;
-        var expectedCount = fieldSpec.Split(',')[0].Contains('.')
-            ? 1  // Nested fields count as single root field
-            : fieldSpec.Split(',').Length;
+        var firstSpec = fieldSpec.Split(',')[0];
+        int expectedCount;
+        if (firstSpec.Contains('.'))
+        {
+            expectedCount = 1; // Nested fields count as single root field
+        }
+        else
+        {
+            expectedCount = fieldSpec.Split(',').Length;
+        }
 
         result.Fields.Count.Should().BeGreaterOrEqualTo(1);
+        result.Fields.Count.Should().BeLessThanOrEqualTo(expectedCount);
     }
 
     [Theory]

@@ -70,6 +70,9 @@ public class ComplexModel
 
 public class NavigationProperty
 {
+    // Marker type used by NavigationProperty / FieldDefinition tests to assert the
+    // navigation-resolution path (no members are read at runtime — the type identity is the data).
+    public string? Marker { get; set; }
 }
 
 public class TestDataObject

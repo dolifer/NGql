@@ -29,6 +29,11 @@
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 
+  <!-- Treat warnings as errors across the whole solution. -->
+  <PropertyGroup>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
   <!-- Sonar Analyzers configuration -->
   <ItemGroup>
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.15.0.120848">

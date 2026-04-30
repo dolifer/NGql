@@ -191,14 +191,17 @@ public class SpanExtensionsTests
         // Act - Dictionary variant
         var resultDict = dict.GetOrAddSimpleField(fieldName.AsSpan(), fieldType.AsSpan(), null, parentPath, null);
 
-        // Assert both render correctly regardless of buffer strategy
-        resultChildren.Should().NotBeNull();
-        resultChildren.Path.Should().StartWith(parentPath);
-        resultChildren.Name.Should().Be(fieldName);
+        // Assert both render correctly regardless of buffer strategy.
+        // shouldFitInBuffer flag documents whether this length stays within the stack/inline buffer
+        // threshold; the actual rendering must succeed in both regimes.
+        var bufferRegime = shouldFitInBuffer ? "inline buffer" : "heap fallback";
+        resultChildren.Should().NotBeNull(because: bufferRegime);
+        resultChildren.Path.Should().StartWith(parentPath, because: bufferRegime);
+        resultChildren.Name.Should().Be(fieldName, because: bufferRegime);
 
-        resultDict.Should().NotBeNull();
-        resultDict.Path.Should().StartWith(parentPath);
-        resultDict.Name.Should().Be(fieldName);
+        resultDict.Should().NotBeNull(because: bufferRegime);
+        resultDict.Path.Should().StartWith(parentPath, because: bufferRegime);
+        resultDict.Name.Should().Be(fieldName, because: bufferRegime);
     }
 
     [Fact]
@@ -209,7 +212,7 @@ public class SpanExtensionsTests
         var metadata1 = new Dictionary<string, object?> { ["key1"] = "value1" };
         var metadata2 = new Dictionary<string, object?> { ["key2"] = "value2" };
 
-        var field1 = children.GetOrAddSimpleField(fieldName.AsSpan(), "User".AsSpan(), null, "", metadata1);
+        _ = children.GetOrAddSimpleField(fieldName.AsSpan(), "User".AsSpan(), null, "", metadata1);
         var field2 = children.GetOrAddSimpleField(fieldName.AsSpan(), "User".AsSpan(), null, "", metadata2);
 
         field2.Metadata.Should().ContainKey("key1");

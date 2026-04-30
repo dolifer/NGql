@@ -44,41 +44,53 @@ public sealed class PreservationBuilder
     /// </summary>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
-        // Compute the last segment of nodePath ONCE outside the loop. If nodePath has no '.', the
-        // entire string is the last segment — pass nodePath itself to avoid re-allocating a substring.
         var lastIndex = nodePath.LastIndexOf('.');
         var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
         var fieldPathHasDot = fieldPath.Contains('.');
 
-        // For merged queries with multiple roots, preserve in all of them
         foreach (var rootField in _sourceQuery.Definition.Fields.Values)
         {
-            var pathToNode = _sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
-            if (pathToNode.Length == 0) continue;
-
-            var fullNodePath = JoinPath(pathToNode, lastSegment);
-            var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
-            if (nodeField == null || !nodeField.HasFields) continue;
-
-            if (fieldPathHasDot)
-            {
-                var resolvedPath = QueryDefinitionExtensions.NavigatePath(nodeField.Fields, fieldPath.AsSpan(), out var resolved, fullNodePath)
-                    != null ? resolved : null;
-                if (resolvedPath != null)
-                {
-                    Preserve(resolvedPath);
-                }
-            }
-            else
-            {
-                var match = PreserveExtensions.FindFieldByNameOrAlias(nodeField.Fields, fieldPath.AsSpan());
-                if (match.HasValue)
-                {
-                    Preserve(string.Concat(fullNodePath, ".", match.Value.Key));
-                }
-            }
+            PreserveAtPathForRoot(rootField.Alias ?? rootField.Name, fieldPath, nodePath, lastSegment, fieldPathHasDot);
         }
         return this;
+    }
+
+    private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
+    {
+        var pathToNode = _sourceQuery.GetPathTo(rootName, nodePath);
+        if (pathToNode.Length == 0) return;
+
+        var fullNodePath = JoinPath(pathToNode, lastSegment);
+        var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
+        if (nodeField is null) return;
+        if (!nodeField.HasFields) return;
+
+        if (fieldPathHasDot)
+        {
+            PreserveResolvedNestedPath(nodeField.Fields, fieldPath, fullNodePath);
+        }
+        else
+        {
+            PreserveDirectMatch(nodeField.Fields, fieldPath, fullNodePath);
+        }
+    }
+
+    private void PreserveResolvedNestedPath(IReadOnlyDictionary<string, Abstractions.FieldDefinition> nodeFields, string fieldPath, string fullNodePath)
+    {
+        if (QueryDefinitionExtensions.NavigatePath(nodeFields, fieldPath.AsSpan(), out var resolved, fullNodePath) != null
+            && resolved is not null)
+        {
+            Preserve(resolved);
+        }
+    }
+
+    private void PreserveDirectMatch(IReadOnlyDictionary<string, Abstractions.FieldDefinition> nodeFields, string fieldPath, string fullNodePath)
+    {
+        var match = PreserveExtensions.FindFieldByNameOrAlias(nodeFields, fieldPath.AsSpan());
+        if (match.HasValue)
+        {
+            Preserve(string.Concat(fullNodePath, ".", match.Value.Key));
+        }
     }
 
     /// <summary>

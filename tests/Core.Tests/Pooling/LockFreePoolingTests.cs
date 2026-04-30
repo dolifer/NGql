@@ -213,6 +213,42 @@ public class LockFreePoolingTests
     }
 
     [Fact]
+    public void ThreadLocalPool_Constructor_NullFactory_Throws()
+    {
+        var act = () => new ThreadLocalPool<StringBuilder>(null!, sb => sb.Clear());
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void ThreadLocalPool_Constructor_NullReset_Throws()
+    {
+        var act = () => new ThreadLocalPool<StringBuilder>(() => new StringBuilder(), null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task ThreadLocalPool_Return_FromUnseenThread_AllocatesThreadLocalCache()
+    {
+        // ThreadLocalPool.Return uses `_threadLocalCache.Value ??= new ThreadLocalCache()`.
+        // On a thread that has never called Get on this pool instance, the Value is null
+        // and the allocation arm fires. A fresh Task thread + an externally-created item
+        // forces this code path.
+        var pool = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            poolName: "fresh_thread_return");
+
+        var act = async () => await Task.Run(() =>
+        {
+            // This thread has never touched `pool`, so `_threadLocalCache.Value` is null
+            // when Return runs.
+            pool.Return(new StringBuilder("seed"));
+        });
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
     public void ThreadLocalPool_Different_Generic_Types_Should_Not_Corrupt_Each_Other()
     {
         // ARRANGE
@@ -278,7 +314,8 @@ public class LockFreePoolingTests
         {
             try
             {
-                Thread.Sleep(10); // Let t1 start first
+                // Let t1 start first — use SpinWait briefly instead of Thread.Sleep in tests.
+                System.Threading.SpinWait.SpinUntil(() => false, TimeSpan.FromMilliseconds(10));
 
                 // Get from pool2
                 var dict = pool2.Get();
@@ -427,29 +464,57 @@ public class LockFreePoolingTests
             reset: sb => sb.Clear(),
             poolName: "TestPool"
         );
-        
+
         // Get many items to fill beyond thread-local cache (typically small)
         var items = new List<StringBuilder>();
         for (int i = 0; i < 200; i++)
         {
             items.Add(pool.Get());
         }
-        
+
         // Return all items - this will fill both thread-local and global pool
         foreach (var item in items)
         {
             pool.Return(item);
         }
-        
+
         // Now get again from global pool
         var retrieved = pool.Get();
         retrieved.Should().NotBeNull();
     }
 
     [Fact]
+    public void ThreadLocalPool_GlobalPool_RetrievedFromDifferentThread()
+    {
+        // The "thread-local empty, global has items" path on Get is reachable when one thread
+        // populates the global pool and another thread retrieves an item. Explicit Thread (not
+        // Task.Run) guarantees the consumer runs on a fresh thread with an empty thread-local cache.
+        var pool = new ThreadLocalPool<StringBuilder>(
+            factory: () => new StringBuilder(),
+            reset: sb => sb.Clear(),
+            poolName: "GlobalRetrievePool");
+
+        var producer = new Thread(() =>
+        {
+            var produced = new List<StringBuilder>();
+            for (int i = 0; i < 64; i++) produced.Add(pool.Get());
+            foreach (var sb in produced) pool.Return(sb);
+        });
+        producer.Start();
+        producer.Join();
+
+        StringBuilder? retrieved = null;
+        var consumer = new Thread(() => retrieved = pool.Get());
+        consumer.Start();
+        consumer.Join();
+
+        retrieved.Should().NotBeNull();
+    }
+
+    [Fact]
     public void ThreadLocalPool_ReturnRejectedByValidator_NotReturned()
     {
-        // This test covers line 122: when validator rejects item (return path taken)
+        // Exercises Return when the validator rejects the item (item is dropped, not pooled).
         var usedItems = new HashSet<StringBuilder>();
         
         var pool = new ThreadLocalPool<StringBuilder>(

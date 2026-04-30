@@ -26,7 +26,9 @@ public class TestScenarioBag<T> : ScenarioBag<TestScenario<T>, TestScenarioBag<T
 /// <summary>
 /// Named test scenario with arrange/assert logic and descriptive name (generic setup variant).
 /// </summary>
+#pragma warning disable S2326 // Unused generic type parameter TSetup is kept for semantic clarity / API symmetry
 public record TestScenario<TSetup, T>(string Name, Func<T> Arrange, Action<T> Assert);
+#pragma warning restore S2326
 
 /// <summary>
 /// Typed scenario registry for test arrange/assert patterns with different input/output types.

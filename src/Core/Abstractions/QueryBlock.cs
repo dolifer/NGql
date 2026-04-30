@@ -135,55 +135,56 @@ public sealed class QueryBlock
 
     private void HandleAddField(object value)
     {
-        if (value is QueryBlock subQuery)
+        switch (value)
         {
-            foreach (var variable in subQuery.Variables)
-            {
-                _variables.Add(variable);
-            }
-
-            _fieldsList.Add(subQuery);
-
-            return;
-        }
-
-        if (value is string field)
-        {
-            if (string.IsNullOrWhiteSpace(field))
-            {
+            case QueryBlock subQuery:
+                AddSubQuery(subQuery);
                 return;
-            }
-
-            // Add string field in sorted order
-            var insertIndex = _fieldsList.OfType<string>()
-                .TakeWhile(existing => string.Compare(existing, field, StringComparison.OrdinalIgnoreCase) < 0)
-                .Count();
-
-            _fieldsList.Insert(insertIndex, field);
-            return;
+            case string field:
+                AddStringField(field);
+                return;
+            case IList list:
+                AddListItems(list);
+                return;
+            default:
+                throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
         }
+    }
 
-        if (value is IList list)
+    private void AddSubQuery(QueryBlock subQuery)
+    {
+        foreach (var variable in subQuery.Variables)
         {
-            // Sort the list items before adding them
-            var sortedItems = list.Cast<object>()
-                .OrderBy(x => x switch
-                {
-                    string s => s,
-                    QueryBlock q => q.Name,
-                    _ => x.ToString()
-                })
-                .ToList();
-
-            foreach (var item in sortedItems)
-            {
-                HandleAddField(item);
-            }
-
-            return;
+            _variables.Add(variable);
         }
+        _fieldsList.Add(subQuery);
+    }
 
-        throw new InvalidOperationException("Unsupported Field type found, must be a `string` or `QueryBlock`");
+    private void AddStringField(string field)
+    {
+        if (string.IsNullOrWhiteSpace(field)) return;
+
+        var insertIndex = _fieldsList.OfType<string>()
+            .TakeWhile(existing => string.Compare(existing, field, StringComparison.OrdinalIgnoreCase) < 0)
+            .Count();
+        _fieldsList.Insert(insertIndex, field);
+    }
+
+    private void AddListItems(IList list)
+    {
+        var sortedItems = list.Cast<object>()
+            .OrderBy(x => x switch
+            {
+                string s => s,
+                QueryBlock q => q.Name,
+                _ => x.ToString()
+            })
+            .ToList();
+
+        foreach (var item in sortedItems)
+        {
+            HandleAddField(item);
+        }
     }
 
     private void HandleAddVariable(Variable variable)

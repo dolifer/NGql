@@ -1,15 +1,17 @@
-/// BenchmarkMerger — merges BenchmarkDotNet CSV reports from two separate runs and renders a side-by-side comparison.
-///
-/// Usage:
-///   dotnet run --project tests/BenchmarkMerger -- <local-artifacts-dir> <published-artifacts-dir>
-///
-/// Example (from repo root):
-///   dotnet run --project tests/BenchmarkRunner         -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/local
-///   dotnet run --project tests/BenchmarkRunner.Published -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/published
-///   dotnet run --project tests/BenchmarkMerger -- artifacts/benchmarks/local artifacts/benchmarks/published
-///
-/// Both runner projects compile the same VersionComparisonBenchmark source linked from BenchmarkRunner/,
-/// but reference different NGql.Core versions (ProjectRef vs NuGet 1.5.0) giving genuine A/B comparison.
+// BenchmarkMerger — merges BenchmarkDotNet CSV reports from two separate runs and renders a side-by-side comparison.
+//
+// Usage:
+//   dotnet run --project tests/BenchmarkMerger -- [local-artifacts-dir] [published-artifacts-dir]
+//
+// Example (from repo root):
+//   dotnet run --project tests/BenchmarkRunner         -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/local
+//   dotnet run --project tests/BenchmarkRunner.Published -c Release -- --filter "*VersionComparison*SimpleQuery*" --artifacts artifacts/benchmarks/published
+//   dotnet run --project tests/BenchmarkMerger -- artifacts/benchmarks/local artifacts/benchmarks/published
+//
+// Both runner projects compile the same VersionComparisonBenchmark source linked from BenchmarkRunner/,
+// but reference different NGql.Core versions (ProjectRef vs NuGet 1.5.0) giving genuine A/B comparison.
+
+using NGql.BenchmarkMerger;
 
 if (args.Length < 2)
 {
@@ -170,11 +172,23 @@ static string? ComputeRatio(string current, string? baseline)
     if (baseline is null) return null;
     var c = ParseValue(current);
     var b = ParseValue(baseline);
-    if (c is null || b is null || b == 0.0) return null;
+    if (c is null || b is null || Math.Abs(b.Value) < 1e-12) return null;
     var ratio = c.Value / b.Value;
     var isFaster = ratio < 0.95;
     var isSlower = ratio > 1.05;
-    var marker = isFaster ? " 🟢" : isSlower ? " 🔴" : "";
+    string marker;
+    if (isFaster)
+    {
+        marker = " 🟢";
+    }
+    else if (isSlower)
+    {
+        marker = " 🔴";
+    }
+    else
+    {
+        marker = "";
+    }
     return $"{ratio:F2}{marker}";
 }
 
@@ -186,8 +200,11 @@ static double? ParseValue(string s)
         System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
 }
 
-record Row(string Method, string Parameters, string Mean, string Error, string StdDev,
-           string P95, string Gen0, string Gen1, string Allocated)
+namespace NGql.BenchmarkMerger
 {
-    public string Key => string.IsNullOrEmpty(Parameters) ? Method : $"{Method}({Parameters})";
+    record Row(string Method, string Parameters, string Mean, string Error, string StdDev,
+               string P95, string Gen0, string Gen1, string Allocated)
+    {
+        public string Key => string.IsNullOrEmpty(Parameters) ? Method : $"{Method}({Parameters})";
+    }
 }

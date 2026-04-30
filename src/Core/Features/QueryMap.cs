@@ -65,38 +65,53 @@ internal sealed class QueryMap
         Dictionary<string, Dictionary<string, string[]>>? pathIndex = null)
     {
         var rootPath = GetMappedPath(queryName);
-        if (string.IsNullOrEmpty(rootPath))
-        {
-            return [];
-        }
+        if (string.IsNullOrEmpty(rootPath)) return [];
+        if (string.IsNullOrEmpty(nodePath)) return [rootPath];
 
-        if (string.IsNullOrEmpty(nodePath))
+        if (TryGetCachedPath(pathIndex, rootPath, nodePath, out var cached, out var perRoot))
         {
-            return [rootPath];
-        }
-
-        // Two-level cache lookup avoids the per-call "{rootPath}.{nodePath}" concat allocation.
-        Dictionary<string, string[]>? perRoot = null;
-        if (pathIndex != null && pathIndex.TryGetValue(rootPath, out perRoot)
-            && perRoot.TryGetValue(nodePath, out var cachedPath))
-        {
-            return cachedPath;
+            return cached;
         }
 
         var rootField = FindRootField(queryDefinition, rootPath);
-        var computedPath = rootField == null ? [rootPath] : BuildPathToNode(rootField, nodePath);
+        var computedPath = rootField is null ? [rootPath] : BuildPathToNode(rootField, nodePath);
 
-        if (pathIndex != null)
-        {
-            if (perRoot == null)
-            {
-                perRoot = new Dictionary<string, string[]>(StringComparer.Ordinal);
-                pathIndex[rootPath] = perRoot;
-            }
-            perRoot[nodePath] = computedPath;
-        }
-
+        CachePath(pathIndex, rootPath, nodePath, computedPath, perRoot);
         return computedPath;
+    }
+
+    private static bool TryGetCachedPath(
+        Dictionary<string, Dictionary<string, string[]>>? pathIndex,
+        string rootPath,
+        string nodePath,
+        out string[] cached,
+        out Dictionary<string, string[]>? perRoot)
+    {
+        // QueryBuilder always passes a non-null _pathIndex; the parameter type allows null
+        // for the GetPathTo overload that takes no path-index, but the caller in this file
+        // never invokes TryGetCachedPath unless pathIndex is non-null in the GetPathTo wrapper.
+        cached = [];
+        perRoot = null;
+        if (!pathIndex!.TryGetValue(rootPath, out perRoot)) return false;
+        if (!perRoot.TryGetValue(nodePath, out var hit)) return false;
+        cached = hit;
+        return true;
+    }
+
+    private static void CachePath(
+        Dictionary<string, Dictionary<string, string[]>>? pathIndex,
+        string rootPath,
+        string nodePath,
+        string[] computedPath,
+        Dictionary<string, string[]>? perRoot)
+    {
+        // QueryBuilder always passes a non-null pathIndex (see TryGetCachedPath comment).
+        if (perRoot is null)
+        {
+            perRoot = new Dictionary<string, string[]>(StringComparer.Ordinal);
+            pathIndex![rootPath] = perRoot;
+        }
+        perRoot[nodePath] = computedPath;
     }
 
     private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)

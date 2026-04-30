@@ -115,33 +115,51 @@ public class NGqlActivityChainingTests
     [Fact]
     public void StartQuery_WithQueryTags_ChainingWorks()
     {
-        // Arrange & Act & Assert
-        using var activity = NGqlActivity.StartQuery("chainTest")
-            .WithQueryTags("test", 1)
-            .WithTag("custom", "data");
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartQuery("chainTest")
+                .WithQueryTags("test", 1)
+                .WithTag("custom", "data");
 
-        _ = activity.IsRecording;
+            _ = activity.IsRecording;
+        };
+
+        // Assert — fluent chain compiles and runs without throwing
+        action.Should().NotThrow();
     }
 
     [Fact]
     public void StartField_WithFieldTags_ChainingWorks()
     {
-        // Arrange & Act & Assert
-        using var activity = NGqlActivity.StartField("fieldChainTest")
-            .WithFieldTags("path", false, false)
-            .WithTag("field.depth", 3);
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartField("fieldChainTest")
+                .WithFieldTags("path", false, false)
+                .WithTag("field.depth", 3);
 
-        _ = activity.IsRecording;
+            _ = activity.IsRecording;
+        };
+
+        // Assert — fluent chain compiles and runs without throwing
+        action.Should().NotThrow();
     }
 
     [Fact]
     public void StartPooling_WithPoolingTags_ChainingWorks()
     {
-        // Arrange & Act & Assert
-        using var activity = NGqlActivity.StartPooling("pool", "get")
-            .WithPoolingTags("stringPool", "miss", 0)
-            .WithTag("pool.type", "lock-free");
+        // Arrange & Act
+        var action = () =>
+        {
+            using var activity = NGqlActivity.StartPooling("pool", "get")
+                .WithPoolingTags("stringPool", "miss", 0)
+                .WithTag("pool.type", "lock-free");
 
-        _ = activity.IsRecording;
+            _ = activity.IsRecording;
+        };
+
+        // Assert — fluent chain compiles and runs without throwing
+        action.Should().NotThrow();
     }
 }

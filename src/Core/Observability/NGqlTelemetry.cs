@@ -319,16 +319,4 @@ internal static class NGqlTelemetry
 
     #endregion
 
-    #region Cleanup
-
-    /// <summary>
-    /// Disposes telemetry resources (call on application shutdown)
-    /// </summary>
-    internal static void DisposeResources()
-    {
-        ActivitySource.Dispose();
-        Meter.Dispose();
-    }
-
-    #endregion
 }

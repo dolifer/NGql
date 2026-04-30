@@ -23,10 +23,10 @@ public sealed class FieldBuilder
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
         Helpers.ValidateFieldName(fieldDefinition.Name.AsSpan());
-        var arguments = fieldDefinition._arguments ?? null;
+        var arguments = fieldDefinition._arguments;
 
-        // Use FieldFactory for field creation
-        FieldFactory.GetOrAddField(_fieldDefinition, fieldDefinition.Name, fieldDefinition._type ?? Constants.DefaultFieldType, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        // FieldDefinition._type is always set non-null by every constructor path.
+        FieldFactory.GetOrAddField(_fieldDefinition, fieldDefinition.Name, fieldDefinition._type!, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
         return this;
     }
 
@@ -356,7 +356,9 @@ public sealed class FieldBuilder
         {
             var fieldBuilder = new FieldBuilder(field);
             action(fieldBuilder);
-            (_fieldDefinition._children ??= new FieldChildren()).Set(field.Name, fieldBuilder._fieldDefinition);
+            // GetOrAddField above already added `field` as a child of _fieldDefinition,
+            // so _fieldDefinition._children is non-null at this point.
+            _fieldDefinition._children!.Set(field.Name, fieldBuilder._fieldDefinition);
         }
 
         return this;
@@ -396,9 +398,7 @@ public sealed class FieldBuilder
     /// Builds and returns the final field definition.
     /// </summary>
     /// <returns>The constructed FieldDefinition.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when no field definition has been set.</exception>
-    public FieldDefinition Build()
-        => _fieldDefinition ?? throw new InvalidOperationException("Field definition is not set. Use AddField or CreateField methods to define fields.");
+    public FieldDefinition Build() => _fieldDefinition;
 
     /// <summary>
     /// Recursively creates and merges field definitions into the target field collection.
@@ -414,9 +414,11 @@ public sealed class FieldBuilder
         if (fieldDefinition._children != null)
         {
             var childrenSpan = fieldDefinition._children.AsSpan();
+            parentField._children ??= new FieldChildren();
+            var parentChildren = parentField._children;
             for (int i = 0; i < childrenSpan.Length; i++)
             {
-                RecursiveCreateField(parentField._children ??= new FieldChildren(), childrenSpan[i]);
+                RecursiveCreateField(parentChildren, childrenSpan[i]);
             }
         }
     }
@@ -429,9 +431,11 @@ public sealed class FieldBuilder
         if (fieldDefinition._children != null)
         {
             var childrenSpan = fieldDefinition._children.AsSpan();
+            parentField._children ??= new FieldChildren();
+            var parentChildren = parentField._children;
             for (int i = 0; i < childrenSpan.Length; i++)
             {
-                RecursiveCreateField(parentField._children ??= new FieldChildren(), childrenSpan[i]);
+                RecursiveCreateField(parentChildren, childrenSpan[i]);
             }
         }
     }

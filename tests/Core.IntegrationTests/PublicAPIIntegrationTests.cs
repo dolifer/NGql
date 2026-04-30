@@ -371,8 +371,8 @@ public class PublicAPIIntegrationTests
     {
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
         
-        Action act = () => builder.AddField(null);
-        
+        Action act = () => builder.AddField(null!);
+
         act.Should().Throw<ArgumentException>();
     }
 
@@ -391,7 +391,7 @@ public class PublicAPIIntegrationTests
     {
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
         
-        Action act = () => builder.AddField("user", (Action<FieldBuilder>)null);
+        Action act = () => builder.AddField("user", (Action<FieldBuilder>)null!);
         
         act.Should().Throw<ArgumentNullException>();
     }

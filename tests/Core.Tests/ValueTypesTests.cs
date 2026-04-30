@@ -33,7 +33,7 @@ public class ValueTypesTests
     public void EnumValue_FromNull_ShouldThrow()
     {
         // Arrange & Act & Assert
-        var action = () => new EnumValue(null);
+        var action = () => new EnumValue(null!);
         action.Should().Throw<ArgumentNullException>();
     }
     
@@ -41,8 +41,8 @@ public class ValueTypesTests
     public void EnumValue_FromNullEnumValue_ShouldThrow()
     {
         // Arrange & Act & Assert
-        EnumValue? source = null; // TODO: deserialize from JSON so during serizalition it'll be null
-        var action = () => new EnumValue(source!); // so here we're go this branch Enum enumValue => enumValue.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value)),
+        EnumValue? source = null; // mirrors the post-deserialisation state where the source field can be null
+        var action = () => new EnumValue(source!); // exercises the Enum branch: enumValue.ToString() ?? throw new ArgumentException("Enum value cannot be null.", nameof(value))
         action.Should().Throw<ArgumentNullException>();
     }
 

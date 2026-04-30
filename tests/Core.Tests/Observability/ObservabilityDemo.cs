@@ -10,6 +10,7 @@ using Xunit.Abstractions;
 
 namespace NGql.Core.Tests.Observability;
 
+[Collection("ObservabilityListener")]
 public class ObservabilityDemo
 {
     private readonly ITestOutputHelper _output;

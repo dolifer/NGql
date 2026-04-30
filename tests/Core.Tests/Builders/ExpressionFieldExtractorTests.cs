@@ -547,7 +547,7 @@ public class ExpressionFieldExtractorTests
     {
         // Arrange
         var expressions = new ExpressionsBag<TestModel>()
-            .Register("CastToObject", x => ((object)x.user.profile.name) != null)
+            .Register("CastToObject", x => ((object?)x.user.profile.name) != null)
             .Register("ConversionExpression", x => x.user.age.ToString() != null)
             .Register("NestedCastConversion", x => ((int)x.metrics.realtime.deposits.firstDepositAmount) > 0);
 
@@ -576,5 +576,297 @@ public class ExpressionFieldExtractorTests
         var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
 
         paths.Should().Contain(expectedPath);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // BuildMemberPath edge cases — exercise the Coalesce / Conditional / chain
+    // branches that classical lambdas rarely produce on their own.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("CoalesceOnInnerObject", "user.profile.age", "user.profile.name")]
+    [InlineData("CoalesceWithMethodChain", "user.profile.name", "user.email")]
+    public void ExtractFieldPaths_CoalesceInChain_WalksLeftSide(string scenario, string mustContain, string alsoContains)
+    {
+        // (x.user ?? defaultUser).profile.age  →  walking up the chain hits BinaryExpression Coalesce,
+        // BuildMemberPath continues with the left side and resolves the path.
+        var defaultUser = new UserData { profile = new ProfileData { name = "" }, name = "" };
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("CoalesceOnInnerObject",
+                x => (x.user ?? defaultUser).profile.age > 0
+                  && (x.user ?? defaultUser).profile.name != null)
+            .Register("CoalesceWithMethodChain",
+                x => (x.user.profile.name ?? x.user.email ?? "fallback").StartsWith('a'));
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        paths.Should().Contain(mustContain);
+        paths.Should().Contain(alsoContains);
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_ConstantRootedChain_ReturnsNoPath()
+    {
+        // `((TestModel)null).user.age` — the chain's root is a ConstantExpression which
+        // BuildMemberPath cannot resolve; it returns null and no path is collected.
+        TestModel? nullModel = null;
+        Expression<Func<bool>> expr = () => nullModel!.user.age > 0;
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        // The lambda has no parameters of TestModel so the only chain root is the captured
+        // null-ed local — it gets resolved to a constant and no field path is produced.
+        paths.Should().NotContain("user.age");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ConditionalExpression in a member chain — the C# ternary `cond ? a : b`
+    // compiles fine inside an expression tree as ConditionalExpression, so
+    // these can be expressed as plain ExpressionsBag lambdas.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("ConditionalChain_TrueBranchReferencesMember", "user.name")]
+    [InlineData("ConditionalChain_TrueBranchIsConstNull_FalseHasMember", "user.email")]
+    public void ExtractFieldPaths_ConditionalInChain_WalksChosenBranch(string scenario, string expectedPath)
+    {
+        // The fallback in each ternary is a non-null UserData built from local state, so the
+        // expression compiles even though the runtime branch is never actually taken in tests.
+        var altUser = new UserData { profile = new ProfileData(), name = "alt" };
+
+        var expressions = new ExpressionsBag<TestModel>()
+            // (x.user != null ? x.user : altUser).name — IfTrue is the member chain.
+            .Register("ConditionalChain_TrueBranchReferencesMember",
+                x => (x.user != null ? x.user : altUser).name != null)
+            // (x.user == null ? (UserData)null! : x.user).email — IfTrue is constant null,
+            // walker falls through to IfFalse.
+            .Register("ConditionalChain_TrueBranchIsConstNull_FalseHasMember",
+                x => (x.user == null ? null! : x.user).email != null);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        paths.Should().Contain(expectedPath);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // BuildPathFromExpression edge shapes — each one expressible as a plain
+    // C# lambda by routing through Enumerable static methods (Repeat, Cast,
+    // literal arrays). No manual Expression.Call construction needed.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("RepeatMemberThenFirstThenMemberThenAny", "preferences")]
+    [InlineData("RepeatThenSelectThenAny", "sport")]
+    public void ExtractFieldPaths_LinqOverMemberChainThroughMethodCall_ResolvesBaseFromInnerCall(
+        string scenario, string expectedSegment)
+    {
+        var expressions = new ExpressionsBag<TestModel>()
+            // Enumerable.Repeat(x.metrics.onceADay.sport, 1).First().preferences.Any(...)
+            // The Any source argument is a MemberExpression (.preferences) whose .Expression is
+            // a MethodCallExpression (.First()). BuildPathFromExpression's chain-walker hits the
+            // inner MethodCallExpression branch and recurses into Repeat's first argument.
+            .Register("RepeatMemberThenFirstThenMemberThenAny",
+                x => Enumerable.Repeat(x.metrics.onceADay.sport, 1)
+                        .First()
+                        .preferences
+                        .Any(p => p.sport != null))
+            // Enumerable.Repeat(x.metrics.onceADay.sport, 1).Select(s => s.preferences).First().Any(...)
+            // — exercises a deeper recursive walk through nested method calls.
+            .Register("RepeatThenSelectThenAny",
+                x => Enumerable.Repeat(x.metrics.onceADay.sport, 1)
+                        .Select(s => s.preferences)
+                        .First()
+                        .Any(p => p.sport != null));
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        paths.Should().Contain(p => p.Contains(expectedSegment));
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_LinqOverCapturedLocal_HandlesClosureRoot()
+    {
+        // A captured local used as a LINQ source compiles into a member chain rooted at a
+        // ConstantExpression (the closure object). GetMethodCallBasePath calls
+        // BuildPathFromExpression on that source; the chain walker eventually hits the closure
+        // ConstantExpression which is neither Member, Parameter, nor MethodCall — exercises
+        // the unknown-chain return-null branch. The visitor must handle it without polluting
+        // the result with closure internals like "<>c__DisplayClass*".
+        var captured = new TestModel
+        {
+            user = new UserData { profile = new ProfileData(), name = "captured" },
+            metrics = new MetricsData
+            {
+                realtime = new RealtimeData { deposits = new DepositsData() },
+                onceADay = new OnceADayData
+                {
+                    sport = new SportData
+                    {
+                        preferences = new List<PreferenceData> { new() { sport = "tennis" } }
+                    }
+                }
+            }
+        };
+
+        // Both forms in one expression:
+        //   1) captured.metrics.onceADay.sport.preferences.Any(...) — LINQ source rooted at a closure.
+        //   2) captured.user.name == x.user.name — closure member chain in a value comparison.
+        Expression<Func<TestModel, bool>> expr =
+            x => x.user.email != null
+              && captured.metrics.onceADay.sport.preferences.Any(p => p.sport == x.user.name);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expr);
+
+        paths.Should().Contain("user.email");
+        paths.Should().Contain("user.name");
+        paths.Should().NotContain(p => p.Contains("<>"));
+    }
+
+    [Theory]
+    [InlineData("LinqOverLiteralArray")]
+    [InlineData("LinqOverCastedMember")]
+    public void ExtractFieldPaths_LinqWithoutMemberSource_DoesNotProduceSpuriousPath(string scenario)
+    {
+        var expressions = new ExpressionsBag<TestModel>()
+            // new[] {1,2}.Any(p => p > 0) — the LINQ source is a NewArrayInit, neither
+            // MemberExpression nor MethodCallExpression. BuildPathFromExpression returns null.
+            // Reference x.user.age inside the predicate so the test isn't trivially constant.
+            .Register("LinqOverLiteralArray",
+                x => new[] { 1, 2 }.Any(p => p > x.user.age))
+            // ((IEnumerable<int>)(object)x.user.age).Any(p => p > 0) — the chain walker meets
+            // a UnaryExpression (cast) and bails out via the unknown-shape return-null branch.
+            .Register("LinqOverCastedMember",
+                x => ((IEnumerable<int>)(object)new[] { x.user.age }).Any(p => p > 0));
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        // The visitor must not invent a System.* path or include the cast machinery in any
+        // extracted path — but the underlying member references (x.user.age) should still surface.
+        paths.Should().Contain(p => p.Contains("user.age"));
+        paths.Should().NotContain(p => p.StartsWith("System"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // BuildPathFromExpression — exercises method-call-as-base, member chain
+    // through method calls, and the invalid-chain fallback.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("AnyOnNestedCollection")]
+    [InlineData("FirstOnDeepCollection")]
+    [InlineData("WhereFirstChain")]
+    [InlineData("FirstThenMemberAccess")]
+    [InlineData("WhereFirstThenMember")]
+    public void ExtractFieldPaths_LinqOnNestedCollection_ResolvesBasePath(string scenario)
+    {
+        // The LINQ method is called on a nested collection; GetMethodCallBasePath
+        // walks the call's argument back through MemberExpression chains via
+        // BuildPathFromExpression. Then the predicate inside Any/Where/First runs
+        // with the lambda context populated from that base path.
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("AnyOnNestedCollection",
+                x => x.metrics.onceADay.sport.preferences.Any(p => p.sport == "tennis"))
+            .Register("FirstOnDeepCollection",
+                x => x.metrics.onceADay.sport.preferences[0].sport != null)
+            .Register("WhereFirstChain",
+                x => x.metrics.onceADay.sport.preferences
+                      .First(p => p.totalBetsCount > 0).sport == "soccer")
+            // .First().sport — outer member access has a MethodCallExpression as Expression →
+            // BuildPathFromExpression's chain walker hits the MethodCallExpression branch.
+            .Register("FirstThenMemberAccess",
+                x => x.metrics.onceADay.sport.preferences[0].sport!.Length > 0)
+            .Register("WhereFirstThenMember",
+                x => x.metrics.onceADay.sport.preferences
+                      .First(p => p.totalBetsCount > 0).totalBetsCount > 0);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        // Whatever the exact extracted shape, the deep nested collection path must show up
+        // in some form — this exercises the method-call/member-chain interplay.
+        paths.Should().Contain(p => p.Contains("preferences"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Property-style invariant: every extracted path must roundtrip — adding it
+    // back to a QueryBuilder's preserve set must be syntactically accepted.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("Single")]
+    [InlineData("Combined")]
+    [InlineData("Coalesce")]
+    [InlineData("LinqAny")]
+    [InlineData("MethodChain")]
+    public void ExtractFieldPaths_AnyExtractedPath_IsValidGraphQLPath(string scenario)
+    {
+        var expressions = new ExpressionsBag<TestModel>()
+            .Register("Single", x => x.user.profile.name == "alice")
+            .Register("Combined",
+                x => x.user.profile.age > 18
+                  && x.user.email != null
+                  && x.metrics.realtime.deposits.firstDepositAmount > 0)
+            .Register("Coalesce", x => (x.user.profile.name ?? x.user.email ?? "") != "")
+            .Register("LinqAny", x => x.metrics.onceADay.sport.preferences.Any(p => p.sport == "tennis"))
+            .Register("MethodChain", x => x.user.profile.name!.Trim().ToUpper().Contains("X"));
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(expressions.Get(scenario));
+
+        // Property: every path is a non-empty dotted GraphQL identifier chain — no whitespace,
+        // no leading/trailing dots, no empty segments. A consumer that pastes any extracted
+        // path into PreservationBuilder.Preserve(...) must not see malformed input.
+        paths.Should().NotBeEmpty();
+        foreach (var path in paths)
+        {
+            path.Should().NotBeNullOrWhiteSpace();
+            path.Should().NotStartWith(".");
+            path.Should().NotEndWith(".");
+            path.Should().NotContain("..");
+            path.Split('.').Should().AllSatisfy(seg => seg.Should().NotBeNullOrWhiteSpace());
+        }
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_QueryableExpression_ProcessesLikeEnumerable()
+    {
+        // IsLinqMethod accepts both System.Linq.Enumerable AND Queryable. Build a Queryable
+        // expression to exercise the Queryable arm of the `Name: "Enumerable" or "Queryable"`
+        // pattern match.
+        var source = new TestModel[0].AsQueryable();
+
+        Expression<Func<TestModel, bool>> predicate = x => x.user.profile.name == "tennis";
+        var queryableFiltered = source.Where(predicate);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(queryableFiltered.Expression);
+
+        paths.Should().Contain("user.profile.name");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_AnonymousType_DeclaringTypeNamespaceIsNull()
+    {
+        // ShouldExcludeProperty does `DeclaringType!.Namespace?.StartsWith("System")`. Anonymous
+        // types live in the null namespace, exercising the null-arm of the null-conditional.
+        Expression<Func<TestModel, object>> selector = x => new { x.user.profile.name };
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(selector);
+
+        paths.Should().Contain("user.profile.name");
+    }
+
+    [Fact]
+    public void ExtractFieldPaths_AccessAnonymousTypeMemberDirectly_HitsNullNamespaceArm()
+    {
+        // Build an expression that selects a property OF an anonymous type — the member's
+        // DeclaringType IS the anonymous type itself, which has a null/empty Namespace.
+        // This exercises ShouldExcludeProperty's null-namespace arm of the
+        // `Namespace?.StartsWith("System")` null-conditional.
+        var anon = new { Title = "x" };
+        var paramExpr = Expression.Parameter(anon.GetType(), "a");
+        var member = Expression.Property(paramExpr, "Title");
+        var lambda = Expression.Lambda(member, paramExpr);
+
+        var paths = ExpressionFieldExtractor.ExtractFieldPaths(lambda);
+
+        paths.Should().NotBeNull();
     }
 }

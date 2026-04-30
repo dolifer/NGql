@@ -1111,4 +1111,38 @@ public class FieldSignatureGeneratorTests
 
         sig.Should().NotBe(0);
     }
+
+    [Fact]
+    public void GenerateSignature_FieldNameLongerThanStackBuffer_FallsBackToHeapAllocation()
+    {
+        // Internal stack buffer is 256 chars; using a field name > 256 forces the fallback
+        // string-concatenation path in AppendFieldSignature.
+        var longName = new string('x', 300);
+        var fields = new Dictionary<string, FieldDefinition>
+        {
+            [longName] = new(longName, "String")
+        };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void GenerateSignature_DeepNestingExceedsStackBuffer_RoutesParentPathThroughFallback()
+    {
+        // A nested child where parent's accumulated path is non-empty AND the total length
+        // exceeds the 256-char stack buffer — exercises the `parentPath.IsEmpty ? Name : ...`
+        // ternary's non-empty arm in AppendFieldSignature's fallback.
+        var leafName = new string('z', 250);
+        var leaf = new FieldDefinition(leafName, "String");
+        var parentName = new string('p', 50);
+        var parent = new FieldDefinition(parentName, "Object");
+        parent._children = new FieldChildren { leaf };
+        var fields = new Dictionary<string, FieldDefinition> { [parentName] = parent };
+
+        var sig = FieldSignatureGenerator.GenerateSignature(fields);
+
+        sig.Should().NotBe(0);
+    }
 }

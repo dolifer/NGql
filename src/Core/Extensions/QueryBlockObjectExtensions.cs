@@ -9,36 +9,34 @@ internal static class QueryBlockObjectExtensions
     internal static SortedDictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
     {
         var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
+        CopyArguments(queryBlock, isRootElement, arguments);
 
-        foreach (var kvp in queryBlock.Arguments)
+        if (isRootElement)
         {
-            if (kvp.Value is Variable variable)
-            {
-                arguments[isRootElement ? variable.Name : kvp.Key] = kvp.Value;
-                continue;
-            }
-
-            arguments[kvp.Key] = kvp.Value;
+            AddMissingRootVariables(queryBlock, arguments);
         }
-
-        if (!isRootElement)
-        {
-            return arguments;
-        }
-
-        foreach (var variable in queryBlock.Variables)
-        {
-            var existingArgument = arguments.Values
-                .FirstOrDefault(x => x is Variable v && v.Name == variable.Name);
-
-            if (existingArgument is null)
-            {
-                arguments[variable.Name] = variable;
-            }
-        }
-
         return arguments;
     }
+
+    private static void CopyArguments(QueryBlock queryBlock, bool isRootElement, SortedDictionary<string, object> arguments)
+    {
+        foreach (var kvp in queryBlock.Arguments)
+        {
+            var key = kvp.Value is Variable variable && isRootElement ? variable.Name : kvp.Key;
+            arguments[key] = kvp.Value;
+        }
+    }
+
+    private static void AddMissingRootVariables(QueryBlock queryBlock, SortedDictionary<string, object> arguments)
+    {
+        foreach (var variable in queryBlock.Variables.Where(v => !ContainsVariableNamed(arguments, v.Name)))
+        {
+            arguments[variable.Name] = variable;
+        }
+    }
+
+    private static bool ContainsVariableNamed(SortedDictionary<string, object> arguments, string name)
+        => arguments.Values.Any(v => v is Variable existing && existing.Name == name);
 
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
@@ -128,33 +126,40 @@ internal static class QueryBlockObjectExtensions
     {
         foreach (var property in properties)
         {
-            var value = obj is null ? null : property.GetValue(obj);
-            var alias = property.GetAlias();
-
-            if (value is IDictionary dict)
-            {
-                HandleDictionary(block, property.Name, alias, dict);
-            }
-            else if (value != null && !IsSimpleType(value.GetType()))
-            {
-                var subQuery = new QueryBlock(property.Name, alias: alias);
-                subQuery.Include(value); // Recursive call for nested objects
-                block.AddField(subQuery);
-            }
-            else
-            {
-                if (alias == property.Name)
-                {
-                    block.AddField(property.Name);
-                }
-                else
-                {
-                    block.AddField(alias is null
-                        ? new QueryBlock(property.Name) { IsEmpty = true }
-                        : new QueryBlock(alias, alias: property.Name) { IsEmpty = true });
-                }
-            }
+            HandleProperty(block, obj, property);
         }
+    }
+
+    private static void HandleProperty(QueryBlock block, object? obj, PropertyInfo property)
+    {
+        var value = obj is null ? null : property.GetValue(obj);
+        var alias = property.GetAlias();
+
+        if (value is IDictionary dict)
+        {
+            HandleDictionary(block, property.Name, alias, dict);
+            return;
+        }
+        if (value is not null && !IsSimpleType(value.GetType()))
+        {
+            var subQuery = new QueryBlock(property.Name, alias: alias);
+            subQuery.Include(value);
+            block.AddField(subQuery);
+            return;
+        }
+        AddSimpleProperty(block, property.Name, alias);
+    }
+
+    private static void AddSimpleProperty(QueryBlock block, string propertyName, string? alias)
+    {
+        if (alias == propertyName)
+        {
+            block.AddField(propertyName);
+            return;
+        }
+        block.AddField(alias is null
+            ? new QueryBlock(propertyName) { IsEmpty = true }
+            : new QueryBlock(alias, alias: propertyName) { IsEmpty = true });
     }
 
     private static void HandleDictionary(QueryBlock block, string name, string? alias, IDictionary dict)

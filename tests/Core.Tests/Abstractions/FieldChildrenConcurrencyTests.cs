@@ -33,7 +33,7 @@ public class FieldChildrenConcurrencyTests
                     for (int i = 0; i < appendsPerThread; i++)
                     {
                         var field = new FieldDefinition($"field_t{threadId}_i{i}");
-                        // This should be thread-safe but is not - race condition on _count++
+                        // The Append call should be thread-safe; this test reproduces a historical race on the internal count field.
                         children.Append(field);
                     }
                 }
@@ -208,7 +208,7 @@ public class FieldChildrenReadRaceConditionTests
     }
 
     [Fact]
-    public void FieldChildren_AsSpan_Should_Never_IndexOutOfRange_During_Resize()
+    public async Task FieldChildren_AsSpan_Should_Never_IndexOutOfRange_During_Resize()
     {
         // ARRANGE
         var children = new FieldChildren();
@@ -249,7 +249,7 @@ public class FieldChildrenReadRaceConditionTests
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // ASSERT
         exceptions.Should().BeEmpty("AsSpan should never cause IndexOutOfRange during concurrent resize");
@@ -281,7 +281,8 @@ public class FieldChildrenReadRaceConditionTests
     [Fact]
     public async Task FieldChildren_Enumerate_During_Concurrent_Appends_Should_Be_Safe()
     {
-        // This test exercises the enumerator snapshot logic (lines 255-295)
+        // Exercises the enumerator's snapshot logic — concurrent appends during iteration must not
+        // corrupt the in-flight enumerator's view of the collection.
         var children = new FieldChildren();
         for (int i = 0; i < 10; i++)
         {
@@ -495,13 +496,97 @@ public class FieldChildrenReadRaceConditionTests
     {
         var children = new FieldChildren();
         children.Append(new FieldDefinition("data", "String"));
-        
+
         var dict = (IReadOnlyDictionary<string, FieldDefinition>)children;
         var field = dict["data"];
-        
+
         field.Should().NotBeNull();
         field.Name.Should().Be("data");
         field.Type.Should().Be("String");
+    }
+
+    [Fact]
+    public void FieldChildren_Indexer_Should_Throw_For_Missing_Key()
+    {
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("data"));
+
+        var dict = (IReadOnlyDictionary<string, FieldDefinition>)children;
+        var act = () => dict["missing"];
+
+        act.Should().Throw<KeyNotFoundException>().WithMessage("*missing*");
+    }
+
+    [Fact]
+    public void FieldChildren_Empty_Keys_Values_Enumerator_Count_Should_Be_Zero()
+    {
+        var dict = (IReadOnlyDictionary<string, FieldDefinition>)new FieldChildren();
+
+        dict.Keys.Should().BeEmpty();
+        dict.Values.Should().BeEmpty();
+        dict.Should().BeEmpty();
+        dict.Count.Should().Be(0);
+        dict.ContainsKey("anything").Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldChildren_Indexed_Find_Should_Return_Null_For_Missing_Key()
+    {
+        // Threshold is 16; push past it to force the indexed lookup path.
+        var children = new FieldChildren();
+        for (int i = 0; i < 20; i++)
+        {
+            children.Append(new FieldDefinition($"f{i}"));
+        }
+        var dict = (IReadOnlyDictionary<string, FieldDefinition>)children;
+
+        // Indexed path: hit
+        dict.TryGetValue("f10", out var found).Should().BeTrue();
+        found!.Name.Should().Be("f10");
+
+        // Indexed path: miss (covers the false branch of _index!.TryGetValue)
+        dict.TryGetValue("missing", out _).Should().BeFalse();
+        dict.ContainsKey("missing").Should().BeFalse();
+        var act = () => dict["missing"];
+        act.Should().Throw<KeyNotFoundException>();
+    }
+
+    [Fact]
+    public void FieldChildren_Indexed_Find_Span_Overload_Miss_Path_Through_QueryBuilder()
+    {
+        // Add 20 nested fields under "user" to force FieldChildren past the index threshold,
+        // then add a brand-new nested field — this routes through Find(ReadOnlySpan<char>)
+        // and exercises the indexed-path miss branch in production code.
+        var builder = NGql.Core.Builders.QueryBuilder.CreateDefaultBuilder("Test");
+        for (int i = 0; i < 20; i++)
+        {
+            builder.AddField($"user.field{i}");
+        }
+        builder.AddField("user.brand_new_leaf");
+
+        var user = builder.Definition.Fields["user"];
+        ((IReadOnlyDictionary<string, FieldDefinition>)user.Fields).ContainsKey("brand_new_leaf").Should().BeTrue();
+        ((IReadOnlyDictionary<string, FieldDefinition>)user.Fields).ContainsKey("nope_not_here").Should().BeFalse();
+    }
+
+    [Fact]
+    public void FieldChildren_Indexed_Set_Span_Should_Update_Lookup_Index()
+    {
+        // Build past the index threshold under a parent, then re-add an existing dotted leaf
+        // with new arguments. ProcessDottedSegment routes through Set(ReadOnlySpan<char>) and
+        // must update the lookup index — verified by the merged-arguments outcome.
+        var builder = NGql.Core.Builders.QueryBuilder.CreateDefaultBuilder("Test");
+        for (int i = 0; i < 20; i++)
+        {
+            builder.AddField($"user.leaf{i}");
+        }
+
+        // Re-add an existing leaf with new arguments — triggers MergeFieldArguments + Set(span).
+        builder.AddField("user.leaf5", new Dictionary<string, object?> { ["limit"] = 10 });
+
+        var user = builder.Definition.Fields["user"];
+        var leaf5 = user.Fields["leaf5"];
+        leaf5.Arguments.Should().ContainKey("limit");
     }
 
     [Fact]

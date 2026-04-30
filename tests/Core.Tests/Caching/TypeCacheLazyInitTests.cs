@@ -199,7 +199,6 @@ public class TypeCacheLazyInitTests
         // Act
         for (int t = 0; t < threadCount; t++)
         {
-            int threadId = t;
             tasks[t] = Task.Run(() =>
             {
                 foreach (var type in types)

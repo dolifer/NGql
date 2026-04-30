@@ -127,7 +127,7 @@ public class VariableTests
     public void Variable_NullName_ShouldThrow()
     {
         // Arrange & Act & Assert
-        var action = () => new Variable(null, "ID");
+        var action = () => new Variable(null!, "ID");
         action.Should().Throw<ArgumentException>()
             .WithMessage("*Variable name cannot be null or whitespace*");
     }
@@ -145,7 +145,7 @@ public class VariableTests
     public void Variable_NullType_ShouldThrow()
     {
         // Arrange & Act & Assert
-        var action = () => new Variable("$id", null);
+        var action = () => new Variable("$id", null!);
         action.Should().Throw<ArgumentException>()
             .WithMessage("*Variable type cannot be null or whitespace*");
     }
@@ -339,11 +339,14 @@ public class VariableTests
         // Arrange & Assert - All operator combinations
         (v1 < v2).Should().BeTrue();
         (v1 <= v2).Should().BeTrue();
-        (v1 <= v1).Should().BeTrue(); // Equal case
+        // Reflexivity check via aliasing — avoid CS1718 by routing through a second reference.
+        var v1Alias = v1;
+        (v1 <= v1Alias).Should().BeTrue(); // Equal case
         (v2 > v1).Should().BeTrue();
         (v2 >= v1).Should().BeTrue();
-        (v2 >= v2).Should().BeTrue(); // Equal case
-        (v1 == v1).Should().BeTrue();
+        var v2Alias = v2;
+        (v2 >= v2Alias).Should().BeTrue(); // Equal case
+        (v1 == v1Alias).Should().BeTrue();
         (v1 != v2).Should().BeTrue();
     }
 }

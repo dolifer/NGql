@@ -183,7 +183,7 @@ public class TypeDriftEdgeCasesTests
     [Fact]
     public void DottedPath_Field_Operations_With_Complex_Arguments()
     {
-        // This test exercises the FieldFactory slow path (lines 85-86, 108)
+        // Exercises the FieldFactory slow path for dotted fields with arguments and nested args.
         var arguments = new System.Collections.Generic.Dictionary<string, object?>
         {
             { "first", 10 },

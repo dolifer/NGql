@@ -40,11 +40,7 @@ public sealed record FieldDefinition
         _alias = alias;
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
-        if (fields?.Count > 0)
-        {
-            _children = new FieldChildren();
-            foreach (var kvp in fields) _children.Append(kvp.Value);
-        }
+        _children = AsChildren(fields);
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
@@ -53,18 +49,26 @@ public sealed record FieldDefinition
         Name = name;
         _alias = alias;
         _type = type;
-        if (arguments?.Count > 0)
-        {
-            var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kvp in arguments) sorted[kvp.Key] = kvp.Value;
-            _arguments = sorted;
-        }
-        if (fields?.Count > 0)
-        {
-            _children = new FieldChildren();
-            foreach (var kvp in fields) _children.Append(kvp.Value);
-        }
+        _arguments = ToSortedArguments(arguments);
+        _children = AsChildren(fields);
         _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
+    }
+
+    private static SortedDictionary<string, object?>? ToSortedArguments(IDictionary<string, object?>? arguments)
+    {
+        if (arguments is null) return null;
+        if (arguments.Count == 0) return null;
+        var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in arguments) sorted[kvp.Key] = kvp.Value;
+        return sorted;
+    }
+
+    private static FieldChildren? AsChildren(Dictionary<string, FieldDefinition>? fields)
+    {
+        if (fields is null || fields.Count == 0) return null;
+        var children = new FieldChildren();
+        foreach (var kvp in fields) children.Append(kvp.Value);
+        return children;
     }
 
     // Properties
@@ -164,8 +168,12 @@ public sealed record FieldDefinition
             && IsNeverMerge == other.IsNeverMerge;
     }
 
+    // FieldDefinition holds mutable internal state by design (in-place merging in QueryMerger).
+    // The hash captures identity at evaluation time; callers do not stash hashes across mutations.
+#pragma warning disable S2328
     public override int GetHashCode()
         => HashCode.Combine(Name, Path, _type?.ToLowerInvariant(), _alias?.ToLowerInvariant(), IsNeverMerge);
+#pragma warning restore S2328
 
     public override string ToString()
     {

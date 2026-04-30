@@ -149,7 +149,8 @@ public sealed class QueryBuilder
         SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
             ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
             : null;
-        return AddFieldCore(field, sortedArgs, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
+        // Signature declares subFields non-nullable; the public API contract requires non-null.
+        return AddFieldCore(field, sortedArgs, subFields.Select(subField => new FieldDefinition(subField)), metadata);
     }
 
     /// <summary>

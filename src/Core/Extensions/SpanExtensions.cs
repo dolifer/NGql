@@ -47,46 +47,16 @@ internal static class SpanExtensions
     /// </summary>
     public static FieldDefinition GetOrAddSimpleField(this FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        if (children.TryGetValue(fieldName, out var existingField) && existingField != null)
+        if (children.TryGetValue(fieldName, out var existingField) && existingField is not null)
         {
-            if (arguments is { Count: > 0 })
-                existingField = existingField.MergeFieldArguments(arguments);
-
-            if (metadata is { Count: > 0 })
-            {
-                var mergedMetadata = Helpers.MergeNullableMetadata(existingField._metadata, metadata);
-                existingField = existingField with { Metadata = mergedMetadata };
-            }
-
+            existingField = MergeArgumentsAndMetadata(existingField, arguments, metadata);
             children.Set(fieldName, existingField);
             return existingField;
         }
 
-        if (string.IsNullOrWhiteSpace(parentPath))
-        {
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldName, metadata);
-            children.Append(field);
-            return field;
-        }
-
-        var estimatedLength = parentPath.Length + 1 + fieldName.Length;
-        if (estimatedLength <= 256)
-        {
-            Span<char> pathBuffer = stackalloc char[estimatedLength];
-            var pathBuilder = new SpanPathBuilder(pathBuffer);
-            pathBuilder.Append(parentPath.AsSpan());
-            pathBuilder.Append(fieldName);
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, pathBuilder.AsSpan(), metadata);
-            children.Append(field);
-            return field;
-        }
-        else
-        {
-            var fieldPath = $"{parentPath}.{fieldName}";
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldPath.AsSpan(), metadata);
-            children.Append(field);
-            return field;
-        }
+        return string.IsNullOrWhiteSpace(parentPath)
+            ? AppendNew(children, fieldName, fieldType, arguments, fieldName, metadata)
+            : AppendNewWithParentPath(children, fieldName, fieldType, arguments, parentPath, metadata);
     }
 
     /// <summary>
@@ -94,35 +64,43 @@ internal static class SpanExtensions
     /// </summary>
     internal static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
-        if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField != null)
+        if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField is not null)
         {
-            // Merge arguments if provided
-            if (arguments is { Count: > 0 })
-            {
-                existingField = existingField.MergeFieldArguments(arguments);
-            }
-            
-            // Merge metadata if provided
-            if (metadata is { Count: > 0 })
-            {
-                var mergedMetadata = Helpers.MergeNullableMetadata(existingField._metadata, metadata);
-                existingField = existingField with { Metadata = mergedMetadata };
-            }
-            
-            // Update the dictionary with the merged field
+            existingField = MergeArgumentsAndMetadata(existingField, arguments, metadata);
             fieldDefinitions.SetValue(fieldName, existingField);
             return existingField;
         }
 
-        // Build path using spans when possible
-        if (string.IsNullOrWhiteSpace(parentPath))
-        {
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldName, metadata);
-            fieldDefinitions.SetValue(fieldName, field);
-            return field;
-        }
+        return string.IsNullOrWhiteSpace(parentPath)
+            ? StoreNew(fieldDefinitions, fieldName, fieldType, arguments, fieldName, metadata)
+            : StoreNewWithParentPath(fieldDefinitions, fieldName, fieldType, arguments, parentPath, metadata);
+    }
 
-        // Use pooled char array for path building to avoid string concatenation
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition MergeArgumentsAndMetadata(FieldDefinition existing, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
+    {
+        if (arguments is { Count: > 0 })
+        {
+            existing = existing.MergeFieldArguments(arguments);
+        }
+        if (metadata is { Count: > 0 })
+        {
+            var mergedMetadata = Helpers.MergeNullableMetadata(existing._metadata, metadata);
+            existing = existing with { Metadata = mergedMetadata };
+        }
+        return existing;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition AppendNew(FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
+    {
+        var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, path, metadata);
+        children.Append(field);
+        return field;
+    }
+
+    private static FieldDefinition AppendNewWithParentPath(FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
+    {
         var estimatedLength = parentPath.Length + 1 + fieldName.Length;
         if (estimatedLength <= 256)
         {
@@ -130,19 +108,35 @@ internal static class SpanExtensions
             var pathBuilder = new SpanPathBuilder(pathBuffer);
             pathBuilder.Append(parentPath.AsSpan());
             pathBuilder.Append(fieldName);
-                
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, pathBuilder.AsSpan(), metadata);
-            fieldDefinitions.SetValue(fieldName, field);
-            return field;
+            return AppendNew(children, fieldName, fieldType, arguments, pathBuilder.AsSpan(), metadata);
         }
-        else
+
+        var fieldPath = $"{parentPath}.{fieldName}";
+        return AppendNew(children, fieldName, fieldType, arguments, fieldPath.AsSpan(), metadata);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDefinition StoreNew(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
+    {
+        var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, path, metadata);
+        fieldDefinitions.SetValue(fieldName, field);
+        return field;
+    }
+
+    private static FieldDefinition StoreNewWithParentPath(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
+    {
+        var estimatedLength = parentPath.Length + 1 + fieldName.Length;
+        if (estimatedLength <= 256)
         {
-            // Fallback to string concatenation for very long paths
-            var fieldPath = $"{parentPath}.{fieldName}";
-            var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, fieldPath.AsSpan(), metadata);
-            fieldDefinitions.SetValue(fieldName, field);
-            return field;
+            Span<char> pathBuffer = stackalloc char[estimatedLength];
+            var pathBuilder = new SpanPathBuilder(pathBuffer);
+            pathBuilder.Append(parentPath.AsSpan());
+            pathBuilder.Append(fieldName);
+            return StoreNew(fieldDefinitions, fieldName, fieldType, arguments, pathBuilder.AsSpan(), metadata);
         }
+
+        var fieldPath = $"{parentPath}.{fieldName}";
+        return StoreNew(fieldDefinitions, fieldName, fieldType, arguments, fieldPath.AsSpan(), metadata);
     }
 
     /// <summary>

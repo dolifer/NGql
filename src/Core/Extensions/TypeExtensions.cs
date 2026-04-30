@@ -16,54 +16,37 @@ internal static class TypeExtensions
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
-        // If it's already an object type, no need to convert
-        if (fieldDefinition._type == Constants.ObjectFieldType)
-        {
-            return false;
-        }
+        var type = fieldDefinition._type;
 
-        // If it's the default string type, it should be converted
-        if (fieldDefinition._type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(fieldDefinition._type))
-        {
-            return true;
-        }
+        // Already object — no conversion needed.
+        if (type == Constants.ObjectFieldType) return false;
 
-        // Special case: Array markers should be preserved ([] special case)
-        if (fieldDefinition._type == Constants.ArrayTypeMarker)
-        {
-            return false;
-        }
+        // Default String type or unset — convert.
+        if (type == Constants.DefaultFieldType || string.IsNullOrWhiteSpace(type)) return true;
 
-        // Special types like arrays or custom complex types should maintain their type
-        // even when nested fields are added
-        if (fieldDefinition.IsArray || fieldDefinition.IsNullable ||
-            fieldDefinition._type.Contains('[') || fieldDefinition._type.Contains(']') ||
-            fieldDefinition._type.EndsWith('?'))
-        {
-            return false;
-        }
+        // Array marker stays as-is.
+        if (type == Constants.ArrayTypeMarker) return false;
 
-        // Check for common primitive types that should be converted to object when they have fields
-        var lowerType = fieldDefinition._type.ToLowerInvariant();
-        var isPrimitiveType = lowerType == "int" ||
-                             lowerType == "integer" ||
-                             lowerType == "string" ||
-                             lowerType == "boolean" ||
-                             lowerType == "bool" ||
-                             lowerType == "float" ||
-                             lowerType == "double" ||
-                             lowerType == "decimal";
+        // Array / nullable / type-decorated names retain their type.
+        if (HasArrayOrNullableMarker(fieldDefinition, type)) return false;
 
-        // If it's a primitive type and will have nested fields, convert to object
-        if (isPrimitiveType)
-        {
-            return true;
-        }
-
-        // For custom types (not primitive, not array, not nullable), 
-        // don't convert to object - preserve the custom type
-        return false;
+        // Primitive scalars promote to object when subfields are added.
+        return IsPrimitiveTypeName(type);
     }
+
+    private static bool HasArrayOrNullableMarker(FieldDefinition fieldDefinition, string type)
+        => fieldDefinition.IsArray
+        || fieldDefinition.IsNullable
+        || type.Contains('[')
+        || type.Contains(']')
+        || type.EndsWith('?');
+
+    private static readonly HashSet<string> PrimitiveTypeNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "int", "integer", "string", "boolean", "bool", "float", "double", "decimal",
+    };
+
+    private static bool IsPrimitiveTypeName(string type) => PrimitiveTypeNames.Contains(type);
 
     /// <summary>
     /// Gets the core type name.
@@ -76,40 +59,44 @@ internal static class TypeExtensions
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
 
-        if (string.IsNullOrEmpty(fieldDefinition.Type))
-        {
-            return Constants.DefaultFieldType;
-        }
+        if (string.IsNullOrEmpty(fieldDefinition.Type)) return Constants.DefaultFieldType;
 
         var type = fieldDefinition.Type;
+        if (TryHandleStandaloneMarker(type, stripArrayMarker, stripNullableMarker, out var standalone))
+            return standalone;
 
-        // Handle standalone type markers
+        return ResolveDecoratedType(type, stripArrayMarker, stripNullableMarker);
+    }
+
+    private static bool TryHandleStandaloneMarker(string type, bool stripArrayMarker, bool stripNullableMarker, out string result)
+    {
         if (type == Constants.ArrayTypeMarker)
         {
-            return stripArrayMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.ArrayTypeMarker;
+            result = stripArrayMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.ArrayTypeMarker;
+            return true;
         }
-
         if (type == Constants.NullableTypeMarker)
         {
-            return stripNullableMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.NullableTypeMarker;
+            result = stripNullableMarker ? Constants.DefaultFieldType : Constants.DefaultFieldType + Constants.NullableTypeMarker;
+            return true;
         }
+        result = string.Empty;
+        return false;
+    }
 
-        // Use Span for efficient type parsing
+    private static string ResolveDecoratedType(string type, bool stripArrayMarker, bool stripNullableMarker)
+    {
         var typeSpan = type.AsSpan();
 
-        // Handle array notation with brackets
         var arrayStart = typeSpan.IndexOf('[');
         if (arrayStart > 0)
         {
-            var baseType = typeSpan[..arrayStart].ToString();
-            return stripArrayMarker ? baseType : type;
+            return stripArrayMarker ? typeSpan[..arrayStart].ToString() : type;
         }
 
-        // Handle nullable notation
         if (typeSpan.EndsWith(Constants.NullableTypeMarkerSpan) && typeSpan.Length > 1)
         {
-            var baseType = typeSpan[..^1].ToString();
-            return stripNullableMarker ? baseType : type;
+            return stripNullableMarker ? typeSpan[..^1].ToString() : type;
         }
 
         return type;

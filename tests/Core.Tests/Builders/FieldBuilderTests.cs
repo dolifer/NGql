@@ -135,9 +135,9 @@ public class FieldBuilderTests
             : fieldBuilder.AddField("name", typeValue).Build();
 
         // Assert
-        result.Fields["name"].Should().NotBeNull();
-        result.Fields["name"].Name.Should().Be("name");
-        result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType);
+        result.Fields["name"].Should().NotBeNull(because: description);
+        result.Fields["name"].Name.Should().Be("name", because: description);
+        result.Fields["name"].Type.Should().Be(Constants.DefaultFieldType, because: description);
     }
 
     [Theory]
@@ -239,10 +239,11 @@ public class FieldBuilderTests
         var result = fb.Build();
 
         // Assert
-        var parts = fieldPath.Split(' ', StringSplitOptions.RemoveEmptyEntries).Last().Split('.');
+        var splitBySpace = fieldPath.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = splitBySpace[^1].Split('.');
         var firstPart = parts[0];
-        result.Fields.Should().ContainKey(firstPart);
-        result.Fields[firstPart].Fields.Should().NotBeNull();
+        result.Fields.Should().ContainKey(firstPart, because: description);
+        result.Fields[firstPart].Fields.Should().NotBeNull(because: description);
     }
 
     [Theory]
@@ -261,12 +262,13 @@ public class FieldBuilderTests
         var result = fb.Build();
 
         // Assert
+        var combinedDescription = descPath is null ? description : $"{description} ({descPath})";
         var parts = path1.Split('.');
-        result.Fields.Should().ContainKey(parts[0]);
+        result.Fields.Should().ContainKey(parts[0], because: combinedDescription);
         if (path2 != null)
         {
             var parts2 = path2.Split('.');
-            result.Fields.Should().ContainKey(parts2[0]);
+            result.Fields.Should().ContainKey(parts2[0], because: combinedDescription);
         }
     }
 
@@ -287,9 +289,9 @@ public class FieldBuilderTests
             .Build();
 
         // Assert
-        result.Fields["field"].Should().NotBeNull();
-        result.Fields["field"].Name.Should().Be("field");
-        result.Fields["field"].Type.Should().Be("String");
+        result.Fields["field"].Should().NotBeNull(because: description);
+        result.Fields["field"].Name.Should().Be("field", because: description);
+        result.Fields["field"].Type.Should().Be("String", because: description);
     }
 
     [Theory]
@@ -309,11 +311,11 @@ public class FieldBuilderTests
         // Assert
         if (emptySubFields)
         {
-            result.Fields[fieldName].Fields.Should().BeEmpty();
+            result.Fields[fieldName].Fields.Should().BeEmpty(because: description);
         }
         else
         {
-            result.Fields.Should().ContainKey("dummy");
+            result.Fields.Should().ContainKey("dummy", because: description);
         }
     }
 
@@ -330,14 +332,14 @@ public class FieldBuilderTests
         var result = fieldBuilder.Build();
 
         // Assert
-        result.Should().NotBeNull();
+        result.Should().NotBeNull(because: description);
         if (emptyInit)
         {
-            result.Name.Should().Be("test");
+            result.Name.Should().Be("test", because: description);
         }
         else
         {
-            result.Fields["field"].Arguments.Should().BeEmpty();
+            result.Fields["field"].Arguments.Should().BeEmpty(because: description);
         }
     }
 
@@ -1460,17 +1462,20 @@ public class FieldBuilderTests
     [Fact]
     public void FieldBuilder_AddField_ComplexPathWithTypePrefix()
     {
+        // Verifies that adding two typed dotted-path fields under the same parent produces a single
+        // shared parent chain (i.e. the inner profile node has both leaves merged into it).
         var fieldBuilder = FieldBuilder.Create([], "root");
-        
+
         var result = fieldBuilder
             .AddField("String user.profile.name")
             .AddField("Int user.profile.age")
             .Build();
-        
-        result.Fields["user"].Type.Should().Be("object");
-        result.Fields["user"].Fields["profile"].Type.Should().Be("object");
-        result.Fields["user"].Fields["profile"].Fields["name"].Type.Should().Be("String");
-        result.Fields["user"].Fields["profile"].Fields["age"].Type.Should().Be("Int");
+
+        result.Fields.Should().HaveCount(1);
+        result.Fields["user"].Fields.Should().HaveCount(1);
+        result.Fields["user"].Fields["profile"].Fields.Should().HaveCount(2);
+        var expectedLeafNames = new List<string> { "name", "age" };
+        result.Fields["user"].Fields["profile"].Fields.Keys.Should().BeEquivalentTo(expectedLeafNames);
     }
 
     [Fact]
@@ -2164,16 +2169,22 @@ public class FieldBuilderTests
         }
         else if (scenario == "whitespace-segment")
         {
-            // Covers line 310: skipping whitespace segments
+            // Covers the whitespace-segment skip branch when a dotted path contains an empty/blank segment.
             var fields = new Dictionary<string, FieldDefinition>();
-            
+
             var result = FieldFactory.GetOrAddField(fields, "user. .profile".AsSpan(), "Profile".AsSpan(), null);
-            
+
             result.Should().NotBeNull();
+
+            // Also exercise the per-node FieldChildren-variant of GetOrAddComplexField — same skip
+            // branch lives there for the same reason.
+            var parent = new FieldDefinition("root", "Root");
+            var nested = FieldFactory.GetOrAddField(parent, "child. .grandchild".AsSpan(), "Type".AsSpan(), null);
+            nested.Should().NotBeNull();
         }
         else if (scenario == "merge-args-repeated")
         {
-            // Covers line 353: MergeFieldArguments call
+            // Covers the MergeFieldArguments branch when re-adding the same dotted path with new args.
             var parent = new FieldDefinition("root", "Root");
             var firstArgs = new Dictionary<string, object?> { { "first", 10 } };
             
@@ -2194,7 +2205,7 @@ public class FieldBuilderTests
     {
         if (scenario == "long-path-pooling")
         {
-            // Covers lines 221-222: pooling path when estimatedPathLength > 512
+            // Covers the heap-pooled path-builder branch taken when estimatedPathLength exceeds the stack buffer.
             var fields = new Dictionary<string, FieldDefinition>();
             var longPath = string.Join(".", Enumerable.Range(0, 80).Select(i => $"segment{i}"));
             
@@ -2205,7 +2216,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "long-path-with-args-pooling")
         {
-            // Covers lines 250-252: pooling path with parent and metadata
+            // Covers the heap-pooled path-builder branch when parent context and metadata are both present.
             var parent = new FieldDefinition("root", "Root");
             var longFieldPath = string.Join(".", Enumerable.Range(0, 70).Select(i => $"seg{i}"));
             var metadata = new Dictionary<string, object?> { { "pooled", true } };

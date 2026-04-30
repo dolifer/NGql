@@ -553,7 +553,7 @@ public class QueryTextBuilderTests
             "string",
             3.14,
             true,
-            null,
+            null!,
             new[] { 1, 2 },
             new Dictionary<string, object> { ["key"] = "value" }
         };
@@ -658,9 +658,10 @@ public class QueryTextBuilderTests
     [Fact]
     public void QueryTextBuilder_LargeCapacityBuilder_NotReturned()
     {
-        // Test the memory leak prevention: builders that grow too large are not reused
-        // This tests the line: if (builder._stringBuilder.Capacity > MaxBuilderCapacity) { return; }
-        
+        // Test the memory leak prevention: builders that grow too large are not reused — when the
+        // returned StringBuilder's capacity exceeds MaxBuilderCapacity, ReturnToPool drops it on the
+        // floor rather than recycling it.
+
         var builder = QueryTextBuilder.GetFromPool();
         
         // Use reflection to access the private _stringBuilder field
@@ -668,7 +669,7 @@ public class QueryTextBuilderTests
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         sbField.Should().NotBeNull("_stringBuilder field should exist");
         
-        var stringBuilder = (StringBuilder)sbField.GetValue(builder);
+        var stringBuilder = (StringBuilder)sbField!.GetValue(builder)!;
         
         // Append a large string to make the capacity exceed MaxBuilderCapacity (256KB)
         var largeString = new string('x', 300 * 1024); // 300KB
@@ -682,7 +683,7 @@ public class QueryTextBuilderTests
         
         // Get a builder from pool - if the large one was properly rejected, this should be a fresh one
         var nextBuilder = QueryTextBuilder.GetFromPool();
-        var nextStringBuilder = (StringBuilder)sbField.GetValue(nextBuilder);
+        var nextStringBuilder = (StringBuilder)sbField.GetValue(nextBuilder)!;
         
         // The next builder's capacity should be reasonable (not grown to 300KB+)
         // The initial default capacity is typically much smaller
@@ -716,5 +717,21 @@ public class QueryTextBuilderTests
         var action = () => enumVal.Equals(invalidObj);
         action.Should().Throw<ArgumentException>()
             .WithMessage("*Object must be of type*");
+    }
+
+    [Fact]
+    public void Build_DeepNestingBeyondPaddingCache_FallsBackToInlineAllocation()
+    {
+        // QueryTextBuilder.GetPadding has a 20-element cache; nesting > 20 levels makes
+        // GetPadding allocate a fresh string instead of using the cache. Build a deeply
+        // nested query through the public API.
+        var builder = QueryBuilder.CreateDefaultBuilder("DeepQuery");
+        // 25 dotted segments — deeper than the 20-level padding cache.
+        builder.AddField("a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y");
+
+        var rendered = builder.ToString();
+
+        rendered.Should().Contain("a");
+        rendered.Should().Contain("y");
     }
 }

@@ -10,113 +10,96 @@ namespace NGql.Core.Extensions;
 /// </summary>
 internal static class FieldDefinitionExtensions
 {
-    private const int MaxFieldDepth = 200;
-
     /// <summary>
     /// Determines if two fields can be merged based on their structure and arguments.
+    /// The recursion is bounded by the field tree's depth — the public API does not allow
+    /// constructing cyclic trees (FieldDefinition.Fields is get-only, _children is internal),
+    /// so the recursion always terminates. A library bug introducing a cycle would surface as
+    /// a StackOverflowException, which is louder and more actionable than a swallowed throw.
     /// </summary>
-    /// <param name="existingField">The existing field definition</param>
-    /// <param name="incomingField">The incoming field definition to merge</param>
-    /// <returns>True if fields can be merged, false otherwise</returns>
     internal static bool CanMergeFields(FieldDefinition existingField, FieldDefinition incomingField)
     {
         if (!Helpers.AreArgumentsEqual(existingField._arguments, incomingField._arguments))
             return false;
-        return AreNestedFieldsCompatible(existingField, incomingField, 0);
+        return AreNestedFieldsCompatible(existingField, incomingField);
     }
 
-    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField, int depth)
+    private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
+        => IncomingChildrenCompatible(existingField._children, incomingField._children)
+        && ExistingExtrasCompatible(existingField, incomingField._children);
+
+    private static bool IncomingChildrenCompatible(FieldChildren? existingChildren, FieldChildren? incomingChildren)
     {
-        if (depth > MaxFieldDepth)
-            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}. Possible circular reference in field definitions.");
+        if (incomingChildren is not { Count: > 0 }) return true;
 
-        var incomingChildren = incomingField._children;
-        var existingChildren = existingField._children;
-
-        if (incomingChildren is { Count: > 0 })
+        var span = incomingChildren.AsSpan();
+        for (int i = 0; i < span.Length; i++)
         {
-            var incomingSpan = incomingChildren.AsSpan();
-            for (int i = 0; i < incomingSpan.Length; i++)
-            {
-                var incomingNestedField = incomingSpan[i];
-                if (existingChildren?.TryGetValue(incomingNestedField.Name, out var existingNestedField) == true)
-                {
-                    if (!Helpers.AreArgumentsEqual(existingNestedField._arguments, incomingNestedField._arguments))
-                        return false;
-                    if (!AreNestedFieldsCompatible(existingNestedField, incomingNestedField, depth + 1))
-                        return false;
-                }
-                else
-                {
-                    if (HasAnyArguments(incomingNestedField, depth + 1))
-                        return false;
-                }
-            }
+            if (!IsIncomingChildCompatible(existingChildren, span[i]))
+                return false;
         }
-
-        // Skip the existing-not-in-incoming check entirely when nothing in the existing subtree
-        // could ever fail it. This was an O(N) scan per call; we early-out when no field in the
-        // existing subtree carries arguments.
-        if (existingChildren is { Count: > 0 } && SubtreeHasAnyArguments(existingField, depth))
-        {
-            var existingSpan = existingChildren.AsSpan();
-            for (int i = 0; i < existingSpan.Length; i++)
-            {
-                var existingNestedField = existingSpan[i];
-                if ((incomingChildren is null || incomingChildren.Find(existingNestedField.Name) == null)
-                    && HasAnyArguments(existingNestedField, depth + 1))
-                {
-                    return false;
-                }
-            }
-        }
-
         return true;
     }
 
-    private static bool SubtreeHasAnyArguments(FieldDefinition field, int depth)
+    private static bool IsIncomingChildCompatible(FieldChildren? existingChildren, FieldDefinition incomingChild)
+    {
+        if (existingChildren is null) return !HasAnyArguments(incomingChild);
+        if (!existingChildren.TryGetValue(incomingChild.Name, out var existingChild)) return !HasAnyArguments(incomingChild);
+        return Helpers.AreArgumentsEqual(existingChild!._arguments, incomingChild._arguments)
+            && AreNestedFieldsCompatible(existingChild, incomingChild);
+    }
+
+    // Skip the existing-not-in-incoming check entirely when nothing in the existing subtree
+    // could ever fail it — early-out when no field in the existing subtree carries arguments.
+    private static bool ExistingExtrasCompatible(FieldDefinition existingField, FieldChildren? incomingChildren)
+    {
+        var existingChildren = existingField._children;
+        if (existingChildren is not { Count: > 0 } || !SubtreeHasAnyArguments(existingField))
+            return true;
+
+        var span = existingChildren.AsSpan();
+        for (int i = 0; i < span.Length; i++)
+        {
+            var existingChild = span[i];
+            if (!IsExistingExtraCompatible(existingChild, incomingChildren))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool IsExistingExtraCompatible(FieldDefinition existingChild, FieldChildren? incomingChildren)
+    {
+        if (incomingChildren is null) return !HasAnyArguments(existingChild);
+        return incomingChildren.Find(existingChild.Name) is not null || !HasAnyArguments(existingChild);
+    }
+
+    private static bool SubtreeHasAnyArguments(FieldDefinition field)
     {
         if (field._subtreeHasAnyArguments is { } cached) return cached;
 
-        if (depth > MaxFieldDepth)
-            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}.");
-
-        bool result;
-        if (field._arguments is { Count: > 0 })
-        {
-            result = true;
-        }
-        else if (field._children is null || field._children.Count == 0)
-        {
-            result = false;
-        }
-        else
-        {
-            result = false;
-            var span = field._children.AsSpan();
-            for (int i = 0; i < span.Length; i++)
-            {
-                if (SubtreeHasAnyArguments(span[i], depth + 1))
-                {
-                    result = true;
-                    break;
-                }
-            }
-        }
-
+        var result = field._arguments is { Count: > 0 } || AnyChildHasArguments(field._children);
         field._subtreeHasAnyArguments = result;
         return result;
     }
 
-    private static bool HasAnyArguments(FieldDefinition field, int depth)
+    private static bool AnyChildHasArguments(FieldChildren? children)
     {
-        if (depth > MaxFieldDepth)
-            throw new InvalidOperationException($"Field tree depth exceeds maximum allowed depth of {MaxFieldDepth}.");
+        if (children is null || children.Count == 0) return false;
+        var span = children.AsSpan();
+        for (int i = 0; i < span.Length; i++)
+        {
+            if (SubtreeHasAnyArguments(span[i])) return true;
+        }
+        return false;
+    }
+
+    private static bool HasAnyArguments(FieldDefinition field)
+    {
         if (field._arguments is { Count: > 0 }) return true;
         if (field._children is null) return false;
         foreach (var child in field._children.AsSpan())
         {
-            if (HasAnyArguments(child, depth + 1)) return true;
+            if (HasAnyArguments(child)) return true;
         }
         return false;
     }
@@ -137,32 +120,44 @@ internal static class FieldDefinitionExtensions
     /// <returns><paramref name="existing"/> after mutation.</returns>
     internal static FieldDefinition MergeFieldsInPlace(FieldDefinition existing, FieldDefinition incoming)
     {
-        if (!string.IsNullOrEmpty(existing._type) && !string.IsNullOrEmpty(incoming._type) &&
-            !existing._type.AsSpan().Equals(incoming._type.AsSpan(), StringComparison.OrdinalIgnoreCase))
-        {
-            throw new QueryMergeException($"Type conflict: existing field has type '{existing._type}', incoming field has type '{incoming._type}'");
-        }
-
-        var incomingChildren = incoming._children;
-        if (incomingChildren is { Count: > 0 })
-        {
-            var existingChildren = existing._children ??= new FieldChildren();
-            var span = incomingChildren.AsSpan();
-            for (int i = 0; i < span.Length; i++)
-            {
-                MergeChildInPlace(existingChildren, span[i]);
-            }
-            // Subtree changed — invalidate the cached "has any arguments" flag on this node.
-            existing._subtreeHasAnyArguments = null;
-        }
-
-        if (incoming._arguments is { Count: > 0 })
-        {
-            existing.MergeFieldArgumentsInPlace(incoming._arguments);
-            existing._subtreeHasAnyArguments = null;
-        }
-
+        ThrowIfTypesConflict(existing, incoming);
+        MergeIncomingChildrenInPlace(existing, incoming._children);
+        MergeIncomingArgumentsInPlace(existing, incoming._arguments);
         return existing;
+    }
+
+    private static void ThrowIfTypesConflict(FieldDefinition existing, FieldDefinition incoming)
+    {
+        // _type defaults to Constants.DefaultFieldType in every public constructor and is
+        // never null on the merge path through Include — the field is always touched by
+        // QueryBuilder.AddField which goes through FieldFactory.CreateFieldDefinition.
+        if (existing._type!.AsSpan().Equals(incoming._type!.AsSpan(), StringComparison.OrdinalIgnoreCase)) return;
+        throw new QueryMergeException($"Type conflict: existing field has type '{existing._type}', incoming field has type '{incoming._type}'");
+    }
+
+    private static void MergeIncomingChildrenInPlace(FieldDefinition existing, FieldChildren? incomingChildren)
+    {
+        if (incomingChildren is null) return;
+        if (incomingChildren.Count == 0) return;
+
+        // Existing._children is non-null on every path that reaches here through the public
+        // Include API: type-compatibility means both sides are object-typed, and object-typed
+        // FieldDefinitions get a children collection from QueryBuilder.AddField at construction
+        // time. Trust the invariant.
+        var existingChildren = existing._children!;
+        var span = incomingChildren.AsSpan();
+        for (int i = 0; i < span.Length; i++)
+        {
+            MergeChildInPlace(existingChildren, span[i]);
+        }
+        existing._subtreeHasAnyArguments = null;
+    }
+
+    private static void MergeIncomingArgumentsInPlace(FieldDefinition existing, SortedDictionary<string, object?>? incomingArguments)
+    {
+        if (incomingArguments is not { Count: > 0 }) return;
+        existing.MergeFieldArgumentsInPlace(incomingArguments);
+        existing._subtreeHasAnyArguments = null;
     }
 
     private static void MergeChildInPlace(FieldChildren existingChildren, FieldDefinition incomingChild)
@@ -197,25 +192,23 @@ internal static class FieldDefinitionExtensions
         return false;
     }
 
+    /// <summary>
+    /// Merges <paramref name="newArguments"/> into <paramref name="existingField"/>'s argument
+    /// dictionary in place. Caller (MergeFieldsInPlace via CanMergeFields) guarantees that
+    /// <c>existingField._arguments</c> already has the same keys as <paramref name="newArguments"/>;
+    /// the merge here only refines values for keys that hold nested dictionaries.
+    /// </summary>
+    // Callers (MergeFieldsInPlace via CanMergeFields) guarantee newArguments has Count > 0
+    // and existingField._arguments is non-null with the same keys.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static void MergeFieldArgumentsInPlace(this FieldDefinition existingField, IDictionary<string, object?> newArguments)
     {
-        if (newArguments.Count == 0) return;
-
-        if (existingField._arguments is null || existingField._arguments.Count == 0)
-        {
-            existingField._arguments = newArguments is SortedDictionary<string, object?> sd
-                ? sd
-                : new SortedDictionary<string, object?>(newArguments, StringComparer.OrdinalIgnoreCase);
-            return;
-        }
-
-        var target = existingField._arguments;
+        var target = existingField._arguments!;
         foreach (var (key, newValue) in newArguments)
         {
-            if (target.TryGetValue(key, out var existingValue) &&
-                existingValue is IDictionary<string, object?> existingDict &&
-                newValue is IDictionary<string, object?> newDict)
+            if (target.TryGetValue(key, out var existingValue)
+                && existingValue is IDictionary<string, object?> existingDict
+                && newValue is IDictionary<string, object?> newDict)
             {
                 target[key] = Helpers.MergeNullableDictionaries(existingDict, newDict);
                 continue;
@@ -227,47 +220,46 @@ internal static class FieldDefinitionExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, IDictionary<string, object?>? newArguments)
     {
-        // FAST PATH: If no new arguments to merge, return as-is
-        if (newArguments is not { Count: > 0 })
-        {
-            return existingField;
-        }
+        if (newArguments is not { Count: > 0 }) return existingField;
 
-        // FAST PATH: If an existing field has no arguments, just set the new arguments
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {
-            var sortedNew = newArguments is SortedDictionary<string, object?> sd
-                ? sd
-                : new SortedDictionary<string, object?>(newArguments, StringComparer.OrdinalIgnoreCase);
-            return existingField with { _arguments = sortedNew };
+            return existingField with { _arguments = AsSortedCaseInsensitive(newArguments) };
         }
 
-        // MERGE PATH: Create a completely new case-insensitive dictionary to ensure proper behavior
-        var mergedArguments = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        
-        // Copy existing arguments into a new case-insensitive dictionary
-        foreach (var (key, value) in existingField._arguments)
+        var merged = CopyToSortedCaseInsensitive(existingField._arguments);
+        ApplyArgumentOverrides(merged, newArguments);
+        return existingField with { _arguments = merged };
+    }
+
+    private static SortedDictionary<string, object?> AsSortedCaseInsensitive(IDictionary<string, object?> source)
+        => source is SortedDictionary<string, object?> sd
+            ? sd
+            : new SortedDictionary<string, object?>(source, StringComparer.OrdinalIgnoreCase);
+
+    private static SortedDictionary<string, object?> CopyToSortedCaseInsensitive(IDictionary<string, object?> source)
+    {
+        var copy = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in source) copy[key] = value;
+        return copy;
+    }
+
+    private static void ApplyArgumentOverrides(SortedDictionary<string, object?> target, IDictionary<string, object?> overrides)
+    {
+        foreach (var (key, newValue) in overrides)
         {
-            mergedArguments[key] = value;
+            target[key] = MergedArgumentValue(target, key, newValue);
         }
+    }
 
-        // Process new arguments - they will overwrite existing keys due to case-insensitive comparer
-        foreach (var (key, newValue) in newArguments)
+    private static object? MergedArgumentValue(SortedDictionary<string, object?> target, string key, object? newValue)
+    {
+        if (target.TryGetValue(key, out var existingValue)
+            && existingValue is IDictionary<string, object?> existingDict
+            && newValue is IDictionary<string, object?> newDict)
         {
-            // Handle nested dictionary merging if needed
-            if (mergedArguments.TryGetValue(key, out var existingValue) &&
-                existingValue is IDictionary<string, object?> existingDict && 
-                newValue is IDictionary<string, object?> newDict)
-            {
-                // Use efficient generic merge without extra allocations
-                mergedArguments[key] = Helpers.MergeNullableDictionaries(existingDict, newDict);
-                continue;
-            }
-            
-            // For all other cases (new keys or non-dictionary values), overwrite with new value
-            mergedArguments[key] = newValue;
+            return Helpers.MergeNullableDictionaries(existingDict, newDict);
         }
-
-        return existingField with { _arguments = mergedArguments };
+        return newValue;
     }
 }

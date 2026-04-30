@@ -26,15 +26,22 @@ public static class QueryDefinitionExtensions
         out string? resolvedPath,
         string? prependPath = null)
     {
-        if (fields == null || path.Length == 0)
-        {
-            resolvedPath = null;
-            return null;
-        }
-        
-        IReadOnlyDictionary<string, FieldDefinition>? currentFields = fields;
+        resolvedPath = null;
+        if (fields is null || path.Length == 0) return null;
+
+        var pathSegments = new List<string>();
+        var currentField = WalkPath(fields, path, pathSegments);
+        if (currentField is null) return null;
+
+        var joinedPath = string.Join(".", pathSegments);
+        resolvedPath = prependPath is not null ? $"{prependPath}.{joinedPath}" : joinedPath;
+        return currentField;
+    }
+
+    private static FieldDefinition? WalkPath(IReadOnlyDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> path, List<string> pathSegments)
+    {
+        var currentFields = fields;
         FieldDefinition? currentField = null;
-        List<string>? pathSegments = null;
 
         while (path.Length > 0)
         {
@@ -42,40 +49,16 @@ public static class QueryDefinitionExtensions
             var segment = dotIndex >= 0 ? path[..dotIndex] : path;
 
             var match = PreserveExtensions.FindFieldByNameOrAlias(currentFields, segment);
-            if (!match.HasValue)
-            {
-                resolvedPath = null;
-                return null;
-            }
+            if (!match.HasValue) return null;
 
             currentField = match.Value.Value;
-            pathSegments ??= new List<string>();
             pathSegments.Add(match.Value.Key);
 
-            if (dotIndex < 0)
-                break; // Last segment
-
-            // Navigate to next level (but allow last segment to be a leaf)
-            if (currentField._children == null)
-            {
-                resolvedPath = null;
-                return null;
-            }
+            if (dotIndex < 0) break;
+            if (currentField._children is null) return null;
 
             currentFields = currentField.Fields;
             path = path[(dotIndex + 1)..];
-        }
-
-        if (pathSegments == null)
-        {
-            resolvedPath = null;
-        }
-        else
-        {
-            var joinedPath = string.Join(".", pathSegments);
-            resolvedPath = prependPath != null
-                ? $"{prependPath}.{joinedPath}"
-                : joinedPath;
         }
 
         return currentField;
@@ -105,18 +88,22 @@ public static class QueryDefinitionExtensions
         {
             var currentPath = string.IsNullOrEmpty(basePath) ? key : $"{basePath}.{key}";
 
-            // Check if this field matches by name or alias
-            if (string.Equals(fieldDef.Name, fieldName, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrEmpty(fieldDef.Alias) && string.Equals(fieldDef.Alias, fieldName, StringComparison.OrdinalIgnoreCase)))
+            if (NameOrAliasMatches(fieldDef, fieldName))
             {
                 results.Add(currentPath);
             }
 
-            // Recursively search child fields
             if (fieldDef.HasFields)
             {
                 FindFieldRecursivelyCore(fieldDef._children!, fieldName, currentPath, results);
             }
         }
+    }
+
+    private static bool NameOrAliasMatches(FieldDefinition field, string name)
+    {
+        if (string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.IsNullOrEmpty(field.Alias)) return false;
+        return string.Equals(field.Alias, name, StringComparison.OrdinalIgnoreCase);
     }
 }

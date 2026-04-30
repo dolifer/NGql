@@ -49,29 +49,25 @@ internal static class KeyGenerator
 
     private static string GenerateUniqueKeyCore(string baseKey, HashSet<string> existingKeySet)
     {
-        var counter = 1;
-        Span<char> buffer = stackalloc char[baseKey.Length + 16]; // Reserve space for "_" + counter
+        // 16 chars holds "_" plus a 15-digit counter — counter is int, max ~10 digits.
+        Span<char> buffer = stackalloc char[baseKey.Length + 16];
         baseKey.AsSpan().CopyTo(buffer);
         buffer[baseKey.Length] = '_';
 
-        do
+        // Loop terminates as soon as the formatted candidate isn't in the existingKeySet.
+        // existingKeySet has finite capacity bounded by the number of fields in the merged tree,
+        // so a not-present key is always reachable; counter is int, more than enough headroom.
+#pragma warning disable S1994
+        for (int counter = 1; ; counter++)
+#pragma warning restore S1994
         {
-            var counterSpan = buffer[(baseKey.Length + 1)..];
-            if (counter.TryFormat(counterSpan, out var charsWritten))
+            counter.TryFormat(buffer[(baseKey.Length + 1)..], out var charsWritten);
+            var uniqueKey = new string(buffer[..(baseKey.Length + 1 + charsWritten)]);
+
+            if (!existingKeySet.Contains(uniqueKey))
             {
-                var keySpan = buffer[..(baseKey.Length + 1 + charsWritten)];
-                var uniqueKey = new string(keySpan);
-
-                if (!existingKeySet.Contains(uniqueKey))
-                {
-                    return uniqueKey;
-                }
+                return uniqueKey;
             }
-            counter++;
         }
-        while (counter < 10000); // Safety limit
-
-        // Fallback for very large counters
-        return $"{baseKey}_{counter}";
     }
 }

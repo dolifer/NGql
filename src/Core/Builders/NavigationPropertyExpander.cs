@@ -72,7 +72,9 @@ internal static class NavigationPropertyExpander
 
     private static bool IsNavigationProperty(PropertyInfo property)
     {
-        return property.SetMethod == null && property.GetGetMethod()?.IsPublic == true;
+        // Properties surfaced by GetProperty(BindingFlags.Public | BindingFlags.Instance)
+        // always have a public getter, so GetGetMethod() never returns null in this scope.
+        return property.SetMethod == null && property.GetGetMethod()!.IsPublic;
     }
 
     private static void ExpandNavigationPropertyFields(Type parameterType, string? remainingPath, HashSet<string> result)

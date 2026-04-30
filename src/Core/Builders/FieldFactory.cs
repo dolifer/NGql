@@ -102,51 +102,23 @@ internal static class FieldFactory
     /// Processes dotted fields without arguments or metadata for optimal performance — root-level variant.
     /// The first segment uses the root dictionary; subsequent segments use <see cref="FieldDefinition._children"/>.
     /// </summary>
+    // Callers reach here only via IsDottedField() which guarantees fieldPath contains '.',
+    // so the loop runs at least twice and parentField is non-null on exit.
     private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
     {
-        // parentField == null means we are still at the root dictionary level.
         FieldDefinition? parentField = null;
         var pathStart = 0;
 
         while (pathStart < fieldPath.Length)
         {
             ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
-            var segmentName = spanSegment.Name.ToString();
-            FieldDefinition field;
-
-            if (parentField == null)
-            {
-                // Root level — look up / insert in the root Dictionary.
-                if (!rootFields.TryGetValue(segmentName, out field!))
-                {
-                    field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
-                    rootFields[segmentName] = field;
-                }
-                else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
-                {
-                    field._type = Constants.ObjectFieldType;
-                }
-            }
-            else
-            {
-                // Nested level — look up / insert in parent._children.
-                var children = parentField._children ??= new FieldChildren();
-                if (!children.TryGetValue(spanSegment.Name, out field!))
-                {
-                    field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
-                    children.Append(field);
-                }
-                else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
-                {
-                    field._type = Constants.ObjectFieldType;
-                }
-            }
-
-            parentField = field;
+            parentField = parentField is null
+                ? GetOrCreateRootSegment(rootFields, spanSegment, fieldPath, pathStart, fieldType)
+                : GetOrCreateChildSegment(parentField, spanSegment, fieldPath, pathStart, fieldType);
             pathStart = nextStart;
         }
 
-        return parentField ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return parentField!;
     }
 
     /// <summary>
@@ -161,26 +133,45 @@ internal static class FieldFactory
         while (pathStart < fieldPath.Length)
         {
             ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
-            var children = currentParent._children ??= new FieldChildren();
-            FieldDefinition field;
-
-            if (!children.TryGetValue(spanSegment.Name, out field!))
-            {
-                field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
-                children.Append(field);
-            }
-            else if (!spanSegment.IsLastFragment && field.ShouldConvertToObjectType())
-            {
-                field._type = Constants.ObjectFieldType;
-            }
-
-            currentParent = field;
+            currentParent = GetOrCreateChildSegment(currentParent, spanSegment, fieldPath, pathStart, fieldType);
             pathStart = nextStart;
         }
 
-        return currentParent == rootParent
-            ? throw new InvalidOperationException("Failed to create field: no valid segments found")
-            : currentParent;
+        return currentParent;
+    }
+
+    private static FieldDefinition GetOrCreateRootSegment(Dictionary<string, FieldDefinition> rootFields, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
+    {
+        var segmentName = spanSegment.Name.ToString();
+        if (!rootFields.TryGetValue(segmentName, out var field))
+        {
+            field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+            rootFields[segmentName] = field;
+            return field;
+        }
+        PromoteToObjectIfNeeded(field, spanSegment.IsLastFragment);
+        return field;
+    }
+
+    private static FieldDefinition GetOrCreateChildSegment(FieldDefinition parentField, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
+    {
+        var children = parentField._children ??= new FieldChildren();
+        if (!children.TryGetValue(spanSegment.Name, out var field) || field is null)
+        {
+            field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+            children.Append(field);
+            return field;
+        }
+        PromoteToObjectIfNeeded(field, spanSegment.IsLastFragment);
+        return field;
+    }
+
+    private static void PromoteToObjectIfNeeded(FieldDefinition field, bool isLastFragment)
+    {
+        if (!isLastFragment && field.ShouldConvertToObjectType())
+        {
+            field._type = Constants.ObjectFieldType;
+        }
     }
 
     /// <summary>
@@ -247,6 +238,8 @@ internal static class FieldFactory
     /// <summary>
     /// Processes individual segments of a dotted field path — root-level variant.
     /// </summary>
+    // Callers reach here only via IsDottedField() which guarantees fieldPath contains '.', so the
+    // loop runs at least once and result is non-null on exit.
     private static FieldDefinition ProcessDottedFieldSegments(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
     {
         FieldDefinition? parentField = null;
@@ -274,7 +267,7 @@ internal static class FieldFactory
             fieldPath = remainingPath;
         }
 
-        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return result!;
     }
 
     /// <summary>
@@ -296,7 +289,7 @@ internal static class FieldFactory
             fieldPath = remainingPath;
         }
 
-        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return result!;
     }
 
     /// <summary>
@@ -317,28 +310,20 @@ internal static class FieldFactory
     {
         if (!currentFields.TryGetValue(segment, out var field))
         {
-            var segmentArgs = isLastSegment ? arguments : null;
-            var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-            var segmentMetadata = isLastSegment ? metadata : null;
-
-            field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
+            field = CreateDottedSegmentField(segment, isLastSegment, fieldType, arguments, metadata, segmentPath);
             currentFields.SetValue(segment, field);
             return field;
         }
 
-        // NOTE: The isLastSegment branch for merging arguments is unreachable here because:
-        // - This Dictionary variant only processes the FIRST segment of dotted paths
-        // - The first segment always has isLastSegment=false for multi-segment paths
-        // - Single-segment paths use GetOrAddSimpleField instead
-        // The equivalent logic exists in the FieldChildren variant (lines 360-364) and IS reachable
-
-        if (!isLastSegment && field?.ShouldConvertToObjectType() == true)
+        // This Dictionary variant only processes the FIRST segment of dotted paths, so isLastSegment
+        // is necessarily false (single-segment paths route through GetOrAddSimpleField instead).
+        var existing = field!;
+        if (existing.ShouldConvertToObjectType())
         {
-            field = field with { Type = Constants.ObjectFieldType };
-            currentFields.SetValue(segment, field);
+            existing = existing with { Type = Constants.ObjectFieldType };
+            currentFields.SetValue(segment, existing);
         }
-
-        return field ?? throw new InvalidOperationException("Field cannot be null");
+        return existing;
     }
 
     /// <summary>
@@ -348,42 +333,58 @@ internal static class FieldFactory
     {
         if (!children.TryGetValue(segment, out var field))
         {
-            var segmentArgs = isLastSegment ? arguments : null;
-            var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-            var segmentMetadata = isLastSegment ? metadata : null;
-
-            field = Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
+            field = CreateDottedSegmentField(segment, isLastSegment, fieldType, arguments, metadata, segmentPath);
             children.Append(field);
             return field;
         }
 
-        if (isLastSegment && arguments?.Count > 0)
-        {
-            field = field.MergeFieldArguments(arguments);
-            children.Set(segment, field);
-        }
+        if (!isLastSegment) return PromoteIntermediateChildToObject(field!);
+        // FieldBuilder normalizes empty argument dictionaries to null upstream, so a
+        // non-null `arguments` here always has Count > 0.
+        return arguments is null ? field! : MergeArgumentsIntoExistingChild(children, segment, field!, arguments);
+    }
 
-        if (!isLastSegment && field.ShouldConvertToObjectType())
-        {
-            field._type = Constants.ObjectFieldType;
-        }
+    // ProcessDottedFieldFastPath handles the args-null case before reaching here, and
+    // FieldBuilder.Create normalizes empty argument dictionaries to null upstream — so by
+    // the time we get here arguments is always a non-null dictionary with Count > 0.
+    private static FieldDefinition MergeArgumentsIntoExistingChild(FieldChildren children, ReadOnlySpan<char> segment, FieldDefinition existing, IDictionary<string, object?> arguments)
+    {
+        var merged = existing.MergeFieldArguments(arguments);
+        children.Set(segment, merged);
+        return merged;
+    }
 
-        return field;
+    private static FieldDefinition PromoteIntermediateChildToObject(FieldDefinition existing)
+    {
+        if (existing.ShouldConvertToObjectType())
+        {
+            existing._type = Constants.ObjectFieldType;
+        }
+        return existing;
+    }
+
+    private static FieldDefinition CreateDottedSegmentField(ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
+    {
+        var segmentArgs = isLastSegment ? arguments : null;
+        var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
+        var segmentMetadata = isLastSegment ? metadata : null;
+        return Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, segmentArgs, segmentPath, segmentMetadata);
     }
 
     /// <summary>
     /// Gets or adds a complex field with type parsing and alias handling — root-level variant.
+    /// The Dictionary variant is the entry point from QueryBuilder.AddField; callers never pass a
+    /// non-empty parentPath (that's used only by the per-node FieldChildren overload below). The
+    /// parameter exists to share a signature with the FieldChildren variant via the public dispatch.
     /// </summary>
+    // AddFieldCore rejects null/whitespace fieldPath at the public-API boundary, so by the time
+    // we reach here at least one non-whitespace segment exists and result is non-null on exit.
+#pragma warning disable S1172 // parentPath unused — kept for signature symmetry with the FieldChildren variant.
     private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+#pragma warning restore S1172
     {
-        var parentPathSpan = parentPath.AsSpan();
         Span<char> pathBuffer = stackalloc char[512];
         var pathBuilder = new SpanPathBuilder(pathBuffer);
-
-        if (!parentPathSpan.IsEmpty)
-        {
-            pathBuilder.Append(parentPathSpan);
-        }
 
         fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
@@ -415,7 +416,7 @@ internal static class FieldFactory
             parentField = result;
         }
 
-        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return result!;
     }
 
     /// <summary>
@@ -448,7 +449,7 @@ internal static class FieldFactory
             currentParent = result;
         }
 
-        return result ?? throw new InvalidOperationException("Failed to create field: no valid segments found");
+        return result!;
     }
 
     /// <summary>
@@ -482,27 +483,9 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
-        // Guard: field names should not contain spaces (type info should be consumed)
-        if (segment.Name.Contains(' '))
-        {
-            throw new InvalidOperationException($"Field name '{segment.Name}' contains spaces. Type information should be consumed during parsing.");
-        }
-
-        var fieldArgs = segment.IsLastFragment ? arguments : null;
-        var fieldMetadata = segment.IsLastFragment ? metadata : null;
-
-        // Optimize path building for hot path - use span directly
-        ReadOnlySpan<char> computedFieldTypeSpan;
-        if (segment.IsLastFragment)
-        {
-            computedFieldTypeSpan = segment.HasParsedType ? segment.ParsedType : parsedFieldType;
-        }
-        else
-        {
-            computedFieldTypeSpan = segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan) ? Constants.ArrayTypeMarkerSpan : Constants.ObjectFieldTypeSpan;
-        }
-
-        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldTypeSpan, segment.Alias, fieldArgs, fullPath, fieldMetadata);
+        var (fieldArgs, fieldMetadata) = ResolveSegmentArgsAndMetadata(segment, arguments, metadata);
+        var fieldType = ResolveSegmentFieldType(segment, parsedFieldType);
+        var field = Helpers.CreateFieldDefinition(segment.Name, fieldType, segment.Alias, fieldArgs, fullPath, fieldMetadata);
         currentFields[segment.Name.ToString()] = field;
         return field;
     }
@@ -512,27 +495,22 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition CreateNewField(FieldChildren children, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
-        if (segment.Name.Contains(' '))
-        {
-            throw new InvalidOperationException($"Field name '{segment.Name}' contains spaces. Type information should be consumed during parsing.");
-        }
-
-        var fieldArgs = segment.IsLastFragment ? arguments : null;
-        var fieldMetadata = segment.IsLastFragment ? metadata : null;
-
-        ReadOnlySpan<char> computedFieldTypeSpan;
-        if (segment.IsLastFragment)
-        {
-            computedFieldTypeSpan = segment.HasParsedType ? segment.ParsedType : parsedFieldType;
-        }
-        else
-        {
-            computedFieldTypeSpan = segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan) ? Constants.ArrayTypeMarkerSpan : Constants.ObjectFieldTypeSpan;
-        }
-
-        var field = Helpers.CreateFieldDefinition(segment.Name, computedFieldTypeSpan, segment.Alias, fieldArgs, fullPath, fieldMetadata);
+        var (fieldArgs, fieldMetadata) = ResolveSegmentArgsAndMetadata(segment, arguments, metadata);
+        var fieldType = ResolveSegmentFieldType(segment, parsedFieldType);
+        var field = Helpers.CreateFieldDefinition(segment.Name, fieldType, segment.Alias, fieldArgs, fullPath, fieldMetadata);
         children.Append(field);
         return field;
+    }
+
+    private static (IDictionary<string, object?>? args, Dictionary<string, object?>? meta) ResolveSegmentArgsAndMetadata(SpanSegment segment, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
+        => segment.IsLastFragment ? (arguments, metadata) : (null, null);
+
+    private static ReadOnlySpan<char> ResolveSegmentFieldType(SpanSegment segment, ReadOnlySpan<char> parsedFieldType)
+    {
+        if (segment.IsLastFragment) return segment.HasParsedType ? segment.ParsedType : parsedFieldType;
+        return segment.HasParsedType && segment.ParsedType.SequenceEqual(Constants.ArrayTypeMarkerSpan)
+            ? Constants.ArrayTypeMarkerSpan
+            : Constants.ObjectFieldTypeSpan;
     }
 
     /// <summary>
@@ -540,69 +518,53 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition UpdateExistingField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
-        if (segment.HasAlias && field._alias == null)
-        {
-            field._alias = segment.Alias.IsEmpty ? null : segment.Alias.ToString();
-        }
-
-        if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
-        {
-            field._type = Constants.ObjectFieldType;
-        }
-
-        if (!segment.IsLastFragment)
-        {
-            return field;
-        }
+        if (!ApplyIntermediateUpdates(segment, field)) return field;
 
         if (arguments?.Count > 0)
         {
             var fieldKey = segment.Name.ToString();
             field = currentFields[fieldKey] = field.MergeFieldArguments(arguments);
         }
-
-        if (!parsedFieldType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase) &&
-            !field._type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
-        {
-            field._type = parsedFieldType.ToString();
-        }
-
+        ApplyParsedFieldType(field, parsedFieldType);
         return field;
     }
 
-    /// <summary>
-    /// Updates an existing field during complex field processing — FieldChildren variant.
-    /// </summary>
     private static FieldDefinition UpdateExistingField(FieldChildren children, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
-        if (segment.HasAlias && field._alias == null)
-        {
-            field._alias = segment.Alias.IsEmpty ? null : segment.Alias.ToString();
-        }
-
-        if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
-        {
-            field._type = Constants.ObjectFieldType;
-        }
-
-        if (!segment.IsLastFragment)
-        {
-            return field;
-        }
+        if (!ApplyIntermediateUpdates(segment, field)) return field;
 
         if (arguments?.Count > 0)
         {
             field = field.MergeFieldArguments(arguments);
             children.Set(segment.Name, field);
         }
+        ApplyParsedFieldType(field, parsedFieldType);
+        return field;
+    }
 
-        if (!parsedFieldType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase) &&
-            !field._type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
+    // Mutates intermediate-segment metadata (alias, object-promotion). Returns true when the
+    // segment is the last fragment and the caller should continue with last-fragment updates.
+    private static bool ApplyIntermediateUpdates(SpanSegment segment, FieldDefinition field)
+    {
+        // segment.HasAlias <=> !Alias.IsEmpty by SpanSegment's invariant.
+        if (segment.HasAlias && field._alias is null)
+        {
+            field._alias = segment.Alias.ToString();
+        }
+        if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
+        {
+            field._type = Constants.ObjectFieldType;
+        }
+        return segment.IsLastFragment;
+    }
+
+    private static void ApplyParsedFieldType(FieldDefinition field, ReadOnlySpan<char> parsedFieldType)
+    {
+        if (!parsedFieldType.Equals(Constants.DefaultFieldTypeSpan, StringComparison.OrdinalIgnoreCase)
+            && !field._type.AsSpan().Equals(parsedFieldType, StringComparison.OrdinalIgnoreCase))
         {
             field._type = parsedFieldType.ToString();
         }
-
-        return field;
     }
 
     /// <summary>
@@ -619,17 +581,7 @@ internal static class FieldFactory
             return mergedField;
         }
 
-        var fieldType = string.IsNullOrWhiteSpace(fieldDefinition._type) ? Span<char>.Empty : fieldDefinition._type.AsSpan(); 
-        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
-        
-        // Create new field
-        var newField = Helpers.CreateFieldDefinition(
-            fieldDefinition.Name.AsSpan(),
-            fieldType,
-            fieldAlias,
-            fieldDefinition._arguments,
-            fieldDefinition.Path.AsSpan(),
-            fieldDefinition.Metadata);
+        var newField = CloneFieldDefinitionForMerge(fieldDefinition);
         fields[fieldDefinition.Name] = newField;
         return newField;
     }
@@ -647,18 +599,23 @@ internal static class FieldFactory
             return mergedField;
         }
 
-        var fieldType = string.IsNullOrWhiteSpace(fieldDefinition._type) ? Span<char>.Empty : fieldDefinition._type.AsSpan();
-        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
+        var newField = CloneFieldDefinitionForMerge(fieldDefinition);
+        children.Append(newField);
+        return newField;
+    }
 
-        var newField = Helpers.CreateFieldDefinition(
+    // FieldDefinition._type is always set to a non-empty value by all constructors (defaulting
+    // to Constants.DefaultFieldType), so the type-empty branch was a dead defensive check.
+    private static FieldDefinition CloneFieldDefinitionForMerge(FieldDefinition fieldDefinition)
+    {
+        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
+        return Helpers.CreateFieldDefinition(
             fieldDefinition.Name.AsSpan(),
-            fieldType,
+            fieldDefinition._type.AsSpan(),
             fieldAlias,
             fieldDefinition._arguments,
             fieldDefinition.Path.AsSpan(),
             fieldDefinition.Metadata);
-        children.Append(newField);
-        return newField;
     }
 
     private static void ExtractDottedSegment(ReadOnlySpan<char> fieldPath, int pathStart, out SpanSegment segment, out int nextStart)

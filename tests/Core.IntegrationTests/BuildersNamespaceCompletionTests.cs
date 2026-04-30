@@ -89,7 +89,7 @@ public class BuildersNamespaceCompletionTests
             new FieldDefinition("id"),
             new FieldDefinition("name")
         };
-        var metadata = new Dictionary<string, object> { { "description", "User field" } };
+        var metadata = new Dictionary<string, object?> { { "description", "User field" } };
 
         builder.AddField("user", subFields, metadata);
         var result = builder.ToString();
@@ -128,7 +128,7 @@ public class BuildersNamespaceCompletionTests
             new FieldDefinition("id"),
             new FieldDefinition("email")
         };
-        var metadata = new Dictionary<string, object> { { "role", "admin" } };
+        var metadata = new Dictionary<string, object?> { { "role", "admin" } };
 
         builder.AddField("users", args, subFields, metadata);
         var result = builder.ToString();
@@ -175,7 +175,7 @@ public class BuildersNamespaceCompletionTests
         
         var fieldDef = new FieldDefinition("profile")
         {
-            Metadata = new Dictionary<string, object> { { "type", "User" } }
+            Metadata = new Dictionary<string, object?> { { "type", "User" } }
         };
 
         builder.AddField("user", fieldBuilder =>
@@ -226,7 +226,7 @@ public class BuildersNamespaceCompletionTests
         builder.AddField("user", fieldBuilder =>
         {
             fieldBuilder.AddField("comments", "Comment", new[] { "id", "text" },
-                new Dictionary<string, object> { { "paginated", true } });
+                new Dictionary<string, object?> { { "paginated", true } });
         });
 
         var result = builder.ToString();
@@ -242,7 +242,7 @@ public class BuildersNamespaceCompletionTests
         builder.AddField("user", fieldBuilder =>
         {
             fieldBuilder.AddField("followers", "User", new[] { "id", "name" }, args,
-                new Dictionary<string, object> { { "sort", "recent" } });
+                new Dictionary<string, object?> { { "sort", "recent" } });
         });
 
         var result = builder.ToString();
@@ -313,7 +313,7 @@ public class BuildersNamespaceCompletionTests
     public void FieldBuilder_AddFieldWithMetadataAndActionCallback_IncludesMetadataWithNesting()
     {
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
-        var metadata = new Dictionary<string, object> { { "cached", true } };
+        var metadata = new Dictionary<string, object?> { { "cached", true } };
 
         builder.AddField("user", fieldBuilder =>
         {
@@ -332,7 +332,7 @@ public class BuildersNamespaceCompletionTests
     public void FieldBuilder_AddFieldWithTypeMetadataAndActionCallback_AllComponentsPreserved()
     {
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
-        var metadata = new Dictionary<string, object> { { "deprecated", false } };
+        var metadata = new Dictionary<string, object?> { { "deprecated", false } };
 
         builder.AddField("user", fieldBuilder =>
         {
@@ -397,7 +397,7 @@ public class BuildersNamespaceCompletionTests
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // QueryBuilder: Missing Type Overload (line 173)
+    // QueryBuilder: AddField(name, type) overload coverage
     // ═══════════════════════════════════════════════════════════════
 
     [Fact]
@@ -577,8 +577,8 @@ public class BuildersNamespaceCompletionTests
     [Fact]
     public void QueryBuilder_AddFieldWithTypeParameterMissing_StillReferencesField()
     {
-        // This tests the edge case at line 173-174 where type parameter exists
-        // but is not used in AddFieldCore call
+        // Edge case: AddField(name, type) overload routes through a path that does not pass
+        // the type parameter into AddFieldCore directly — verify the field still gets created.
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
         
         builder.AddField("profile", "User");

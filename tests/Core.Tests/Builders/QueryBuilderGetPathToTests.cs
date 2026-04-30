@@ -49,4 +49,45 @@ public class QueryBuilderGetPathToTests
         // Assert
         path.Should().BeEquivalentTo(expectedItems);
     }
+
+    [Fact]
+    public void GetPathTo_WithEmptyQueryName_ReturnsEmptyArray()
+    {
+        var builder = CreateDefaultBuilder("Q").AddField("user.id");
+
+        // Empty query name → GetMappedPath returns "" → early return [].
+        var path = builder.GetPathTo("", "user");
+
+        path.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetPathTo_NodePathNotFound_RootMatchesField_ReturnsRootEffectiveName()
+    {
+        // Root field "data" matches the queryName so FindRootField succeeds and BuildPathToNode is
+        // invoked. The target node "doesNotExist" doesn't appear anywhere — DFS returns false and
+        // BuildPathToNode falls back to a single-element [rootField._effectiveName] result.
+        var builder = CreateDefaultBuilder("data").AddField("data.profile.name");
+
+        var path = builder.GetPathTo("data", "doesNotExist");
+
+        var expectedSingle = new List<string> { "data" };
+        path.Should().BeEquivalentTo(expectedSingle);
+    }
+
+    [Fact]
+    public void GetPathTo_TargetInSecondSubtree_BacktracksFromFirstSubtree()
+    {
+        // Single root with two child subtrees. Target only lives under the second.
+        // DFS descends into the first ("name"), backtracks, then finds the target ("score") in the second.
+        // Exercises the backtrack branch in FindPathToNodeOptimized.
+        var builder = CreateDefaultBuilder("data")
+            .AddField("data.profile.name")
+            .AddField("data.metrics.score");
+
+        var path = builder.GetPathTo("data", "score");
+
+        var expectedTwo = new List<string> { "data", "metrics" };
+        path.Should().BeEquivalentTo(expectedTwo);
+    }
 }

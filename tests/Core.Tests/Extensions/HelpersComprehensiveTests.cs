@@ -234,15 +234,15 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<SortedDictionary<string, object?>>();
-                    ((SortedDictionary<string, object?>)result).Should().BeEmpty();
+                    ((SortedDictionary<string, object?>)result!).Should().BeEmpty();
                 })
             .Register("DictWithNullValue",
                 arrange: () => Helpers.SortArgumentValue(new Dictionary<string, object?> { { "key", null } }),
                 assert: (result) =>
                 {
                     result.Should().BeOfType<SortedDictionary<string, object?>>();
-                    ((SortedDictionary<string, object?>)result).Should().ContainKey("key");
-                    ((SortedDictionary<string, object?>)result)["key"].Should().BeNull();
+                    ((SortedDictionary<string, object?>)result!).Should().ContainKey("key");
+                    ((SortedDictionary<string, object?>)result!)["key"].Should().BeNull();
                 });
 
         var scenario = scenarios.Get(testCase);
@@ -263,7 +263,7 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<SortedDictionary<string, object?>>();
-                    var sorted = (SortedDictionary<string, object?>)result;
+                    var sorted = (SortedDictionary<string, object?>)result!;
                     sorted.Keys.Should().Equal("a", "m", "z");
                 })
             .Register("SingleKeyDict",
@@ -294,14 +294,14 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<List<object>>();
-                    ((List<object>)result).Should().Equal(1, 2, 3);
+                    ((List<object>)result!).Should().Equal(1, 2, 3);
                 })
             .Register("ArrayOfPrimitives",
                 arrange: () => Helpers.SortArgumentValue(new object[] { 1, 2, 3 }),
                 assert: (result) =>
                 {
                     result.Should().BeOfType<object[]>();
-                    ((object[])result).Should().HaveCount(3);
+                    ((object[])result!).Should().HaveCount(3);
                 })
             .Register("ListWithNestedObjects",
                 arrange: () => Helpers.SortArgumentValue(
@@ -309,7 +309,7 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<List<object>>();
-                    var list = (List<object>)result;
+                    var list = (List<object>)result!;
                     list.Should().HaveCount(2);
                     list[1].Should().BeOfType<SortedDictionary<string, object?>>();
                 })
@@ -318,14 +318,14 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<List<object>>();
-                    ((List<object>)result).Should().BeEmpty();
+                    ((List<object>)result!).Should().BeEmpty();
                 })
             .Register("EmptyArray",
                 arrange: () => Helpers.SortArgumentValue(new object[] { }),
                 assert: (result) =>
                 {
                     result.Should().BeOfType<object[]>();
-                    ((object[])result).Should().BeEmpty();
+                    ((object[])result!).Should().BeEmpty();
                 });
 
         var scenario = scenarios.Get(testCase);
@@ -355,8 +355,8 @@ public class HelpersComprehensiveTests
                 assert: (result) =>
                 {
                     result.Should().BeOfType<SortedDictionary<string, object?>>();
-                    var sorted = (SortedDictionary<string, object?>)result;
-                    sorted.Keys.ToList().Should().Equal("aField", "mField", "zField");
+                    var sorted = (SortedDictionary<string, object?>)result!;
+                    sorted.Keys.Should().Equal("aField", "mField", "zField");
                 })
             .Register("ComplexNestedStructure",
                 arrange: () => Helpers.SortArgumentValue(
@@ -917,12 +917,19 @@ public class HelpersComprehensiveTests
     [InlineData("[] data", "String", "[]")]
     public void ParseFieldTypeFromPath_BracketOnlyPaths_Should_Extract(string pathStr, string defaultStr, string expectedType)
     {
+        // Sibling to ParseFieldTypeFromPath_ArrayAndTypePaths_Should_Extract: same routine,
+        // but here the input path uses *only* the bare-bracket "[]" form (no inner element type).
+        // The parser must still recognise the brackets as the type token and surface them verbatim.
         var path = pathStr.AsSpan();
         var defaultType = defaultStr.AsSpan();
-        
-        _ = Helpers.ParseFieldTypeFromPath(path, defaultType, out var type);
-        
+
+        var remaining = Helpers.ParseFieldTypeFromPath(path, defaultType, out var type);
+
         type.SequenceEqual(expectedType.AsSpan()).Should().BeTrue();
+        // Bracket-only inputs always have a single space separating the type from the field name —
+        // assert that the remaining path begins with the field name (no leading whitespace).
+        remaining.IsEmpty.Should().BeFalse();
+        remaining[0].Should().NotBe(' ');
     }
 
     [Theory]
@@ -1372,86 +1379,7 @@ public class HelpersComprehensiveTests
     // FindExistingField - Comprehensive field lookup scenarios
     // ═══════════════════════════════════════════════════════════════
 
-    [Theory]
-    [InlineData("simple-exists")]
-    [InlineData("empty-path")]
-    [InlineData("whitespace-path")]
-    [InlineData("not-found")]
-    [InlineData("two-segment-path")]
-    [InlineData("two-segment-missing-leaf")]
-    [InlineData("single-segment-no-match")]
-    public void FindExistingFieldByPath_Scenarios(string scenario)
-    {
-        if (scenario == "simple-exists")
-        {
-            var field = new FieldDefinition("user", "User");
-            var fields = new Dictionary<string, FieldDefinition> { { "user", field } };
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "user".AsSpan());
-            
-            result.Should().Be(field);
-        }
-        else if (scenario == "empty-path")
-        {
-            var fields = new Dictionary<string, FieldDefinition>();
-            
-            var result = Helpers.FindExistingFieldByPath(fields, ReadOnlySpan<char>.Empty);
-            
-            result.Should().BeNull();
-        }
-        else if (scenario == "whitespace-path")
-        {
-            var fields = new Dictionary<string, FieldDefinition>();
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "   ".AsSpan());
-            
-            result.Should().BeNull();
-        }
-        else if (scenario == "not-found")
-        {
-            var fields = new Dictionary<string, FieldDefinition>();
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "nonexistent".AsSpan());
-            
-            result.Should().BeNull();
-        }
-        else if (scenario == "two-segment-path")
-        {
-            var address = new FieldDefinition("address", "AddressType");
-            
-            var profile = new FieldDefinition("profile", "ProfileType");
-            profile._children = new FieldChildren();
-            profile._children.Append(address);
-
-            var fields = new Dictionary<string, FieldDefinition> { { "profile", profile } };
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "profile.address".AsSpan());
-            
-            result.Should().NotBeNull();
-            result!.Name.Should().Be("address");
-        }
-        else if (scenario == "two-segment-missing-leaf")
-        {
-            var profile = new FieldDefinition("profile", "ProfileType");
-            profile._children = new FieldChildren();
-            var fields = new Dictionary<string, FieldDefinition> { { "profile", profile } };
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "profile.address".AsSpan());
-            
-            result.Should().BeNull();
-        }
-        else if (scenario == "single-segment-no-match")
-        {
-            var field = new FieldDefinition("firstName", "String");
-            var fields = new Dictionary<string, FieldDefinition> { { "firstName", field } };
-            
-            var result = Helpers.FindExistingFieldByPath(fields, "lastName".AsSpan());
-            
-            result.Should().BeNull();
-        }
-    }
-
-    [Theory]
+[Theory]
     [InlineData("by-path")]
     [InlineData("no-name-match")]
     [InlineData("empty-dict")]

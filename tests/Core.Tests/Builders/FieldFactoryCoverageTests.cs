@@ -417,9 +417,9 @@ public class FieldFactoryCoverageTests
         var fields = new Dictionary<string, FieldDefinition>();
 
         // First call creates "user.posts" without arguments on last segment
-        var fb1 = FieldBuilder.Create(fields, "user.posts");
+        _ = FieldBuilder.Create(fields, "user.posts");
         // Second call adds arguments to existing "posts" field (last segment)
-        var fb2 = FieldBuilder.Create(fields, "user.posts", arguments: new Dictionary<string, object?> { ["limit"] = 5 });
+        _ = FieldBuilder.Create(fields, "user.posts", arguments: new Dictionary<string, object?> { ["limit"] = 5 });
 
         // Verify arguments were merged onto the existing posts field
         fields["user"].Fields["posts"].Arguments.Should().ContainKey("limit");
@@ -431,7 +431,7 @@ public class FieldFactoryCoverageTests
     {
         var fields = new Dictionary<string, FieldDefinition>();
 
-        var fb = FieldBuilder.Create(fields, "userName", "User", arguments: new Dictionary<string, object?> { ["id"] = 123 });
+        _ = FieldBuilder.Create(fields, "userName", "User", arguments: new Dictionary<string, object?> { ["id"] = 123 });
 
         fields.Should().ContainKey("userName");
         fields["userName"].Type.Should().Be("User");

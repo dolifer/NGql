@@ -183,9 +183,9 @@ public class FieldFactoryPathHandlingTests
         var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
-        var field1 = FieldFactory.GetOrAddField(fields, "id".AsSpan(), "ID".AsSpan(), null);
-        var field2 = FieldFactory.GetOrAddField(fields, "name".AsSpan(), "String".AsSpan(), null);
-        var field3 = FieldFactory.GetOrAddField(fields, "email".AsSpan(), "String".AsSpan(), null);
+        _ = FieldFactory.GetOrAddField(fields, "id".AsSpan(), "ID".AsSpan(), null);
+        _ = FieldFactory.GetOrAddField(fields, "name".AsSpan(), "String".AsSpan(), null);
+        _ = FieldFactory.GetOrAddField(fields, "email".AsSpan(), "String".AsSpan(), null);
 
         // Assert
         fields.Count.Should().Be(3);
@@ -199,8 +199,8 @@ public class FieldFactoryPathHandlingTests
         var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
-        var field1 = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
-        var field2 = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
+        _ = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
+        _ = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
 
         // Assert - Type conversion happens when needed
         fields["user"].Should().NotBeNull();
@@ -231,7 +231,7 @@ public class FieldFactoryPathHandlingTests
         var args1 = new Dictionary<string, object?> { { "first", 1 } };
 
         // Act
-        var field1 = FieldFactory.GetOrAddField(fields, "data".AsSpan(), "Data".AsSpan(), args1);
+        _ = FieldFactory.GetOrAddField(fields, "data".AsSpan(), "Data".AsSpan(), args1);
         var args2 = new Dictionary<string, object?> { { "first", 1 } }; // Same args
         var field2 = FieldFactory.GetOrAddField(fields, "data".AsSpan(), "Data".AsSpan(), args2);
 
@@ -409,7 +409,6 @@ public class FieldFactoryPathHandlingTests
         // Act
         for (int t = 0; t < threadCount; t++)
         {
-            int threadId = t;
             tasks[t] = Task.Run(() =>
             {
                 try
@@ -453,9 +452,4 @@ public class FieldFactoryPathHandlingTests
         field.Should().NotBeNull();
     }
 
-    private static IEnumerable<string> range(int start, int count)
-    {
-        for (int i = 0; i < count; i++)
-            yield return i.ToString();
-    }
 }

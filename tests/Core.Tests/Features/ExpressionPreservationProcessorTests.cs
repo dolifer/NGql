@@ -320,10 +320,11 @@ public class ExpressionPreservationProcessorTests
         Expression<Func<TestUserType, bool>> expr = u => u != null;
 
         // Act
-        processor.ProcessExpression(expr, "user", localMap, typeof(TestUserType), null);
+        Action act = () => processor.ProcessExpression(expr, "user", localMap, typeof(TestUserType), null);
 
-        // Assert - greedy expansion should attempt to preserve all type properties
+        // Assert - greedy expansion should attempt to preserve all type properties without throwing.
         // (exact behavior depends on implementation and query structure)
+        act.Should().NotThrow();
     }
 
     #endregion

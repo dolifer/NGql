@@ -155,60 +155,52 @@ internal sealed class QueryTextBuilder
 
     private void BuildFieldDefinitions(FieldChildren children, int indent)
     {
-        var padding = GetPadding(indent);
         var count = children.Count;
+        if (count == 0) return;
 
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
-        children.AsSpan().CopyTo(arr);
-        Array.Sort(arr, 0, count, FieldSortComparer);
-
-        for (int j = 0; j < count; j++)
+        try
         {
-            var field = arr[j];
-            _stringBuilder.Append(padding);
-
-            if (field.Alias != null)
-            {
-                _stringBuilder.Append(field.Alias);
-                _stringBuilder.Append(':');
-            }
-
-            _stringBuilder.Append(field.Name);
-
-            if (field._arguments is { Count: > 0 })
-            {
-                BuildFieldArguments(field._arguments);
-            }
-
-            if (field._children is { Count: > 0 })
-            {
-                _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field._children, indent + IndentSize);
-                _stringBuilder.Append(padding);
-                _stringBuilder.AppendLine("}");
-            }
-            else
-            {
-                _stringBuilder.AppendLine();
-            }
+            children.AsSpan().CopyTo(arr);
+            RenderSortedFields(arr, count, indent);
         }
-
-        Array.Clear(arr, 0, count);
-        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
+        finally
+        {
+            Array.Clear(arr, 0, count);
+            ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
+        }
     }
 
     private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
     {
-        var padding = GetPadding(indent);
         var count = fields.Count;
+        if (count == 0) return;
 
-        // Rent an array, sort it via the singleton comparer, render, then return to pool.
-        // Dictionary<TKey,TValue> is insertion-ordered (not alphabetically), so explicit sort
-        // is always required for deterministic query output.
+        // Dictionary<TKey,TValue> is insertion-ordered, not alphabetical. Copy values to a
+        // pooled buffer so RenderSortedFields can sort once and render with a stable order.
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
-        int i = 0;
-        foreach (var f in fields.Values) arr[i++] = f;
+        try
+        {
+            int i = 0;
+            foreach (var f in fields.Values) arr[i++] = f;
+            RenderSortedFields(arr, count, indent);
+        }
+        finally
+        {
+            Array.Clear(arr, 0, count);
+            ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
+        }
+    }
+
+    /// <summary>
+    /// Sorts <paramref name="arr"/> in place via <see cref="FieldSortComparer"/> and writes the
+    /// rendered fields into <see cref="_stringBuilder"/>. Shared rendering core for both backing
+    /// collection types (Dictionary at the root, FieldChildren for nested levels).
+    /// </summary>
+    private void RenderSortedFields(FieldDefinition[] arr, int count, int indent)
+    {
         Array.Sort(arr, 0, count, FieldSortComparer);
+        var padding = GetPadding(indent);
 
         for (int j = 0; j < count; j++)
         {
@@ -240,9 +232,6 @@ internal sealed class QueryTextBuilder
                 _stringBuilder.AppendLine();
             }
         }
-
-        Array.Clear(arr, 0, count);
-        ArrayPool<FieldDefinition>.Shared.Return(arr, clearArray: false);
     }
 
     private void BuildFieldArguments(IReadOnlyDictionary<string, object?> arguments)
@@ -310,31 +299,12 @@ internal sealed class QueryTextBuilder
             return false;
         }
 
-        var kvpProps = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
+        // KeyValuePair<,> is a sealed BCL struct that always exposes Key and Value properties —
+        // GetProperty cannot return null here, so cache the pair without nullable wrapping.
+        var (keyProp, valueProp) = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
             valueType,
-            static t =>
-            {
-                var keyProp = t.GetProperty("Key");
-                var valueProp = t.GetProperty("Value");
-                    
-                // Defensive: Validate that KeyValuePair has the expected properties
-                // This should never happen for real KeyValuePair<,>, but protects against
-                // reflection caching issues or corrupted type metadata
-                if (keyProp is null || valueProp is null)
-                {
-                    return null;
-                }
-                return (keyProp, valueProp);
-            });
+            static t => (t.GetProperty("Key")!, t.GetProperty("Value")!));
 
-        // If we couldn't get the properties, fall through to default object handling
-        if (kvpProps is null)
-        {
-            WriteObjectReflection(builder, value, valueType);
-            return true;
-        }
-
-        var (keyProp, valueProp) = kvpProps.Value;
         builder.Append(keyProp.GetValue(value));
         builder.Append(':');
         WriteObject(builder, valueProp.GetValue(value));
@@ -367,14 +337,12 @@ internal sealed class QueryTextBuilder
         _stringBuilder.AppendLine("{");
         var padding = GetPadding(indent);
 
-        // Sort fields by their string representation or QueryBlock properties
+        // Sort fields by their effective name. QueryBlock.HandleAddField rejects everything
+        // except string and QueryBlock at insert time, so a single ternary covers every
+        // reachable case without a switch default.
         var orderedFields = queryBlock.FieldsList
-            .OrderBy(field => field switch
-            {
-                QueryBlock block => block.Alias ?? block.Name,
-                string str => str,
-                _ => field.ToString()
-            }, StringComparer.OrdinalIgnoreCase);
+            .OrderBy(field => field is QueryBlock block ? (block.Alias ?? block.Name) : (string)field,
+                StringComparer.OrdinalIgnoreCase);
 
         foreach (var field in orderedFields)
         {

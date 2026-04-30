@@ -44,87 +44,97 @@ internal static class PreserveExtensions
         return newQuery;
     }
 
-    private static void ExtractMatchingFields(FieldChildren sourceFields,
-        FieldChildren targetFields, ReadOnlySpan<char> path)
-    {
-        var dotIndex = path.IndexOf('.');
-        var isLeafPath = dotIndex == -1;
-        var currentSegment = isLeafPath ? path : path[..dotIndex];
-
-        FieldDefinition? fieldDef = null;
-        string? fieldKey = null;
-        foreach (var f in sourceFields.AsSpan())
-        {
-            var name = f.Name.AsSpan();
-            var alias = f.Alias != null ? f.Alias.AsSpan() : ReadOnlySpan<char>.Empty;
-            if (name.Equals(currentSegment, StringComparison.OrdinalIgnoreCase) ||
-                (!alias.IsEmpty && alias.Equals(currentSegment, StringComparison.OrdinalIgnoreCase)))
-            {
-                fieldDef = f;
-                fieldKey = f.Name;
-                break;
-            }
-        }
-        if (fieldDef == null) return;
-
-        if (isLeafPath)
-        {
-            targetFields.Set(fieldKey!, fieldDef);
-            return;
-        }
-
-        if (fieldDef._children == null) return;
-
-        if (!targetFields.TryGetValue(fieldKey!, out var existingField) || existingField == null)
-        {
-            existingField = CloneFieldWithoutChildren(fieldDef);
-            targetFields.Set(fieldKey!, existingField);
-        }
-
-        existingField._children ??= new FieldChildren();
-        var remainingPath = path[(dotIndex + 1)..];
-        ExtractMatchingFields(fieldDef._children!, existingField._children, remainingPath);
-    }
-
     private static void ExtractMatchingFields(Dictionary<string, FieldDefinition> sourceFields,
         Dictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
     {
-        var dotIndex = path.IndexOf('.');
-        var isLeafPath = dotIndex == -1;
+        var isLeafPath = SplitFirstSegment(path, out var currentSegment, out var remainingPath);
 
-        // Extract current segment
-        var currentSegment = isLeafPath ? path : path[..dotIndex];
+        var match = FindFieldByNameOrAlias(sourceFields, currentSegment);
+        if (!match.HasValue) return;
 
-        var field = FindFieldByNameOrAlias(sourceFields, currentSegment);
-        if (!field.HasValue)
-        {
-            return;
-        }
+        var (fieldKey, fieldDef) = match.Value;
 
-        var (fieldKey, fieldDef) = field.Value;
-
-        // FAST PATH: Leaf node - copy field directly
         if (isLeafPath)
         {
             targetFields[fieldKey] = fieldDef;
             return;
         }
 
-        // SLOW PATH: Intermediate node - ensure field exists in target and recurse
-        if (fieldDef._children == null)
+        if (fieldDef._children is null) return;
+
+        var existing = GetOrAddTargetChild(targetFields, fieldKey, fieldDef);
+        ExtractMatchingFields(fieldDef._children, existing._children!, remainingPath);
+    }
+
+    private static void ExtractMatchingFields(FieldChildren sourceFields, FieldChildren targetFields, ReadOnlySpan<char> path)
+    {
+        var isLeafPath = SplitFirstSegment(path, out var currentSegment, out var remainingPath);
+
+        if (!TryFindByNameOrAlias(sourceFields, currentSegment, out var fieldKey, out var fieldDef)) return;
+
+        if (isLeafPath)
         {
+            targetFields.Set(fieldKey, fieldDef);
             return;
         }
 
-        if (!targetFields.TryGetValue(fieldKey, out var existingField))
-        {
-            existingField = CloneFieldWithoutChildren(fieldDef);
-            targetFields[fieldKey] = existingField;
-        }
+        if (fieldDef._children is null) return;
 
-        existingField._children ??= new FieldChildren();
-        var remainingPath = path[(dotIndex + 1)..];
-        ExtractMatchingFields(fieldDef._children!, existingField._children, remainingPath);
+        var targetChild = GetOrAddTargetChild(targetFields, fieldKey, fieldDef);
+        ExtractMatchingFields(fieldDef._children, targetChild._children!, remainingPath);
+    }
+
+    private static bool SplitFirstSegment(ReadOnlySpan<char> path, out ReadOnlySpan<char> current, out ReadOnlySpan<char> remaining)
+    {
+        var dot = path.IndexOf('.');
+        if (dot < 0)
+        {
+            current = path;
+            remaining = ReadOnlySpan<char>.Empty;
+            return true;
+        }
+        current = path[..dot];
+        remaining = path[(dot + 1)..];
+        return false;
+    }
+
+    private static bool TryFindByNameOrAlias(FieldChildren children, ReadOnlySpan<char> nameOrAlias, out string key, out FieldDefinition field)
+    {
+        foreach (var f in children.AsSpan())
+        {
+            if (f.Name.AsSpan().Equals(nameOrAlias, StringComparison.OrdinalIgnoreCase)
+                || (f.Alias is { Length: > 0 } alias && alias.AsSpan().Equals(nameOrAlias, StringComparison.OrdinalIgnoreCase)))
+            {
+                key = f.Name;
+                field = f;
+                return true;
+            }
+        }
+        key = string.Empty;
+        field = null!;
+        return false;
+    }
+
+    private static FieldDefinition GetOrAddTargetChild(Dictionary<string, FieldDefinition> target, string fieldKey, FieldDefinition source)
+    {
+        if (!target.TryGetValue(fieldKey, out var existing))
+        {
+            existing = CloneFieldWithoutChildren(source);
+            target[fieldKey] = existing;
+        }
+        existing._children ??= new FieldChildren();
+        return existing;
+    }
+
+    private static FieldDefinition GetOrAddTargetChild(FieldChildren targetFields, string fieldKey, FieldDefinition source)
+    {
+        if (!targetFields.TryGetValue(fieldKey, out var existing) || existing is null)
+        {
+            existing = CloneFieldWithoutChildren(source);
+            targetFields.Set(fieldKey, existing);
+        }
+        existing._children ??= new FieldChildren();
+        return existing;
     }
 
     /// <summary>
@@ -133,9 +143,11 @@ internal static class PreserveExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition CloneFieldWithoutChildren(FieldDefinition source)
     {
+        // FieldDefinition._type is always set by every constructor; the null-coalesce was
+        // a defensive guard for the rare `with { Type = null }` path and never fires here.
         var cloned = new FieldDefinition(
             source.Name,
-            source.Type ?? Constants.DefaultFieldType,
+            source._type!,
             source.Alias,
             source._arguments)
         {
@@ -155,20 +167,15 @@ internal static class PreserveExtensions
         return cloned;
     }
 
+    // All call sites pre-check the fields collection for null (NavigatePath, PreserveAtPath,
+    // QueryDefinitionExtensions.NavigatePath); the parameter could safely be tightened but
+    // is kept nullable to preserve the existing internal API signature.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(IReadOnlyDictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
     {
-        if (fields == null || nameOrAlias.Length == 0)
+        foreach (var kvp in fields!)
         {
-            return null;
-        }
-        
-        foreach (var kvp in fields)
-        {
-            // Use case-insensitive comparison to match SortedDictionary's StringComparer.OrdinalIgnoreCase
-            if (nameOrAlias.Equals(kvp.Key.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
-                nameOrAlias.Equals(kvp.Value.Name.AsSpan(), StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.Equals(kvp.Value.Alias.AsSpan(), StringComparison.OrdinalIgnoreCase)))
+            if (MatchesKeyNameOrAlias(kvp, nameOrAlias))
             {
                 return kvp;
             }
@@ -178,19 +185,17 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool MatchesKeyNameOrAlias(KeyValuePair<string, FieldDefinition> kvp, ReadOnlySpan<char> nameOrAlias)
+        => nameOrAlias.Equals(kvp.Key.AsSpan(), StringComparison.OrdinalIgnoreCase)
+        || nameOrAlias.Equals(kvp.Value.Name.AsSpan(), StringComparison.OrdinalIgnoreCase)
+        || (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.Equals(kvp.Value.Alias.AsSpan(), StringComparison.OrdinalIgnoreCase));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ExtractVariablesFromFields(FieldChildren children, SortedSet<Variable> variables)
     {
         foreach (var field in children.AsSpan())
         {
-            if (field._arguments?.Count > 0)
-            {
-                Helpers.ExtractVariablesFromValue(field._arguments, variables);
-            }
-
-            if (field._children is { Count: > 0 })
-            {
-                ExtractVariablesFromFields(field._children, variables);
-            }
+            ExtractVariablesFromField(field, variables);
         }
     }
 
@@ -199,17 +204,19 @@ internal static class PreserveExtensions
     {
         foreach (var field in fields.Values)
         {
-            // Extract variables from field arguments
-            if (field._arguments?.Count > 0)
-            {
-                Helpers.ExtractVariablesFromValue(field._arguments, variables);
-            }
+            ExtractVariablesFromField(field, variables);
+        }
+    }
 
-            // Recursively extract from nested fields
-            if (field._children is { Count: > 0 })
-            {
-                ExtractVariablesFromFields(field._children, variables);
-            }
+    private static void ExtractVariablesFromField(FieldDefinition field, SortedSet<Variable> variables)
+    {
+        if (field._arguments?.Count > 0)
+        {
+            Helpers.ExtractVariablesFromValue(field._arguments, variables);
+        }
+        if (field._children is { Count: > 0 })
+        {
+            ExtractVariablesFromFields(field._children, variables);
         }
     }
 }

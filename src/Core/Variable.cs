@@ -76,7 +76,8 @@ public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable
 
     public bool Equals(Variable other) => CompareTo(other) == 0;
 
+    // Constructor rejects null/whitespace name/type, so neither field is null here.
     public override int GetHashCode() => HashCode.Combine(
-        Name?.ToUpperInvariant(),
-        Type?.ToUpperInvariant());
+        Name.ToUpperInvariant(),
+        Type.ToUpperInvariant());
 }

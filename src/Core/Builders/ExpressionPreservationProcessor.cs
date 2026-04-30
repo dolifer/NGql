@@ -58,62 +58,85 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         Dictionary<string, Type> parameterTypes,
         string[]? alwaysPreserveFields)
     {
-        // Cache string.Join results to avoid duplicate allocations for repeated base paths
-        var basePathCache = new Dictionary<object, string>();  // Using object for array reference identity
-        
-        // Group parameters by base path (minimal allocation)
-        var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var paramName in parameterNames)
-        {
-            if (!localMap.TryGetValue(paramName, out var basePath)) continue;
-
-            // Cache the joined string to avoid re-joining same array multiple times
-            if (!basePathCache.TryGetValue(basePath, out var basePathKey))
-            {
-                basePathKey = string.Join(".", basePath);
-                basePathCache[basePath] = basePathKey;
-            }
-            
-            if (!paramsByBasePath.TryGetValue(basePathKey, out var list))
-            {
-                list = new List<string>();
-                paramsByBasePath[basePathKey] = list;
-            }
-            list.Add(paramName);
-        }
-
-        // Handle alwaysPreserveFields case: ensure all localMap base paths are included
-        if (alwaysPreserveFields is { Length: > 0 })
-        {
-            foreach (var (_, basePath) in localMap)
-            {
-                if (!basePathCache.TryGetValue(basePath, out var basePathKey))
-                {
-                    basePathKey = string.Join(".", basePath);
-                    basePathCache[basePath] = basePathKey;
-                }
-                    
-                if (!paramsByBasePath.ContainsKey(basePathKey))
-                {
-                    paramsByBasePath[basePathKey] = new List<string>();
-                }
-            }
-        }
+        var basePathCache = new Dictionary<object, string>();
+        var paramsByBasePath = GroupParametersByBasePath(parameterNames, localMap, basePathCache);
+        EnsureAllBasePathsForAlwaysPreserve(localMap, alwaysPreserveFields, basePathCache, paramsByBasePath);
 
         if (paramsByBasePath.Count == 0) return;
 
-        // Process each base path
         foreach (var (basePathKey, paramsForPath) in paramsByBasePath)
         {
-            // Navigate: basePath + nodePath
-            var fullPath = $"{basePathKey}.{nodePath}";
-            var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullPath.AsSpan(), out _);
-            if (nodeField == null || !nodeField.HasFields) continue;
-
-            var fieldsToPreserve = CollectFields(extractedPaths, paramsForPath, parameterTypes, alwaysPreserveFields);
-            PreserveFields(nodeField._children, fieldsToPreserve, fullPath);
+            ProcessBasePath(extractedPaths, basePathKey, paramsForPath, nodePath, parameterTypes, alwaysPreserveFields);
         }
+    }
+
+    private static Dictionary<string, List<string>> GroupParametersByBasePath(
+        string[] parameterNames,
+        Dictionary<string, string[]> localMap,
+        Dictionary<object, string> basePathCache)
+    {
+        var paramsByBasePath = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var paramName in parameterNames)
+        {
+            if (!localMap.TryGetValue(paramName, out var basePath)) continue;
+            var basePathKey = GetOrAddBasePathKey(basePathCache, basePath);
+            GetOrAddList(paramsByBasePath, basePathKey).Add(paramName);
+        }
+        return paramsByBasePath;
+    }
+
+    private static void EnsureAllBasePathsForAlwaysPreserve(
+        Dictionary<string, string[]> localMap,
+        string[]? alwaysPreserveFields,
+        Dictionary<object, string> basePathCache,
+        Dictionary<string, List<string>> paramsByBasePath)
+    {
+        if (alwaysPreserveFields is not { Length: > 0 }) return;
+
+        foreach (var (_, basePath) in localMap)
+        {
+            var basePathKey = GetOrAddBasePathKey(basePathCache, basePath);
+            if (!paramsByBasePath.ContainsKey(basePathKey))
+            {
+                paramsByBasePath[basePathKey] = new List<string>();
+            }
+        }
+    }
+
+    private static string GetOrAddBasePathKey(Dictionary<object, string> cache, string[] basePath)
+    {
+        if (!cache.TryGetValue(basePath, out var key))
+        {
+            key = string.Join(".", basePath);
+            cache[basePath] = key;
+        }
+        return key;
+    }
+
+    private static List<string> GetOrAddList(Dictionary<string, List<string>> map, string key)
+    {
+        if (!map.TryGetValue(key, out var list))
+        {
+            list = new List<string>();
+            map[key] = list;
+        }
+        return list;
+    }
+
+    private void ProcessBasePath(
+        HashSet<string> extractedPaths,
+        string basePathKey,
+        List<string> paramsForPath,
+        string nodePath,
+        Dictionary<string, Type> parameterTypes,
+        string[]? alwaysPreserveFields)
+    {
+        var fullPath = $"{basePathKey}.{nodePath}";
+        var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullPath.AsSpan(), out _);
+        if (nodeField is not { HasFields: true }) return;
+
+        var fieldsToPreserve = CollectFields(extractedPaths, paramsForPath, parameterTypes, alwaysPreserveFields);
+        PreserveFields(nodeField._children, fieldsToPreserve, fullPath);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -125,76 +148,122 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Check if paths have parameter prefixes
-        var hasParameterPrefixes = false;
+        if (ShouldExpandWithoutPrefixes(extractedPaths, paramsForPath))
+        {
+            ExpandPerParameterType(extractedPaths, paramsForPath, parameterTypes, result);
+        }
+        else
+        {
+            FilterPerParameter(extractedPaths, paramsForPath, parameterTypes, result);
+        }
+
+        AppendAlwaysPreserveFields(alwaysPreserveFields, result);
+        return result;
+    }
+
+    /// <summary>
+    /// True when the extracted paths carry no parameter-name prefix AND there are multiple
+    /// parameters in scope — falls into the "expand per type" branch instead of per-parameter
+    /// filtering.
+    /// </summary>
+    private static bool ShouldExpandWithoutPrefixes(HashSet<string> extractedPaths, List<string> paramsForPath)
+    {
+        if (paramsForPath.Count <= 1) return false;
+
+        // Manual short-circuit loop — LINQ allocations would be heavier on the hot path.
+#pragma warning disable S3267
         foreach (var p in extractedPaths)
         {
             foreach (var param in paramsForPath)
             {
                 if (p.StartsWith(param + ".", StringComparison.OrdinalIgnoreCase))
                 {
-                    hasParameterPrefixes = true;
-                    break;
+                    return false;
                 }
             }
-            if (hasParameterPrefixes) break;
         }
+#pragma warning restore S3267
+        return true;
+    }
 
-        // Use "no prefix" mode for multi-parameter comparison without prefixes
-        var useNoPrefixMode = !hasParameterPrefixes && paramsForPath.Count > 1;
-
-        if (useNoPrefixMode)
+    private static void ExpandPerParameterType(
+        HashSet<string> extractedPaths,
+        List<string> paramsForPath,
+        Dictionary<string, Type> parameterTypes,
+        HashSet<string> result)
+    {
+        foreach (var paramName in paramsForPath)
         {
-            // Multi-parameter without prefixes: expand for each parameter type
-            foreach (var paramName in paramsForPath)
-            {
-                parameterTypes.TryGetValue(paramName, out var specificParameterType);
-                AddFieldsToPreserve(extractedPaths, null, specificParameterType, result);
-            }
+            parameterTypes.TryGetValue(paramName, out var specificParameterType);
+            AddFieldsToPreserve(extractedPaths, null, specificParameterType, result);
         }
-        else
+    }
+
+    private static void FilterPerParameter(
+        HashSet<string> extractedPaths,
+        List<string> paramsForPath,
+        Dictionary<string, Type> parameterTypes,
+        HashSet<string> result)
+    {
+        foreach (var paramName in paramsForPath)
         {
-            // Single parameter or has prefixes: filter per parameter
-            foreach (var paramName in paramsForPath)
-            {
-                // Filter paths for this parameter
-                HashSet<string>? parameterPaths = null;
-                foreach (var p in extractedPaths)
-                {
-                    if (string.Equals(p, paramName, StringComparison.OrdinalIgnoreCase) ||
-                        p.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase))
-                    {
-                        parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                        parameterPaths.Add(p);
-                    }
-                }
+            var parameterPaths = SelectPathsForParameter(extractedPaths, paramName, paramsForPath.Count == 1);
+            if (parameterPaths == null) continue;
 
-                // Fallback: if no paths matched with prefix but we have paths and one parameter
-                if ((parameterPaths == null || parameterPaths.Count == 0) &&
-                    extractedPaths.Count > 0 &&
-                    paramsForPath.Count == 1)
-                {
-                    parameterPaths = extractedPaths;
-                }
-
-                if (parameterPaths != null)
-                {
-                    parameterTypes.TryGetValue(paramName, out var specificParameterType);
-                    AddFieldsToPreserve(parameterPaths, paramName, specificParameterType, result);
-                }
-            }
+            parameterTypes.TryGetValue(paramName, out var specificParameterType);
+            AddFieldsToPreserve(parameterPaths, paramName, specificParameterType, result);
         }
+    }
 
-        // Add always-preserve fields
-        if (alwaysPreserveFields != null)
+    /// <summary>
+    /// Returns the subset of <paramref name="extractedPaths"/> that target <paramref name="paramName"/>.
+    /// Falls back to the full set when no prefixed paths match AND this is a single-parameter lambda
+    /// (so an unprefixed expression like <c>x =&gt; x.field</c> still preserves something).
+    /// </summary>
+    private static HashSet<string>? SelectPathsForParameter(
+        HashSet<string> extractedPaths,
+        string paramName,
+        bool singleParameterFallback)
+    {
+        var parameterPaths = CollectParameterPrefixedPaths(extractedPaths, paramName);
+        if ((parameterPaths is null || parameterPaths.Count == 0)
+            && extractedPaths.Count > 0
+            && singleParameterFallback)
         {
-            foreach (var field in alwaysPreserveFields)
-            {
-                result.Add(field);
-            }
+            return extractedPaths;
         }
+        return parameterPaths;
+    }
 
-        return result;
+    // Manual loop with lazy init beats LINQ Where().ToHashSet() when no paths match.
+#pragma warning disable S3267
+    private static HashSet<string>? CollectParameterPrefixedPaths(HashSet<string> extractedPaths, string paramName)
+    {
+        HashSet<string>? parameterPaths = null;
+        var prefix = paramName + ".";
+        foreach (var p in extractedPaths)
+        {
+            if (!IsParameterMatch(p, paramName, prefix)) continue;
+            parameterPaths ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            parameterPaths.Add(p);
+        }
+        return parameterPaths;
+    }
+
+    private static bool IsParameterMatch(string path, string paramName, string prefix)
+    {
+        if (string.Equals(path, paramName, StringComparison.OrdinalIgnoreCase)) return true;
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+#pragma warning restore S3267
+
+    private static void AppendAlwaysPreserveFields(string[]? alwaysPreserveFields, HashSet<string> result)
+    {
+        if (alwaysPreserveFields == null) return;
+        foreach (var field in alwaysPreserveFields)
+        {
+            result.Add(field);
+        }
     }
 
     private static void AddFieldsToPreserve(
@@ -203,56 +272,82 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         Type? parameterType,
         HashSet<string> result)
     {
-        var hasOnlyParameterName = false;
+        var hasOnlyParameterName = ExpandPathsIntoResult(extractedPaths, paramName, parameterType, result);
 
+        if (result.Count > 1)
+        {
+            ApplyMostSpecificWins(result);
+        }
+
+        if (hasOnlyParameterName && result.Count == 0 && parameterType != null)
+        {
+            AddAllPropertiesAsFallback(parameterType, result);
+        }
+    }
+
+    /// <summary>
+    /// Walks <paramref name="extractedPaths"/> and adds the (parameter-prefix-stripped, navigation-expanded)
+    /// fields to <paramref name="result"/>. Returns true when at least one path was just the parameter
+    /// name itself, signalling the "greedy preserve everything" fallback below.
+    /// </summary>
+    private static bool ExpandPathsIntoResult(
+        HashSet<string> extractedPaths,
+        string? paramName,
+        Type? parameterType,
+        HashSet<string> result)
+    {
+        var hasOnlyParameterName = false;
         foreach (var path in extractedPaths)
         {
-            // Check if this is just the parameter name (e.g., "user" in "user != null")
-            if (!string.IsNullOrEmpty(paramName) && string.Equals(path, paramName, StringComparison.OrdinalIgnoreCase))
+            if (IsBareParameterReference(path, paramName))
             {
                 hasOnlyParameterName = true;
                 continue;
             }
 
-            // Strip parameter prefix
-            var field = !string.IsNullOrEmpty(paramName) && path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
-                ? path.Substring(paramName.Length + 1)
-                : path;
+            var field = StripParameterPrefix(path, paramName);
+            if (string.IsNullOrEmpty(field)) continue;
 
-            if (!string.IsNullOrEmpty(field))
+            foreach (var expandedField in NavigationPropertyExpander.ExpandNavigationProperty(field, parameterType))
             {
-                // Expand navigation properties
-                var expanded = NavigationPropertyExpander.ExpandNavigationProperty(field, parameterType);
-                foreach (var expandedField in expanded)
-                {
-                    result.Add(expandedField);
-                }
+                result.Add(expandedField);
             }
         }
+        return hasOnlyParameterName;
+    }
 
-        // Apply "most specific wins" if we have multiple paths
-        if (result.Count > 1)
+    private static bool IsBareParameterReference(string path, string? paramName)
+        => !string.IsNullOrEmpty(paramName)
+        && string.Equals(path, paramName, StringComparison.OrdinalIgnoreCase);
+
+    private static string StripParameterPrefix(string path, string? paramName)
+        => !string.IsNullOrEmpty(paramName)
+           && path.StartsWith(paramName + ".", StringComparison.OrdinalIgnoreCase)
+            ? path.Substring(paramName.Length + 1)
+            : path;
+
+    /// <summary>Removes broader paths from <paramref name="result"/> when a more-specific child path exists.</summary>
+    private static void ApplyMostSpecificWins(HashSet<string> result)
+    {
+        result.RemoveWhere(path => HasMoreSpecificDescendant(path, result));
+    }
+
+    private static bool HasMoreSpecificDescendant(string path, HashSet<string> all)
+    {
+        var prefix = path + ".";
+        foreach (var other in all)
         {
-            // Remove broader paths when a more-specific child path exists
-            result.RemoveWhere(path =>
-            {
-                var prefix = path + ".";
-                foreach (var other in result)
-                {
-                    if (other.Length > path.Length && other.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                        return true;
-                }
-                return false;
-            });
+            if (other.Length > path.Length && other.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
         }
+        return false;
+    }
 
-        // Greedy: if only parameter name was checked, preserve all type fields
-        if (hasOnlyParameterName && result.Count == 0 && parameterType != null)
+    private static void AddAllPropertiesAsFallback(Type parameterType, HashSet<string> result)
+    {
+        foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-            {
-                result.Add(prop.Name);
-            }
+            result.Add(prop.Name);
         }
     }
 
@@ -334,30 +429,35 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         var fieldsToPreserve = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AddFieldsToPreserve(extractedPaths, paramName, parameterType, fieldsToPreserve);
 
-        // Hoist last-segment computation — nodePath is constant across roots
-        var nodePathSpan = nodePath.AsSpan();
-        var lastSegmentStart = nodePathSpan.LastIndexOf('.');
-        var lastSegment = (lastSegmentStart >= 0 ? nodePathSpan[(lastSegmentStart + 1)..] : nodePathSpan).ToString();
-
-        // For merged queries with multiple roots, preserve in all of them
+        var lastSegment = LastSegmentOf(nodePath);
         foreach (var rootField in sourceQuery.Definition.Fields.Values)
         {
-            var pathToNode = sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
-            if (pathToNode.Length == 0) continue;
+            PreserveFromRoot(rootField, nodePath, lastSegment, fieldsToPreserve);
+        }
+    }
 
-            var fullNodePath = $"{string.Join(".", pathToNode)}.{lastSegment}";
+    private static string LastSegmentOf(string nodePath)
+    {
+        var nodePathSpan = nodePath.AsSpan();
+        var lastSegmentStart = nodePathSpan.LastIndexOf('.');
+        return (lastSegmentStart >= 0 ? nodePathSpan[(lastSegmentStart + 1)..] : nodePathSpan).ToString();
+    }
 
-            var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullNodePath.AsSpan(), out _);
-            if (nodeField is not { HasFields: true }) continue;
+    private void PreserveFromRoot(FieldDefinition rootField, string nodePath, string lastSegment, HashSet<string> fieldsToPreserve)
+    {
+        var pathToNode = sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
+        if (pathToNode.Length == 0) return;
 
-            // Preserve all fields for this root
-            foreach (var field in fieldsToPreserve)
+        var fullNodePath = $"{string.Join(".", pathToNode)}.{lastSegment}";
+        var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullNodePath.AsSpan(), out _);
+        if (nodeField is null) return;
+        if (!nodeField.HasFields) return;
+
+        foreach (var field in fieldsToPreserve)
+        {
+            if (QueryDefinitionExtensions.NavigatePath(nodeField.Fields, field.AsSpan(), out var resolvedPath, fullNodePath) is not null)
             {
-                // Try path navigation first (handles both simple and nested paths)
-                if (QueryDefinitionExtensions.NavigatePath(nodeField.Fields, field.AsSpan(), out var resolvedPath, fullNodePath) != null)
-                {
-                    preserveCallback(resolvedPath!);
-                }
+                preserveCallback(resolvedPath!);
             }
         }
     }
@@ -368,14 +468,16 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         if (expression is not LambdaExpression { Parameters.Count: > 0 } lambda)
             return null;
 
-        var names = new List<string>(lambda.Parameters.Count);
-        foreach (var p in lambda.Parameters)
+        // Lambdas authored in C# always carry parameter names. The BCL allows null names via
+        // Expression.Parameter(type, null) but those don't reach here through the public API.
+#pragma warning disable S3267
+        var names = new string[lambda.Parameters.Count];
+        for (int i = 0; i < lambda.Parameters.Count; i++)
         {
-            if (p.Name != null)
-                names.Add(p.Name);
+            names[i] = lambda.Parameters[i].Name!;
         }
-
-        return names.Count > 0 ? names.ToArray() : null;
+#pragma warning restore S3267
+        return names;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

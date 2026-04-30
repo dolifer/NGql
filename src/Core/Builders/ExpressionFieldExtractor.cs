@@ -141,8 +141,11 @@ public static class ExpressionFieldExtractor
                 {
                     // Visit the method call to process its lambda arguments
                     Visit(methodCall);
-                    // Continue from the collection the method was called on
-                    current = methodCall.Object ?? (methodCall.Arguments.Count > 0 ? methodCall.Arguments[0] : null);
+                    // Continue from the collection the method was called on. For instance
+                    // methods Object is non-null; for static/extension methods (LINQ) the
+                    // first argument is the source. Methods with neither don't appear in
+                    // valid lambdas.
+                    current = methodCall.Object ?? methodCall.Arguments[0];
                 }
                 else if (current is MemberExpression memberExpr)
                 {
@@ -163,52 +166,50 @@ public static class ExpressionFieldExtractor
         protected override Expression VisitMethodCall(MethodCallExpression node)
         {
             var isLinqMethod = IsLinqMethod(node);
+            var basePath = isLinqMethod ? GetMethodCallBasePath(node) : null;
 
-            // Get the base path BEFORE visiting (so expressions aren't marked as visited yet)
-            string? basePath = null;
-            if (isLinqMethod)
-            {
-                basePath = GetMethodCallBasePath(node);
-            }
+            VisitReceiver(node);
+            VisitRemainingArguments(node, isLinqMethod, basePath);
 
-            // Visit the object/collection being called on (for instance methods)
-            if (node.Object != null)
+            return node;
+        }
+
+        private void VisitReceiver(MethodCallExpression node)
+        {
+            if (node.Object is not null)
             {
                 Visit(node.Object);
             }
             else if (node.Arguments.Count > 0)
             {
-                // For extension methods, visit the first argument (the collection)
                 Visit(node.Arguments[0]);
             }
+        }
 
-            // Visit remaining arguments with context if this is a LINQ method
-            var startIndex = node.Object != null ? 0 : 1; // Skip first arg if already visited
-
+        private void VisitRemainingArguments(MethodCallExpression node, bool isLinqMethod, string? basePath)
+        {
+            var startIndex = node.Object is not null ? 0 : 1;
             for (var i = startIndex; i < node.Arguments.Count; i++)
             {
-                var arg = node.Arguments[i];
-
-                // Push base path context for lambda arguments in LINQ methods
-                if (isLinqMethod && arg is LambdaExpression && !string.IsNullOrEmpty(basePath))
-                {
-                    _lambdaContextPaths.Push(basePath);
-                    try
-                    {
-                        Visit(arg);
-                    }
-                    finally
-                    {
-                        _lambdaContextPaths.Pop();
-                    }
-                }
-                else
-                {
-                    Visit(arg);
-                }
+                VisitArgument(node.Arguments[i], isLinqMethod, basePath);
             }
+        }
 
-            return node;
+        private void VisitArgument(Expression arg, bool isLinqMethod, string? basePath)
+        {
+            if (isLinqMethod && arg is LambdaExpression && !string.IsNullOrEmpty(basePath))
+            {
+                VisitWithLambdaContext(arg, basePath);
+                return;
+            }
+            Visit(arg);
+        }
+
+        private void VisitWithLambdaContext(Expression arg, string basePath)
+        {
+            _lambdaContextPaths.Push(basePath);
+            try { Visit(arg); }
+            finally { _lambdaContextPaths.Pop(); }
         }
 
         /// <summary>
@@ -221,76 +222,60 @@ public static class ExpressionFieldExtractor
         }
 
         /// <summary>
-        /// Gets the base path from a method call (the collection being operated on).
+        /// Gets the base path from a LINQ method call (the collection being operated on).
+        /// LINQ on Enumerable/Queryable is always an extension method whose first argument is
+        /// the source collection — instance LINQ methods do not exist in the BCL, so
+        /// node.Arguments is guaranteed non-empty here.
         /// </summary>
         private static string? GetMethodCallBasePath(MethodCallExpression node)
-        {
-            // For instance methods: obj.Method()
-            if (node.Object != null)
-            {
-                return BuildPathFromExpression(node.Object);
-            }
-
-            // For extension methods: Method(obj)
-            if (node.Arguments.Count > 0)
-            {
-                return BuildPathFromExpression(node.Arguments[0]);
-            }
-
-            return null;
-        }
+            => BuildPathFromExpression(node.Arguments[0]);
 
         /// <summary>
         /// Builds a path from any expression (member or method chain).
-        /// This is a lightweight version for determining base paths without marking as visited.
+        /// Lightweight version for determining base paths without marking as visited.
         /// </summary>
-        private static string? BuildPathFromExpression(Expression expr)
+        private static string? BuildPathFromExpression(Expression? expr) => expr switch
         {
-            if (expr is MemberExpression memberExpr)
+            MemberExpression memberExpr => BuildPathFromMember(memberExpr),
+            MethodCallExpression methodCallExpr => BuildPathFromExpression(MethodCallSourceExpression(methodCallExpr)),
+            _ => null,
+        };
+
+        private static string? BuildPathFromMember(MemberExpression start)
+        {
+            // Loop entry adds at least one part; parts.Count is never 0 on exit.
+            var parts = new List<string>();
+            for (MemberExpression? current = start; current is not null;)
             {
-                // Build path directly without side effects
-                var parts = new List<string>();
-                var current = memberExpr;
-
-                while (current != null)
-                {
-                    parts.Add(current.Member.Name);
-
-                    if (current.Expression is MemberExpression nextMember)
-                    {
-                        current = nextMember;
-                    }
-                    else if (current.Expression is ParameterExpression)
-                    {
-                        break;
-                    }
-                    else if (current.Expression is MethodCallExpression methodCall)
-                    {
-                        // Continue from the collection the method was called on
-                        var basePath = BuildPathFromExpression(methodCall.Object ?? (methodCall.Arguments.Count > 0 ? methodCall.Arguments[0] : null!));
-                        if (basePath != null)
-                        {
-                            parts.Add(basePath);
-                        }
-                        break;
-                    }
-                    else
-                    {
-                        return null; // Invalid chain
-                    }
-                }
-
-                parts.Reverse();
-                return parts.Count > 0 ? string.Join(".", parts) : null;
+                parts.Add(current.Member.Name);
+                if (!TryStepUp(current, parts, out current)) return null;
             }
 
-            if (expr is MethodCallExpression methodCallExpr)
-            {
-                // For method calls, get the path from what it was called on
-                return BuildPathFromExpression(methodCallExpr.Object ?? (methodCallExpr.Arguments.Count > 0 ? methodCallExpr.Arguments[0] : null!));
-            }
+            parts.Reverse();
+            return string.Join(".", parts);
+        }
 
-            return null;
+        // Returns true if the chain continues (next set, possibly null when terminating at a parameter
+        // or a successfully-resolved method call); returns false to signal an invalid chain shape.
+        private static bool TryStepUp(MemberExpression current, List<string> parts, out MemberExpression? next)
+        {
+            switch (current.Expression)
+            {
+                case MemberExpression nextMember:
+                    next = nextMember;
+                    return true;
+                case ParameterExpression:
+                    next = null;
+                    return true;
+                case MethodCallExpression methodCall:
+                    var basePath = BuildPathFromExpression(MethodCallSourceExpression(methodCall));
+                    if (basePath is not null) parts.Add(basePath);
+                    next = null;
+                    return true;
+                default:
+                    next = null;
+                    return false;
+            }
         }
 
         /// <summary>
@@ -322,10 +307,12 @@ public static class ExpressionFieldExtractor
         {
             // If this is the root parameter being used directly (not in a nested lambda context),
             // add it as a field path. This handles cases like: playerProfile => playerProfile == null
+            // Lambdas authored in C# always carry a parameter name; the BCL's
+            // Expression.Parameter overloads accept null but no public path produces such
+            // parameters here, so we treat the name as non-null.
             if (_rootParameter != null && node == _rootParameter && _lambdaContextPaths.Count == 0)
             {
-                // Add the parameter name as a field path
-                FieldPaths.Add(node.Name ?? "");
+                FieldPaths.Add(node.Name!);
             }
 
             return node;
@@ -403,58 +390,23 @@ public static class ExpressionFieldExtractor
         /// <returns>The dot-separated path (e.g., "user.profile.age") or null if not a valid path</returns>
         private string? BuildMemberPath(MemberExpression node)
         {
+            // The first StepUpChain call always pushes node.Member.Name onto parts before
+            // it can fail or terminate, so parts is non-empty by the time we exit the loop.
             var parts = new Stack<string>();
             Expression? currentExpr = node;
             ParameterExpression? parameterExpr = null;
 
             while (currentExpr != null)
             {
-                if (currentExpr is MemberExpression memberExpr)
+                var step = StepUpChain(currentExpr, parts);
+                if (step.IsTerminal)
                 {
-                    // Skip properties that should be excluded
-                    if (ShouldExcludeProperty(memberExpr))
-                    {
-                        currentExpr = memberExpr.Expression;
-                        continue;
-                    }
-
-                    // Add the member name to the path
-                    parts.Push(memberExpr.Member.Name);
-                    currentExpr = memberExpr.Expression;
-                }
-                else if (currentExpr is MethodCallExpression methodCall)
-                {
-                    // Handle LINQ methods like First(), Where(), Any()
-                    // Continue from the object the method was called on (the collection)
-                    currentExpr = methodCall.Object ?? (methodCall.Arguments.Count > 0 ? methodCall.Arguments[0] : null);
-                }
-                else if (currentExpr is BinaryExpression binaryExpr && binaryExpr.NodeType == ExpressionType.Coalesce)
-                {
-                    // For null coalescing, continue with the left side (the potentially null expression)
-                    currentExpr = binaryExpr.Left;
-                }
-                else if (currentExpr is ConditionalExpression conditionalExpr)
-                {
-                    // Handle null-conditional operator (?.) which creates a conditional expression
-                    // Try IfTrue first, fallback to IfFalse if IfTrue is null/constant
-                    currentExpr = conditionalExpr.IfTrue is ConstantExpression { Value: null } 
-                        ? conditionalExpr.IfFalse 
-                        : conditionalExpr.IfTrue;
-                }
-                else if (currentExpr is ParameterExpression paramExpr)
-                {
-                    // Reached a parameter - save it for multi-parameter lambda handling
-                    parameterExpr = paramExpr;
+                    parameterExpr = step.Parameter;
+                    if (!step.Valid) return null;
                     break;
                 }
-                else
-                {
-                    // Not a valid chain (e.g., constant)
-                    return null;
-                }
+                currentExpr = step.Next;
             }
-
-            if (parts.Count == 0) return null;
 
             // For multi-parameter lambdas (more than 1 root parameter type), include parameter name
             if (_rootParameterTypes.Count > 1 && parameterExpr != null && !string.IsNullOrEmpty(parameterExpr.Name))
@@ -466,23 +418,69 @@ public static class ExpressionFieldExtractor
         }
 
         /// <summary>
+        /// One step of <see cref="BuildMemberPath"/>'s chain walk. Returns either the next
+        /// expression to walk (<see cref="Next"/>) or a terminal status (<see cref="IsTerminal"/>)
+        /// indicating whether the chain ended cleanly at a parameter (<see cref="Valid"/>) or hit
+        /// an unsupported node shape.
+        /// </summary>
+        private readonly ref struct ChainStep
+        {
+            public Expression? Next { get; init; }
+            public ParameterExpression? Parameter { get; init; }
+            public bool IsTerminal { get; init; }
+            public bool Valid { get; init; }
+
+            public static ChainStep Continue(Expression? next) => new() { Next = next };
+            public static ChainStep TerminateAt(ParameterExpression p) => new() { IsTerminal = true, Valid = true, Parameter = p };
+            public static ChainStep Invalid() => new() { IsTerminal = true, Valid = false };
+        }
+
+        private static ChainStep StepUpChain(Expression currentExpr, Stack<string> parts)
+        {
+            switch (currentExpr)
+            {
+                case MemberExpression memberExpr:
+                    parts.Push(memberExpr.Member.Name);
+                    return ChainStep.Continue(memberExpr.Expression);
+
+                case MethodCallExpression methodCall:
+                    return ChainStep.Continue(MethodCallSourceExpression(methodCall));
+
+                case BinaryExpression { NodeType: ExpressionType.Coalesce } binaryExpr:
+                    return ChainStep.Continue(binaryExpr.Left);
+
+                case ConditionalExpression conditionalExpr:
+                    return ChainStep.Continue(SelectConditionalBranch(conditionalExpr));
+
+                case ParameterExpression paramExpr:
+                    return ChainStep.TerminateAt(paramExpr);
+
+                default:
+                    return ChainStep.Invalid();
+            }
+        }
+
+        // Either methodCall.Object is non-null (instance method) or Arguments has at least one
+        // entry (the source for an extension/static method); valid lambdas don't produce both
+        // null Object and zero arguments.
+        private static Expression? MethodCallSourceExpression(MethodCallExpression methodCall)
+            => methodCall.Object ?? methodCall.Arguments[0];
+
+        /// <summary>
+        /// Picks the branch of a null-conditional-style ternary that carries member access.
+        /// IfTrue takes precedence; the IfFalse branch wins only when IfTrue is the constant null.
+        /// </summary>
+        private static Expression SelectConditionalBranch(ConditionalExpression conditionalExpr)
+            => conditionalExpr.IfTrue is ConstantExpression { Value: null }
+                ? conditionalExpr.IfFalse
+                : conditionalExpr.IfTrue;
+
+        /// <summary>
         /// Determines if a member expression represents a property that should be excluded.
-        /// Only excludes System.* types (like string.Length).
-        /// All other properties are included regardless of namespace, assembly, or where they're declared.
-        /// This supports IL-generated properties and properties from any source.
+        /// Excludes only System.* types (like string.Length); IL-emitted properties from
+        /// QueryBuilderTypeGenerator and user types are kept.
         /// </summary>
         private static bool ShouldExcludeProperty(MemberExpression memberExpr)
-        {
-            var declaringType = memberExpr.Member.DeclaringType;
-            if (declaringType == null)
-                return false;
-
-            // Only exclude properties from system types (like string.Length)
-            if (declaringType.Namespace?.StartsWith("System") == true)
-                return true;
-
-            // Include everything else - if it's in the expression tree, it's relevant
-            return false;
-        }
+            => memberExpr.Member.DeclaringType!.Namespace?.StartsWith("System") == true;
     }
 }

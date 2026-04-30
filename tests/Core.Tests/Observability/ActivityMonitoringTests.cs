@@ -10,7 +10,10 @@ namespace NGql.Core.Tests.Observability;
 /// <summary>
 /// Tests for NGqlActivity creation, tag assignment, and exception handling in observability.
 /// Covers activity lifecycle, tags, events, exception recording, and observability extensions.
+/// Tests in this collection run sequentially because they register process-global ActivityListeners
+/// that would otherwise leak across parallel test fixtures.
 /// </summary>
+[Collection("ObservabilityListener")]
 public class ActivityMonitoringTests
 {
     [Fact]
@@ -137,8 +140,9 @@ public class ActivityMonitoringTests
     [Fact]
     public void NGqlActivity_WithException_NullActivity_DoesNotThrow()
     {
-        // Arrange
-        var exception = new ArgumentNullException("test");
+        // Arrange — wrap inside an InvalidOperationException so we don't need to satisfy ArgumentException's
+        // paramName-must-match-an-argument-list rule (the test only needs *some* exception to record).
+        Exception exception = new InvalidOperationException("Activity reference must not be null");
 
         // Act
         using var activity = NGqlActivity.StartQuery("test");
@@ -190,9 +194,21 @@ public class ActivityMonitoringTests
     [Fact]
     public void NGqlActivity_Dispose_DoesNotThrow()
     {
-        // Act & Assert
-        var activity = NGqlActivity.StartQuery("test");
-        activity.Dispose(); // Direct call, not lambda
+        // Act
+        var disposed = false;
+        try
+        {
+            var activity = NGqlActivity.StartQuery("test");
+            activity.Dispose(); // Direct call — ref struct can't be captured in a lambda.
+            disposed = true;
+        }
+        catch (Exception)
+        {
+            disposed = false;
+        }
+
+        // Assert
+        disposed.Should().BeTrue("Dispose() on NGqlActivity must not throw");
     }
 
     [Fact]
@@ -202,8 +218,11 @@ public class ActivityMonitoringTests
         using var activity = NGqlActivity.StartQuery("test");
         var traceId = activity.TraceId;
 
-        // Assert - TraceId property is accessible
-        (traceId == null || traceId is string).Should().BeTrue();
+        // Assert - TraceId property is accessible (returns string? — either null or a populated string).
+        // No assertion can constrain it tighter without knowing whether a Listener is attached, but we
+        // verify the getter at least returns the same value on a second read (idempotent).
+        var traceIdSecondRead = activity.TraceId;
+        traceIdSecondRead.Should().Be(traceId);
     }
 
     [Fact]
@@ -362,7 +381,7 @@ public class ActivityMonitoringTests
             tasks[i] = Task.Run(() =>
             {
                 using var activity = NGqlActivity.StartQuery("test");
-                var result = activity.WithObservability(() => "result", "operation");
+                _ = activity.WithObservability(() => "result", "operation");
             });
         }
 
@@ -390,8 +409,9 @@ public class ActivityMonitoringTests
         using var activity = NGqlActivity.StartQuery("test");
         var id = activity.Id;
 
-        // Assert
-        (id == null || id is string).Should().BeTrue();
+        // Assert (Id is string?; we just verify the getter is reachable and idempotent on a second read).
+        var idSecondRead = activity.Id;
+        idSecondRead.Should().Be(id);
     }
 
     [Theory]
@@ -412,7 +432,7 @@ public class ActivityMonitoringTests
     {
         // Arrange
         var exception1 = new InvalidOperationException("First");
-        var exception2 = new ArgumentNullException("Second");
+        Exception exception2 = new InvalidOperationException("Second");
 
         // Act
         using var activity = NGqlActivity.StartQuery("test")
@@ -421,5 +441,72 @@ public class ActivityMonitoringTests
 
         // Assert
         activity.IsRecording.Should().Be(activity.IsRecording);
+    }
+
+    [Fact]
+    public void ActivityExtensions_WithObservability_OnAction_PropagatesException()
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+        try
+        {
+            // ref-struct activity cannot be captured in lambdas; invoke directly inside try/catch.
+            bool caught = false;
+            try
+            {
+                using var activity = NGqlActivity.StartQuery("obs_action_throws");
+                activity.WithObservability(
+                    () => throw new InvalidOperationException("bang"),
+                    "test_op");
+            }
+            catch (InvalidOperationException ex)
+            {
+                caught = true;
+                ex.Message.Should().Be("bang");
+            }
+
+            caught.Should().BeTrue();
+        }
+        finally
+        {
+            listener.Dispose();
+        }
+    }
+
+    [Fact]
+    public void ActivityExtensions_WithObservability_OnFunc_PropagatesException()
+    {
+        var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+        try
+        {
+            bool caught = false;
+            try
+            {
+                using var activity = NGqlActivity.StartQuery("obs_func_throws");
+                _ = activity.WithObservability<int>(
+                    () => throw new ArgumentException("nope"),
+                    "test_func_op");
+            }
+            catch (ArgumentException ex)
+            {
+                caught = true;
+                ex.Message.Should().Be("nope");
+            }
+
+            caught.Should().BeTrue();
+        }
+        finally
+        {
+            listener.Dispose();
+        }
     }
 }

@@ -27,7 +27,7 @@ public class HotPathBenchmark
     private QueryBuilder[] _fragments = null!;
 
     [Params(10, 100, 1000)]
-    public int IncludeCount;
+    public int IncludeCount { get; set; }
 
     [GlobalSetup]
     public void Setup()
@@ -147,7 +147,7 @@ public class HotPathBenchmark
     }
 
     /// <summary>
-    /// Isolates the BuildPathToNode DFS cost. <see cref="IterationSetup"/> rebuilds the tree before each
+    /// Isolates the BuildPathToNode DFS cost. The IterationSetup attribute rebuilds the tree before each
     /// iteration so the path-index cache is cold; the iteration itself runs many GetPathTo calls so the
     /// per-call cost dominates the per-iteration tree build.
     /// </summary>

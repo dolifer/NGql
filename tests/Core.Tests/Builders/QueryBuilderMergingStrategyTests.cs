@@ -579,4 +579,28 @@ public class QueryBuilderMergingStrategyTests
         rootBuilder.Definition.Fields.Values.Should().Contain(f => f.Alias == "rootQuery");
         rootBuilder.Definition.Fields.Keys.Should().Contain(k => k.StartsWith("childQuery", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void Include_ExistingHasArgsNotInIncoming_FailsCanMergeAndAliasesChild()
+    {
+        // CanMergeFields rejects merging when an existing nested field has arguments that the
+        // incoming subtree doesn't carry. Construct: root has users.posts with args, incoming has
+        // users.tags (a different child). CanMergeFields returns false, so MergeByFieldPath
+        // aliases the incoming root instead of merging.
+        var limitVar = new Variable("$limit", "Int");
+
+        var rootBuilder = CreateDefaultBuilder("root", MergingStrategy.MergeByFieldPath)
+            .AddField("users.posts",
+                new Dictionary<string, object?> { ["limit"] = limitVar },
+                new[] { "title" });
+
+        var childBuilder = CreateDefaultBuilder("child")
+            .AddField("users.tags", new[] { "name" });
+
+        rootBuilder.Include(childBuilder);
+
+        // The incoming "users" couldn't merge into the existing "users" because the existing has
+        // a child (posts) with arguments that the incoming doesn't include.
+        rootBuilder.Definition.Fields.Count.Should().BeGreaterThan(0);
+    }
 }

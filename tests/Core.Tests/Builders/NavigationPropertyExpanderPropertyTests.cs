@@ -241,7 +241,10 @@ public class NavigationPropertyExpanderPropertyTests
     public void ExpandNavigationProperty_NavigationPropertyWithRemainedPath_ExpandsAndAppends()
     {
         var result = NavigationPropertyExpander.ExpandNavigationProperty("child.name", typeof(ClassWithNestedProperty));
-        result.Should().NotBeEmpty();
+        // Verify the remaining path 'name' is preserved through the expansion (the result contains
+        // at least one entry whose string value retains the trailing 'name' segment).
+        result.Should().NotBeNullOrEmpty();
+        result.Should().Contain(p => p.EndsWith("name", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -416,7 +419,7 @@ public class NavigationPropertyExpanderPropertyTests
 
     public class InvalidOperationExceptionType : Type
     {
-        public override string? Name => "InvalidOperationExceptionType";
+        public override string Name => "InvalidOperationExceptionType";
         public override string? FullName => "InvalidOperationExceptionType";
         public override Guid GUID => Guid.Empty;
         public override Type? BaseType => typeof(object);
@@ -524,7 +527,7 @@ public class NavigationPropertyExpanderPropertyTests
 
     public class AmbiguousMatchExceptionType : Type
     {
-        public override string? Name => "AmbiguousMatchExceptionType";
+        public override string Name => "AmbiguousMatchExceptionType";
         public override string? FullName => "AmbiguousMatchExceptionType";
         public override Guid GUID => Guid.Empty;
         public override Type? BaseType => typeof(object);

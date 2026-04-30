@@ -10,6 +10,7 @@ using Xunit;
 
 namespace NGql.Core.Tests.Observability;
 
+[Collection("ObservabilityListener")]
 public class ObservabilityTests
 {
     [Fact]
@@ -432,14 +433,6 @@ public class ObservabilityTests
                 }
             }
         };
-        action.Should().NotThrow();
-    }
-
-    [Fact]
-    public void NGqlTelemetry_DisposeResources_ShouldNotThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () => NGqlTelemetry.DisposeResources();
         action.Should().NotThrow();
     }
 

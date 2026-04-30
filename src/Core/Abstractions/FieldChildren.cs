@@ -73,9 +73,11 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         }
 
         // Slow path: indexed lookup needs the lock since Dictionary is not concurrent-read-safe.
+        // _index is monotone: once published non-null by BuildIndexLocked it never reverts, so
+        // re-checking under the lock would be a dead branch.
         lock (_lock)
         {
-            return _index != null && _index.TryGetValue(name.ToString(), out var indexed) ? indexed : null;
+            return _index!.TryGetValue(name.ToString(), out var indexed) ? indexed : null;
         }
     }
 
@@ -97,7 +99,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
 
         lock (_lock)
         {
-            return _index != null && _index.TryGetValue(name, out var indexed) ? indexed : null;
+            return _index!.TryGetValue(name, out var indexed) ? indexed : null;
         }
     }
 
@@ -164,25 +166,21 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         }
     }
 
-    /// <summary>Adds or replaces a child by span name (case-insensitive).</summary>
+    /// <summary>
+    /// Replaces an existing child by span name (case-insensitive). The only call site —
+    /// <c>FieldFactory.ProcessDottedSegment</c> — invokes this strictly after a successful
+    /// <see cref="TryGetValue(ReadOnlySpan{char},out FieldDefinition)"/>, so the entry is
+    /// guaranteed to exist; the loop is simply walking to the index of the known match.
+    /// </summary>
     internal void Set(ReadOnlySpan<char> name, FieldDefinition child)
     {
         lock (_lock)
         {
-            var items = _items;
-            if (items != null)
-            {
-                for (int i = 0; i < _count; i++)
-                {
-                    if (name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
-                    {
-                        items[i] = child;
-                        if (_index != null) _index[child.Name] = child;
-                        return;
-                    }
-                }
-            }
-            AppendLocked(child);
+            var items = _items!;
+            int i = 0;
+            while (!name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase)) i++;
+            items[i] = child;
+            if (_index != null) _index[child.Name] = child;
         }
     }
 

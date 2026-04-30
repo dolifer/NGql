@@ -498,7 +498,7 @@ public class QueryTests
     [Fact]
     public void Query_With_DateTime_Arguments_Should_Format_Correctly()
     {
-        var createdDate = new DateTime(2025, 01, 15, 10, 30, 45, 123);
+        var createdDate = new DateTime(2025, 01, 15, 10, 30, 45, 123, DateTimeKind.Utc);
         
         var query = new Query("UserQuery")
             .Select("users")
@@ -527,7 +527,7 @@ public class QueryTests
     public void Query_With_Various_Numeric_Types_Should_Format_Correctly()
     {
         // Test numeric types (int, long, float, double, decimal, etc.)
-        var args = new Dictionary<string, object?>
+        var args = new Dictionary<string, object>
         {
             { "intVal", 42 },
             { "longVal", 9223372036854775807L },
@@ -554,7 +554,7 @@ public class QueryTests
     [Fact]
     public void Query_With_Enum_And_EnumValue_Should_Format_Correctly()
     {
-        var args = new Dictionary<string, object?>
+        var args = new Dictionary<string, object>
         {
             { "status", TestStatus.Active },
             { "enumValue", new EnumValue("CUSTOM_VALUE") }
@@ -585,7 +585,7 @@ public class QueryTests
     [Fact]
     public void Query_With_Boolean_Values_Should_Format_Correctly()
     {
-        var args = new Dictionary<string, object?>
+        var args = new Dictionary<string, object>
         {
             { "active", true },
             { "archived", false }
@@ -603,7 +603,7 @@ public class QueryTests
     [Fact]
     public void Query_With_String_Arguments_Should_Format_Correctly()
     {
-        var args = new Dictionary<string, object?>
+        var args = new Dictionary<string, object>
         {
             { "name", "John" },
             { "email", "john@example.com" }

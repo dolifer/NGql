@@ -940,7 +940,7 @@ public class PreserveFromExpressionTests
             { "extra", ["QueryA"] }  // Additional entry to trigger alwaysPreserveFields block
         };
 
-        // Act - include alwaysPreserveFields to trigger Block 1 (lines 92-100)
+        // Act — include alwaysPreserveFields so the always-preserve block fires.
         var result = PreservationBuilder.Create(mergedQuery)
             .PreserveFromExpression(
                 (TestDataModels.SimpleUser user, TestDataModels.Product product) =>
@@ -970,8 +970,8 @@ public class PreserveFromExpressionTests
             { "user2", ["TestQuery"] }  // Multiple parameters, same base path
         };
 
-        // Act - expression without parameter prefixes should trigger useNoPrefixMode (lines 147-154)
-        // This tests the specific code path where multiple parameters exist but paths don't have prefixes
+        // Act — multi-parameter lambda without explicit parameter prefixes on member accesses,
+        // exercising the no-prefix path-resolution mode of the expression preservation processor.
         var result = PreservationBuilder.Create(query)
             .PreserveFromExpression(
                 (TestDataModels.SimpleUser user1, TestDataModels.SimpleUser user2) =>
@@ -995,8 +995,9 @@ public class PreserveFromExpressionTests
             .AddField("data.edges.node.Name:name")
             .AddField("data.edges.node.Age:age");
 
-        // Act - expression that ONLY references the parameter name, no fields
-        // "(user) => user != null" should trigger lines 250-255 greedy preservation
+        // Act — expression that references ONLY the parameter (no member access).
+        // Form like "(user) => user != null" triggers greedy preservation of every field under
+        // the matched parameter's base path.
         var result = PreservationBuilder.Create(query)
             .PreserveFromExpression(
                 (TestDataModels.SimpleUser user) => user != null,  // Only parameter reference, NO fields
@@ -1039,10 +1040,9 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservationProcessor_Block1_AlwaysPreserveFields_UnmatchedBasePaths()
     {
-        // This test targets line 99 in ExpressionPreservationProcessor
-        // It exercises: paramsByBasePath[basePathKey] = new List<string>();
-        // This line is hit when alwaysPreserveFields is set AND a base path from localMap
-        // doesn't have any parameters that referenced it in the expression
+        // Exercises the "init empty parameter list for an unmatched base path" branch in the
+        // expression preservation processor: when alwaysPreserveFields is set AND a base path
+        // from localMap has no parameters referencing it in the lambda body.
 
         // Arrange - create queries with multiple base paths
         var queryA = QueryBuilder
@@ -1083,9 +1083,8 @@ public class PreserveFromExpressionTests
     [Fact]
     public Task ExpressionPreservationProcessor_Block2_DeepNestedObjectPreservation()
     {
-        // This test targets line 314 in ExpressionPreservationProcessor
-        // It exercises: preserveCallback($"{objectPath}.{child.Name}");
-        // Needed when PreserveMatchedField processes object fields with children
+        // Exercises the PreserveMatchedField object-field branch: when the matched field has
+        // nested children, every child gets a separate preservation callback invocation.
 
         // Arrange - create query with deeply nested object structure
         var query = QueryBuilder
@@ -1112,9 +1111,8 @@ public class PreserveFromExpressionTests
     [Fact]
     public void ExpressionPreservationProcessor_Block3_NonLambdaExpression()
     {
-        // This test targets line 369 in ExpressionPreservationProcessor
-        // It exercises: if (expression is not LambdaExpression { Parameters.Count: > 0 } lambda) return null;
-        // Needed when a non-lambda expression is passed to GetParameterNames
+        // Exercises the GetParameterNames non-lambda guard: if a non-lambda Expression is supplied,
+        // the method returns null and downstream parameter-name resolution falls through.
 
         // Arrange - create a simple query
         var query = QueryBuilder
@@ -1135,11 +1133,69 @@ public class PreserveFromExpressionTests
     }
 
     [Fact]
+    public void PreserveFromExpression_LocalMapPathWithObjectField_PreservesAllChildren()
+    {
+        // PreserveMatchedField's object branch is reachable through the localMap-aware overload:
+        // CollectFields returns single-segment object names (no dot), and PreserveFields routes
+        // them through PreserveMatchedField instead of PreserveNestedField. Each child of the
+        // matched object field gets a separate preserve callback.
+        var query = QueryBuilder
+            .CreateDefaultBuilder("Q")
+            .AddField("Q:data.edges.node.UserId:userId")
+            .AddField("data.edges.node.profile.name")
+            .AddField("data.edges.node.profile.bio");
+
+        // Local map associates the parameter name with this query's root path so the processor
+        // takes the localMap-aware route through CollectFields → PreserveFields → PreserveMatchedField.
+        var localMap = new Dictionary<string, string[]>
+        {
+            ["u"] = new[] { "Q" }
+        };
+
+        // Use a typed lambda so parameter type is preserved; the predicate references just the
+        // parent object node. CollectFields with parameterType=null (we'll bypass via untyped
+        // overload) keeps "profile" as a single segment.
+        var paramExpr = Expression.Parameter(typeof(TestDataModels.UserWithProfile), "u");
+        var profileMember = Expression.Property(
+            paramExpr, nameof(TestDataModels.UserWithProfile.Profile));
+        var notNull = Expression.NotEqual(
+            profileMember, Expression.Constant(null, typeof(TestDataModels.UserProfile)));
+        var lambda = Expression.Lambda(notNull, paramExpr);
+
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression((Expression)lambda, "edges.node", localMap)
+            .Build();
+
+        var rendered = result.ToString();
+        rendered.Should().Contain("name");
+        rendered.Should().Contain("bio");
+    }
+
+    [Fact]
+    public void PreserveFromExpression_NullCoalesce_ExtractsLeftSidePath()
+    {
+        // BuildMemberPath: BinaryExpression with NodeType.Coalesce — exercises the "??" branch.
+        var query = QueryBuilder
+            .CreateDefaultBuilder("Q")
+            .AddField("Q:data.edges.node.Email:email")
+            .AddField("data.edges.node.Name:name");
+
+        var result = PreservationBuilder.Create(query)
+            .PreserveFromExpression(
+                (TestDataModels.SimpleUser user) => (user.Email ?? "default") != "skip",
+                "edges.node")
+            .Build();
+
+        result.Should().NotBeNull();
+        // Email should be preserved because the coalesce expression's left side references it.
+        result.ToString().Should().Contain("email");
+    }
+
+    [Fact]
     public void ExpressionPreservationProcessor_Block4_ZeroParameterLambda()
     {
-        // This test targets line 385 in ExpressionPreservationProcessor
-        // It exercises: return new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-        // Needed when GetParameterTypes receives a lambda with zero parameters or non-lambda
+        // Exercises GetParameterTypes' empty-result branch when the lambda has zero parameters,
+        // returning an empty case-insensitive type dictionary.
 
         // Arrange - create a query
         var query = QueryBuilder

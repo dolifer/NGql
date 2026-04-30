@@ -39,7 +39,8 @@ public static class FieldSignatureGenerator
             AppendFieldSignature(builder, field, ReadOnlySpan<char>.Empty);
         }
 
-        if (builder.Length == 0) return 0;
+        // builder.Length is always > 0 here: the empty-fields case was handled above and
+        // every field appends at least its name to the signature.
         // Hash directly over StringBuilder chunks — avoids allocating a temporary string.
         unchecked
         {
@@ -80,10 +81,10 @@ public static class FieldSignatureGenerator
         }
         else
         {
-            // Fallback to string concatenation for very long paths
+            // Fallback to string concatenation for very long paths.
             var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath.ToString()}.{field.Name}";
             builder.Append(currentPath);
-            AppendFieldSignatureRemainder(builder, field, currentPath);
+            AppendFieldSignatureRemainder(builder, field, currentPath.AsSpan());
             return;
         }
 
@@ -140,47 +141,6 @@ public static class FieldSignatureGenerator
         }
     }
 
-    /// <summary>
-    /// Overload for string-based current path (fallback for very long paths).
-    /// </summary>
-    private static void AppendFieldSignatureRemainder(StringBuilder builder, FieldDefinition field, string currentPath)
-    {
-        // Add arguments if present
-        if (field._arguments is { Count: > 0 })
-        {
-            builder.Append('[');
-            // _arguments is SortedDictionary — already ordered by key, no OrderBy needed.
-            foreach (var arg in field._arguments)
-            {
-                builder.Append(arg.Key);
-                builder.Append(':');
-                AppendArgumentValue(builder, arg.Value);
-                builder.Append(';');
-            }
-            builder.Append(']');
-        }
-
-        builder.Append('|');
-
-        // Recursively process child fields sorted by Name for a deterministic hash.
-        // Dictionary<TKey,TValue> is unordered; explicit sort ensures signature stability.
-        if (field._children is { Count: > 0 })
-        {
-            var fieldCount = field._children.Count;
-            var rented = ArrayPool<FieldDefinition>.Shared.Rent(fieldCount);
-            try
-            {
-                field._children.AsSpan().CopyTo(rented);
-                Array.Sort(rented, 0, fieldCount, FieldNameComparer);
-                for (var i = 0; i < fieldCount; i++)
-                    AppendFieldSignature(builder, rented[i], currentPath.AsSpan());
-            }
-            finally
-            {
-                ArrayPool<FieldDefinition>.Shared.Return(rented, clearArray: false);
-            }
-        }
-    }
 
     /// <summary>
     /// Appends argument value to the signature with optimized handling for common types.
@@ -219,11 +179,10 @@ public static class FieldSignatureGenerator
 
     private static void AppendDictionary(StringBuilder builder, IDictionary<string, object?> dict)
     {
-        // SortedDictionary is already key-ordered; avoid allocating an IOrderedEnumerable.
-        IEnumerable<KeyValuePair<string, object?>> entries = dict is SortedDictionary<string, object?>
-            ? dict
-            : dict.OrderBy(d => d.Key);
-        Helpers.WriteCollection('{', '}', entries, builder, (sb, item) =>
+        // Argument dictionaries reach here through Helpers.SortArgumentValue, which converts
+        // every nested dict to SortedDictionary; the IOrderedEnumerable fallback for plain
+        // Dictionary instances was a defensive guard that the public API never triggers.
+        Helpers.WriteCollection('{', '}', dict, builder, (sb, item) =>
         {
             var kvp = (KeyValuePair<string, object?>)item!;
             sb.Append(kvp.Key).Append(':');
