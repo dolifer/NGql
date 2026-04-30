@@ -11,20 +11,21 @@ NUGET_SOURCE   := https://api.nuget.org/v3/index.json
 NUGET_API_KEY  ?=
 
 .DEFAULT_GOAL := test
-.PHONY: help clean restore build test coverage report pack publish ci tools
+.PHONY: help clean restore build test coverage report pack publish ci rebuild tools
 
 help:
 	@echo "Targets:"
 	@echo "  clean      Remove artifacts/ and bin/obj output"
 	@echo "  restore    dotnet restore $(SOLUTION)"
-	@echo "  build      dotnet build $(SOLUTION) -c $(CONFIG)"
-	@echo "  test       Run tests with coverage (cobertura + junit)"
-	@echo "  report     Generate HTML coverage report + badges"
+	@echo "  build      restore + dotnet build (-c $(CONFIG))"
+	@echo "  test       build + run tests with coverage (cobertura + junit)"
+	@echo "  report     Generate HTML coverage report + badges from existing cobertura"
 	@echo "  coverage   test + report"
-	@echo "  pack       dotnet pack $(CORE_PROJECT) -> $(PACKAGES_DIR)"
-	@echo "  publish    Push *.nupkg to NuGet (needs NUGET_API_KEY)"
-	@echo "  ci         restore + build + coverage (used by GitHub Actions)"
-	@echo "  tools      Install dotnet-reportgenerator-globaltool"
+	@echo "  pack       build + dotnet pack $(CORE_PROJECT) -> $(PACKAGES_DIR)"
+	@echo "  publish    pack + push *.nupkg to NuGet (needs NUGET_API_KEY)"
+	@echo "  ci         clean + coverage (used by GitHub Actions; always starts fresh)"
+	@echo "  rebuild    clean + test (force-clean local rebuild)"
+	@echo "  tools      Install dotnet-reportgenerator-globaltool if missing"
 
 clean:
 	rm -rf $(ARTIFACTS)
@@ -88,4 +89,10 @@ publish: pack
 		--api-key $(NUGET_API_KEY) \
 		--source $(NUGET_SOURCE)
 
-ci: coverage
+ci:
+	$(MAKE) clean
+	$(MAKE) coverage
+
+rebuild:
+	$(MAKE) clean
+	$(MAKE) test
