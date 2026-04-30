@@ -670,7 +670,7 @@ Contributions welcome! Please:
 
 1. Read the existing code style
 2. Add tests for new features (see [CLAUDE.md](./CLAUDE.md) for the test-consolidation conventions)
-3. Run `make coverage` and ensure no production-line coverage regression
+3. Run `make coverage` and ensure no production-line coverage regression (Windows: run from Git Bash or WSL — see [CLAUDE.md](./CLAUDE.md))
 4. Open a descriptive pull request
 
 ---
