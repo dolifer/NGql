@@ -498,7 +498,7 @@ internal static class Helpers
     /// <param name="fields">Field collection to search</param>
     /// <param name="fieldDefinition">Field definition to find</param>
     /// <returns>Existing field if found, null otherwise</returns>
-    internal static FieldDefinition? FindExistingField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition? FindExistingField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         FieldDefinition? existingField = null;
         foreach (var f in fields.Values)

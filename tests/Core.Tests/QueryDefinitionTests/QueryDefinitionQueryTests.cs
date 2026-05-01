@@ -266,7 +266,7 @@ public class QueryDefinitionQueryTests
     {
         // Arrange
         var query = new QueryDefinition("TestQuery");
-        var newFields = new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase)
+        var newFields = new SortedDictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase)
         {
             { "field1", new FieldDefinition("field1") }
         };

@@ -844,7 +844,7 @@ public class HelpersComprehensiveTests
         if (scenario == "by-name-and-alias")
         {
             var field = new FieldDefinition("user", "User", "currentUser");
-            var fields = new Dictionary<string, FieldDefinition> { { "user:currentUser", field } };
+            var fields = new SortedDictionary<string, FieldDefinition> { { "user:currentUser", field } };
             
             var result = Helpers.FindExistingField(fields, field);
             
@@ -853,7 +853,7 @@ public class HelpersComprehensiveTests
         else if (scenario == "with-complex-name")
         {
             var field = new FieldDefinition("profile", "Profile");
-            var fields = new Dictionary<string, FieldDefinition> { { "profile", field } };
+            var fields = new SortedDictionary<string, FieldDefinition> { { "profile", field } };
             
             var result = Helpers.FindExistingField(fields, field);
             
@@ -862,7 +862,7 @@ public class HelpersComprehensiveTests
         else if (scenario == "not-found")
         {
             var field = new FieldDefinition("posts", "Post[]");
-            var fields = new Dictionary<string, FieldDefinition>();
+            var fields = new SortedDictionary<string, FieldDefinition>();
             
             var result = Helpers.FindExistingField(fields, field);
             
@@ -1389,7 +1389,7 @@ public class HelpersComprehensiveTests
         if (scenario == "by-path")
         {
             var field = new FieldDefinition("profile", "Profile") { Path = "profile" };
-            var fields = new Dictionary<string, FieldDefinition> { { "profile", field } };
+            var fields = new SortedDictionary<string, FieldDefinition> { { "profile", field } };
             var searchField = new FieldDefinition("other", "Other") { Path = "profile" };
             
             var result = Helpers.FindExistingField(fields, searchField);
@@ -1399,7 +1399,7 @@ public class HelpersComprehensiveTests
         else if (scenario == "no-name-match")
         {
             var field = new FieldDefinition("name", "String", "name_alias") { Path = "path_key" };
-            var fields = new Dictionary<string, FieldDefinition> { { "path_key", field } };
+            var fields = new SortedDictionary<string, FieldDefinition> { { "path_key", field } };
             var searchField = new FieldDefinition("different", "String") { Path = "path_key" };
             
             var result = Helpers.FindExistingField(fields, searchField);
@@ -1408,7 +1408,7 @@ public class HelpersComprehensiveTests
         }
         else if (scenario == "empty-dict")
         {
-            var fields = new Dictionary<string, FieldDefinition>();
+            var fields = new SortedDictionary<string, FieldDefinition>();
             var searchField = new FieldDefinition("any", "String");
             
             var result = Helpers.FindExistingField(fields, searchField);
@@ -1420,7 +1420,7 @@ public class HelpersComprehensiveTests
             var field1 = new FieldDefinition("user", "User");
             var field2 = new FieldDefinition("user", "User", "u");
             var field3 = new FieldDefinition("post", "Post");
-            var fields = new Dictionary<string, FieldDefinition>
+            var fields = new SortedDictionary<string, FieldDefinition>
             {
                 { "f1", field1 },
                 { "f2", field2 },

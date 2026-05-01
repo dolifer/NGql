@@ -12,7 +12,7 @@ internal static class SpanExtensions
     /// Try to get value from a dictionary using a span key without allocating string
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryGetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, out FieldDefinition? value)
+    public static bool TryGetValue(this SortedDictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, out FieldDefinition? value)
     {
         value = null;
         
@@ -36,7 +36,7 @@ internal static class SpanExtensions
     /// Set value in a dictionary using a span key, converting to string only when needed
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void SetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, FieldDefinition value)
+    public static void SetValue(this SortedDictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, FieldDefinition value)
     {
         var keyString = key.ToString();
         dictionary[keyString] = value;
@@ -62,7 +62,7 @@ internal static class SpanExtensions
     /// <summary>
     /// Get or add a simple field using a span key with optimized path building
     /// </summary>
-    internal static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    internal static FieldDefinition GetOrAddSimpleField(this SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField is not null)
         {
@@ -116,14 +116,14 @@ internal static class SpanExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition StoreNew(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
+    private static FieldDefinition StoreNew(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
     {
         var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, path, metadata);
         fieldDefinitions.SetValue(fieldName, field);
         return field;
     }
 
-    private static FieldDefinition StoreNewWithParentPath(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition StoreNewWithParentPath(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
     {
         var estimatedLength = parentPath.Length + 1 + fieldName.Length;
         if (estimatedLength <= 256)

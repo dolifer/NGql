@@ -150,7 +150,7 @@ public class SpanExtensionsTests
     {
         // Arrange - test both FieldChildren and Dictionary variants with different path lengths
         var children = new FieldChildren();
-        var dict = new Dictionary<string, FieldDefinition>();
+        var dict = new SortedDictionary<string, FieldDefinition>();
         var longParentPath = new string('x', parentPathLength);
         var fieldTypeSpan = fieldType.AsSpan();
 
@@ -180,7 +180,7 @@ public class SpanExtensionsTests
     {
         // Arrange
         var children = new FieldChildren();
-        var dict = new Dictionary<string, FieldDefinition>();
+        var dict = new SortedDictionary<string, FieldDefinition>();
         var fieldName = "field";
         var fieldType = "String";
         var parentPath = new string('p', pathLength);
@@ -224,7 +224,7 @@ public class SpanExtensionsTests
     [InlineData(240, "longfield")]
     public void GetOrAddSimpleField_Dictionary_WithShortPath_UsesStackalloc(int parentPathLength, string fieldName)
     {
-        var dict = new Dictionary<string, FieldDefinition>();
+        var dict = new SortedDictionary<string, FieldDefinition>();
         var parentPath = new string('x', parentPathLength);
 
         var result = dict.GetOrAddSimpleField(fieldName.AsSpan(), "String".AsSpan(), null, parentPath, null);

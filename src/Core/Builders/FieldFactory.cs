@@ -16,7 +16,7 @@ internal static class FieldFactory
     /// This overload operates on the root-level <see cref="QueryDefinition.Fields"/> dictionary.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+    internal static FieldDefinition GetOrAddField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
     {
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
 
@@ -66,7 +66,7 @@ internal static class FieldFactory
     /// Gets or adds a dotted field (contains dots for nested access) — root-level variant.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddDottedField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var hasNoArguments = arguments == null;
         var hasNoMetadata = metadata == null;
@@ -104,7 +104,7 @@ internal static class FieldFactory
     /// </summary>
     // Callers reach here only via IsDottedField() which guarantees fieldPath contains '.',
     // so the loop runs at least twice and parentField is non-null on exit.
-    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition ProcessDottedFieldFastPath(SortedDictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
     {
         FieldDefinition? parentField = null;
         var pathStart = 0;
@@ -140,7 +140,7 @@ internal static class FieldFactory
         return currentParent;
     }
 
-    private static FieldDefinition GetOrCreateRootSegment(Dictionary<string, FieldDefinition> rootFields, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition GetOrCreateRootSegment(SortedDictionary<string, FieldDefinition> rootFields, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
     {
         var segmentName = spanSegment.Name.ToString();
         if (!rootFields.TryGetValue(segmentName, out var field))
@@ -177,7 +177,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes dotted fields with arguments and metadata — root-level variant.
     /// </summary>
-    private static FieldDefinition ProcessDottedFieldWithMetadata(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition ProcessDottedFieldWithMetadata(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var parentPathSpan = parentPath.AsSpan();
         
@@ -240,7 +240,7 @@ internal static class FieldFactory
     /// </summary>
     // Callers reach here only via IsDottedField() which guarantees fieldPath contains '.', so the
     // loop runs at least once and result is non-null on exit.
-    private static FieldDefinition ProcessDottedFieldSegments(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    private static FieldDefinition ProcessDottedFieldSegments(SortedDictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
     {
         FieldDefinition? parentField = null;
         FieldDefinition? result = null;
@@ -306,7 +306,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes a single dotted segment with arguments and metadata — root-Dict variant.
     /// </summary>
-    private static FieldDefinition ProcessDottedSegment(Dictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
+    private static FieldDefinition ProcessDottedSegment(SortedDictionary<string, FieldDefinition> currentFields, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
     {
         if (!currentFields.TryGetValue(segment, out var field))
         {
@@ -380,7 +380,7 @@ internal static class FieldFactory
     // AddFieldCore rejects null/whitespace fieldPath at the public-API boundary, so by the time
     // we reach here at least one non-whitespace segment exists and result is non-null on exit.
 #pragma warning disable S1172 // parentPath unused — kept for signature symmetry with the FieldChildren variant.
-    private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddComplexField(SortedDictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
 #pragma warning restore S1172
     {
         Span<char> pathBuffer = stackalloc char[512];
@@ -455,7 +455,7 @@ internal static class FieldFactory
     /// <summary>
     /// Processes a field segment for complex field creation — root-Dict variant.
     /// </summary>
-    private static FieldDefinition ProcessFieldSegment(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition ProcessFieldSegment(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
         if (!currentFields.TryGetValue(segment.Name.ToString(), out var field))
         {
@@ -481,7 +481,7 @@ internal static class FieldFactory
     /// <summary>
     /// Creates a new field for complex field processing — root-Dict variant.
     /// </summary>
-    private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition CreateNewField(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
         var (fieldArgs, fieldMetadata) = ResolveSegmentArgsAndMetadata(segment, arguments, metadata);
         var fieldType = ResolveSegmentFieldType(segment, parsedFieldType);
@@ -516,7 +516,7 @@ internal static class FieldFactory
     /// <summary>
     /// Updates an existing field during complex field processing — root-Dict variant.
     /// </summary>
-    private static FieldDefinition UpdateExistingField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
+    private static FieldDefinition UpdateExistingField(SortedDictionary<string, FieldDefinition> currentFields, SpanSegment segment, FieldDefinition field, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType)
     {
         if (!ApplyIntermediateUpdates(segment, field)) return field;
 
@@ -570,7 +570,7 @@ internal static class FieldFactory
     /// <summary>
     /// Creates or merges a field definition into the target collection — root-Dict variant.
     /// </summary>
-    internal static FieldDefinition CreateOrMergeField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition CreateOrMergeField(SortedDictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
         // Try to find existing field to merge with
         var existingField = Helpers.FindExistingField(fields, fieldDefinition);

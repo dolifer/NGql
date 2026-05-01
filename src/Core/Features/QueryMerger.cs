@@ -54,7 +54,7 @@ internal static class QueryMerger
     /// existing approach so a chain of <c>Include()</c>s is O(K) per call instead of O(N+K).
     /// </summary>
     private static void ApplyFieldMerge(
-        Dictionary<string, FieldDefinition> fields,
+        SortedDictionary<string, FieldDefinition> fields,
         QueryDefinition incomingQuery,
         MergingStrategy rootStrategy,
         QueryMap queryMap)
@@ -86,7 +86,7 @@ internal static class QueryMerger
     }
 
     private static void ApplyMergeByFieldPath(
-        Dictionary<string, FieldDefinition> fields,
+        SortedDictionary<string, FieldDefinition> fields,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
@@ -129,7 +129,7 @@ internal static class QueryMerger
     }
 
     private static void AddFieldWithUniqueKey(
-        Dictionary<string, FieldDefinition> fields,
+        SortedDictionary<string, FieldDefinition> fields,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
@@ -145,7 +145,7 @@ internal static class QueryMerger
         queryMap.SetMapping(queryName, uniqueKey);
     }
 
-    private static (string Key, FieldDefinition Field)? FindMergeTarget(Dictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
+    private static (string Key, FieldDefinition Field)? FindMergeTarget(SortedDictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
     {
         foreach (var (key, existingField) in existingFields)
         {

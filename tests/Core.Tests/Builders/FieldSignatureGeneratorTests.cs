@@ -12,7 +12,7 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_EmptyFields_ShouldReturnZero()
     {
         // Arrange
-        var fields = new Dictionary<string, FieldDefinition>();
+        var fields = new SortedDictionary<string, FieldDefinition>();
 
         // Act
         var signature = FieldSignatureGenerator.GenerateSignature(fields);
@@ -25,19 +25,19 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_SameFieldsNoArguments_ShouldReturnSameSignature()
     {
         // Arrange
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
                 })
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["id"] = new("id")
                 })
@@ -57,14 +57,14 @@ public class FieldSignatureGeneratorTests
         // Arrange
         var args = new Dictionary<string, object?> { ["filter"] = "value" };
 
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args, new Dictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args, new Dictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args, new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -82,14 +82,14 @@ public class FieldSignatureGeneratorTests
         var args1 = new Dictionary<string, object?> { ["filter"] = "value1" };
         var args2 = new Dictionary<string, object?> { ["filter"] = "value2" };
 
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args1, new Dictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args1, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
-            ["profiles"] = new("profiles", "object", null, args2, new Dictionary<string, FieldDefinition>())
+            ["profiles"] = new("profiles", "object", null, args2, new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -104,12 +104,12 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_DifferentFields_ShouldReturnDifferentSignatures()
     {
         // Arrange
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles")
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["users"] = new("users")
         };
@@ -129,21 +129,21 @@ public class FieldSignatureGeneratorTests
         var nestedArgs1 = new Dictionary<string, object?> { ["email"] = "test1@test.com" };
         var nestedArgs2 = new Dictionary<string, object?> { ["email"] = "test2@test.com" };
 
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
-                    ["node"] = new("node", "object", null, nestedArgs1, new Dictionary<string, FieldDefinition>())
+                    ["node"] = new("node", "object", null, nestedArgs1, new SortedDictionary<string, FieldDefinition>())
                 })
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["profiles"] = new("profiles", "object", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
-                    ["node"] = new("node", "object", null, nestedArgs2, new Dictionary<string, FieldDefinition>())
+                    ["node"] = new("node", "object", null, nestedArgs2, new SortedDictionary<string, FieldDefinition>())
                 })
         };
 
@@ -160,7 +160,7 @@ public class FieldSignatureGeneratorTests
     {
         // Arrange - Create a field with a very long name (>1024 chars to exceed buffer)
         var longFieldName = new string('a', 1200);
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             [longFieldName] = new(longFieldName, "String")
         };
@@ -182,19 +182,19 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_VeryLongNestedPath_ShouldHandleFallbackCorrectly()
     {
         // Arrange - Simple deep nesting (not very long names, just many levels)
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["a"] = new("a", "object", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["b"] = new("b", "object", null, new Dictionary<string, object?>(),
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["c"] = new("c", "object", null, new Dictionary<string, object?>(),
-                                new Dictionary<string, FieldDefinition>
+                                new SortedDictionary<string, FieldDefinition>
                                 {
                                     ["d"] = new("d", "object", null, new Dictionary<string, object?>(),
-                                        new Dictionary<string, FieldDefinition>
+                                        new SortedDictionary<string, FieldDefinition>
                                         {
                                             ["e"] = new("e", "String")
                                         })
@@ -218,15 +218,15 @@ public class FieldSignatureGeneratorTests
         // Arrange - Long field name with arguments
         var longFieldName = new string('b', 1100);
         var args = new Dictionary<string, object?> { ["filter"] = "longValue" };
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
-            [longFieldName] = new(longFieldName, "object", null, args, new Dictionary<string, FieldDefinition>())
+            [longFieldName] = new(longFieldName, "object", null, args, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fieldsNoArgs = new Dictionary<string, FieldDefinition>
+        var fieldsNoArgs = new SortedDictionary<string, FieldDefinition>
         {
             [longFieldName] = new(longFieldName, "object", null, new Dictionary<string, object?>(), 
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -241,13 +241,13 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_NestedFieldsWithArguments_ShouldConsiderNestingLevel()
     {
         // This tests the AppendFieldSignature and AppendFieldSignatureRemainder logic
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["user"] = new("user", "User", null, new Dictionary<string, object?> { ["id"] = "123" },
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["profile"] = new("profile", "Profile", null, new Dictionary<string, object?>(),
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["avatar"] = new("avatar", "String", null, new Dictionary<string, object?> { ["size"] = "large" })
                         })
@@ -261,7 +261,7 @@ public class FieldSignatureGeneratorTests
         signature.Should().NotBe(0);
         
         // Verify nested structure affects signature
-        var simpleFields = new Dictionary<string, FieldDefinition>
+        var simpleFields = new SortedDictionary<string, FieldDefinition>
         {
             ["user"] = new("user", "User")
         };
@@ -272,22 +272,22 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithSpecialCharactersInArguments_ShouldBeIncluded()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>
             {
                 ["query"] = "user@example.com",
                 ["filter"] = "status=active&type=admin"
-            }, new Dictionary<string, FieldDefinition>())
+            }, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fieldsNoSpecialChars = new Dictionary<string, FieldDefinition>
+        var fieldsNoSpecialChars = new SortedDictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>
             {
                 ["query"] = "user",
                 ["filter"] = "status"
-            }, new Dictionary<string, FieldDefinition>())
+            }, new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -302,14 +302,14 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFields_ShouldConsiderAllFields()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["user"] = new("user", "User", null, new Dictionary<string, object?> { ["id"] = "1" }),
             ["posts"] = new("posts", "Post[]", null, new Dictionary<string, object?> { ["limit"] = 10 }),
             ["comments"] = new("comments", "Comment[]", null, new Dictionary<string, object?> { ["sort"] = "date" })
         };
 
-        var fewerFields = new Dictionary<string, FieldDefinition>
+        var fewerFields = new SortedDictionary<string, FieldDefinition>
         {
             ["user"] = new("user", "User", null, new Dictionary<string, object?> { ["id"] = "1" }),
             ["posts"] = new("posts", "Post[]", null, new Dictionary<string, object?> { ["limit"] = 10 })
@@ -326,16 +326,16 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ComplexNestedWithTypedArguments_ShouldIncludeTypeInfo()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["data"] = new("data", "DataNode", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["edges"] = new("edges", "Edge[]", null, new Dictionary<string, object?> { ["first"] = 20, ["after"] = "cursor123" },
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["node"] = new("node", "T", null, null, 
-                                new Dictionary<string, FieldDefinition>
+                                new SortedDictionary<string, FieldDefinition>
                                 {
                                     ["id"] = new("id", "ID!"),
                                     ["value"] = new("value", "String!")
@@ -355,14 +355,14 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_DeterministicWithDifferentFieldOrder_ShouldProduceDifferentSignature()
     {
         // Note: Signatures depend on insertion order since Dictionary iteration is insertion-order based in .NET
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["a"] = new("a", "TypeA"),
             ["b"] = new("b", "TypeB"),
             ["c"] = new("c", "TypeC")
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["c"] = new("c", "TypeC"),
             ["a"] = new("a", "TypeA"),
@@ -381,7 +381,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_UnicodeFieldNames_ShouldHandleCorrectly()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["用户"] = new("用户", "User"),  // Chinese: "user"
             ["пользователь"] = new("пользователь", "User"),  // Russian: "user"
@@ -398,7 +398,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithNullArguments_ShouldHandleGracefully()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type1", null, new Dictionary<string, object?> { ["key"] = null }),
             ["field2"] = new("field2", "Type2", null, null),  // Null arguments dictionary
@@ -415,19 +415,19 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithEnumerableValues_ShouldIncludeInSignature()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>
             {
                 ["ids"] = new[] { 1, 2, 3, 4, 5 },
                 ["tags"] = new List<string> { "tag1", "tag2" }
-            }, new Dictionary<string, FieldDefinition>())
+            }, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fieldsWithoutEnumerables = new Dictionary<string, FieldDefinition>
+        var fieldsWithoutEnumerables = new SortedDictionary<string, FieldDefinition>
         {
             ["search"] = new("search", "Result[]", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -442,18 +442,18 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithDictionaryValues_ShouldIncludeInSignature()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["filter"] = new("filter", "Result[]", null, new Dictionary<string, object?>
             {
                 ["options"] = new Dictionary<string, object?> { ["key1"] = "value1", ["key2"] = 42 }
-            }, new Dictionary<string, FieldDefinition>())
+            }, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fieldsWithoutDict = new Dictionary<string, FieldDefinition>
+        var fieldsWithoutDict = new SortedDictionary<string, FieldDefinition>
         {
             ["filter"] = new("filter", "Result[]", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -467,7 +467,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_PrimitiveTypesInArguments_ShouldBeIncluded()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["query"] = new("query", "Result[]", null, new Dictionary<string, object?>
             {
@@ -475,13 +475,13 @@ public class FieldSignatureGeneratorTests
                 ["offset"] = 5,
                 ["isActive"] = true,
                 ["price"] = 19.99
-            }, new Dictionary<string, FieldDefinition>())
+            }, new SortedDictionary<string, FieldDefinition>())
         };
 
-        var fieldsWithoutPrimitives = new Dictionary<string, FieldDefinition>
+        var fieldsWithoutPrimitives = new SortedDictionary<string, FieldDefinition>
         {
             ["query"] = new("query", "Result[]", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -497,11 +497,11 @@ public class FieldSignatureGeneratorTests
     {
         // Create a path long enough to exceed the 512 byte buffer
         var longFieldName = "very" + new string('l', 400) + "ongfield";
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             [longFieldName] = new(longFieldName, "Type", null, 
                 new Dictionary<string, object?> { ["arg"] = "value" },
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -518,16 +518,16 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_NestedFieldsWithMultipleLevels_TestRecursion()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["root"] = new("root", "Root", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["level1"] = new("level1", "L1", null, new Dictionary<string, object?>(),
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["level2"] = new("level2", "L2", null, new Dictionary<string, object?>(),
-                                new Dictionary<string, FieldDefinition>
+                                new SortedDictionary<string, FieldDefinition>
                                 {
                                     ["level3"] = new("level3", "L3", null, new Dictionary<string, object?> { ["arg"] = "deep" })
                                 })
@@ -545,7 +545,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFieldsWithUnorderedDictionary_ShouldProduceDeterministicSignature()
     {
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type1"),
             ["field2"] = new("field2", "Type2"),
@@ -553,7 +553,7 @@ public class FieldSignatureGeneratorTests
         };
 
         // Create new dictionaries with same fields added in same order
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type1"),
             ["field2"] = new("field2", "Type2"),
@@ -571,10 +571,10 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ComplexNestedWithMultipleArguments()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["child1"] = new("child1", "C1", null, new Dictionary<string, object?> 
                     { 
@@ -588,10 +588,10 @@ public class FieldSignatureGeneratorTests
                 })
         };
 
-        var fieldsWithoutArgs = new Dictionary<string, FieldDefinition>
+        var fieldsWithoutArgs = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["child1"] = new("child1", "C1"),
                     ["child2"] = new("child2", "C2")
@@ -616,7 +616,7 @@ public class FieldSignatureGeneratorTests
             ["beta"] = "second"
         };
 
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, sortedArgs)
         };
@@ -633,10 +633,10 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ChildFieldSorting_ShouldBeDeterministic()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["zebra"] = new("zebra", "Z"),
                     ["apple"] = new("apple", "A"),
@@ -656,20 +656,20 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_EmptyAndNonEmptyChildrenFields_ShouldProduceDifferentSignatures()
     {
-        var fieldsWithChildren = new Dictionary<string, FieldDefinition>
+        var fieldsWithChildren = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["child1"] = new("child1", "C1"),
                     ["child2"] = new("child2", "C2")
                 })
         };
 
-        var fieldsNoChildren = new Dictionary<string, FieldDefinition>
+        var fieldsNoChildren = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>())
+                new SortedDictionary<string, FieldDefinition>())
         };
 
         // Act
@@ -686,12 +686,12 @@ public class FieldSignatureGeneratorTests
         var regularDict = new Dictionary<string, object?> { ["k1"] = "v1" };
         var sortedDict = new SortedDictionary<string, object?> { ["k2"] = "v2" };
 
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["f1"] = new("f1", "T", null, regularDict)
         };
 
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["f1"] = new("f1", "T", null, sortedDict)
         };
@@ -707,7 +707,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ArgumentsWithComplexNestedStructure()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["query"] = new("query", "Result[]", null, new Dictionary<string, object?>
             {
@@ -734,22 +734,22 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_VeryDeepNestedStructure_Recursive()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["l1"] = new("l1", "Type", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["l2"] = new("l2", "Type", null, new Dictionary<string, object?>(),
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["l3"] = new("l3", "Type", null, new Dictionary<string, object?>(),
-                                new Dictionary<string, FieldDefinition>
+                                new SortedDictionary<string, FieldDefinition>
                                 {
                                     ["l4"] = new("l4", "Type", null, new Dictionary<string, object?>(),
-                                        new Dictionary<string, FieldDefinition>
+                                        new SortedDictionary<string, FieldDefinition>
                                         {
                                             ["l5"] = new("l5", "Type", null, new Dictionary<string, object?>(),
-                                                new Dictionary<string, FieldDefinition>
+                                                new SortedDictionary<string, FieldDefinition>
                                                 {
                                                     ["l6"] = new("l6", "String")
                                                 })
@@ -771,7 +771,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldsWithComplexArgumentTypes()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, new Dictionary<string, object?>
             {
@@ -800,15 +800,15 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_MultipleFieldsWithDifferentNesting_Deterministic()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["zebra"] = new("zebra", "Z", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["nested"] = new("nested", "N")
                 }),
             ["apple"] = new("apple", "A", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["nested"] = new("nested", "N")
                 })
@@ -825,10 +825,10 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_ChildFieldsWithArguments_AllCovered()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Parent", null, new Dictionary<string, object?>(),
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["c1"] = new("c1", "C1", null, new Dictionary<string, object?> { ["a"] = 1 }),
                     ["c2"] = new("c2", "C2", null, new Dictionary<string, object?> { ["b"] = 2 }),
@@ -848,18 +848,18 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_WithComplexNestedArgumentsAndChildren()
     {
         // Test uncovered lines: Ensures complex scenarios are handled
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field1"] = new("field1", "Type", null, 
                 new Dictionary<string, object?> 
                 {
                     ["filter"] = new Dictionary<string, object?> { ["status"] = "active" }
                 },
-                new Dictionary<string, FieldDefinition>
+                new SortedDictionary<string, FieldDefinition>
                 {
                     ["nested1"] = new("nested1", "Nested", null,
                         new Dictionary<string, object?> { ["arg"] = "value" },
-                        new Dictionary<string, FieldDefinition>
+                        new SortedDictionary<string, FieldDefinition>
                         {
                             ["deep"] = new("deep", "DeepType")
                         })
@@ -879,7 +879,7 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_EmptyDictionary_ProducesFastPath()
     {
         // Test ultra-fast path for empty fields
-        var fields = new Dictionary<string, FieldDefinition>();
+        var fields = new SortedDictionary<string, FieldDefinition>();
 
         var sig = FieldSignatureGenerator.GenerateSignature(fields);
 
@@ -889,7 +889,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_SingleSimpleField_ProducesConsistent()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["simple"] = new("simple", "String")
         };
@@ -904,7 +904,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldWithNullAlias_Handled()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null)
         };
@@ -917,7 +917,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldWithEmptyArguments_OptimizedPath()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, new Dictionary<string, object?>())
         };
@@ -930,7 +930,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldWithNullArguments_Handled()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, null)
         };
@@ -944,7 +944,7 @@ public class FieldSignatureGeneratorTests
     public void GenerateSignature_NestedChildrenEmpty_NotIncluded()
     {
         var parent = new FieldDefinition("parent", "Object");
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = parent
         };
@@ -957,11 +957,11 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_IdenticalFieldsWithDifferentAliases_MayProduceSameOrDifferent()
     {
-        var fields1 = new Dictionary<string, FieldDefinition>
+        var fields1 = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", "alias1")
         };
-        var fields2 = new Dictionary<string, FieldDefinition>
+        var fields2 = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", "alias2")
         };
@@ -982,7 +982,7 @@ public class FieldSignatureGeneratorTests
             largeArgs[$"arg{i}"] = i;
         }
 
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, largeArgs)
         };
@@ -997,10 +997,10 @@ public class FieldSignatureGeneratorTests
     {
         // Create a deeply nested structure to test buffer allocation path
         var innermost = new FieldDefinition("z", "String");
-        var y = new FieldDefinition("y", "Type", null, null, new Dictionary<string, FieldDefinition> { ["z"] = innermost });
-        var x = new FieldDefinition("x", "Type", null, null, new Dictionary<string, FieldDefinition> { ["y"] = y });
+        var y = new FieldDefinition("y", "Type", null, null, new SortedDictionary<string, FieldDefinition> { ["z"] = innermost });
+        var x = new FieldDefinition("x", "Type", null, null, new SortedDictionary<string, FieldDefinition> { ["y"] = y });
 
-        var fields = new Dictionary<string, FieldDefinition> { ["x"] = x };
+        var fields = new SortedDictionary<string, FieldDefinition> { ["x"] = x };
 
         var sig = FieldSignatureGenerator.GenerateSignature(fields);
 
@@ -1010,7 +1010,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_FieldWithComplexType_Included()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "[Type!]!")
         };
@@ -1023,9 +1023,9 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_WithFieldChildren_ProcessesChildFields()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
-            ["parent"] = new("parent", "Type", null, null, new Dictionary<string, FieldDefinition>
+            ["parent"] = new("parent", "Type", null, null, new SortedDictionary<string, FieldDefinition>
             {
                 ["child1"] = new("child1", "String"),
                 ["child2"] = new("child2", "Int"),
@@ -1047,7 +1047,7 @@ public class FieldSignatureGeneratorTests
             ["list"] = new[] { 1, 2, 3 }
         };
 
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["field"] = new("field", "Type", null, args)
         };
@@ -1060,13 +1060,13 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_WithManyChildFields_UseArrayPool()
     {
-        var childFields = new Dictionary<string, FieldDefinition>();
+        var childFields = new SortedDictionary<string, FieldDefinition>();
         for (int i = 0; i < 10; i++)
         {
             childFields[$"field{i:D2}"] = new($"field{i:D2}", "Type");
         }
 
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["parent"] = new("parent", "Type", null, null, childFields)
         };
@@ -1079,15 +1079,15 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_WithDeeplyNestedStructure()
     {
-        var level3 = new Dictionary<string, FieldDefinition>
+        var level3 = new SortedDictionary<string, FieldDefinition>
         {
             ["leaf"] = new("leaf", "String")
         };
-        var level2 = new Dictionary<string, FieldDefinition>
+        var level2 = new SortedDictionary<string, FieldDefinition>
         {
             ["mid"] = new("mid", "Type", null, null, level3)
         };
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["root"] = new("root", "Type", null, null, level2)
         };
@@ -1100,7 +1100,7 @@ public class FieldSignatureGeneratorTests
     [Fact]
     public void GenerateSignature_WithNullableAndArrayTypes()
     {
-        var fields = new Dictionary<string, FieldDefinition>
+        var fields = new SortedDictionary<string, FieldDefinition>
         {
             ["nullable"] = new("nullable", "String"),
             ["array"] = new("array", "[Int!]!"),
@@ -1121,7 +1121,7 @@ public class FieldSignatureGeneratorTests
     [InlineData("nested-overflow")]
     public void GenerateSignature_PathExceedsStackBuffer_FallsBackToHeapAllocation(string scenario)
     {
-        Dictionary<string, FieldDefinition> fields;
+        SortedDictionary<string, FieldDefinition> fields;
         if (scenario == "top-level-long-name")
         {
             var name = new string('x', 300);

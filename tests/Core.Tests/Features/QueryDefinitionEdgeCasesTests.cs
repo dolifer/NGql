@@ -176,11 +176,12 @@ public class QueryDefinitionEdgeCasesTests
             "empty-args" => new Dictionary<string, object?>(),
             _ => null,
         };
-        Dictionary<string, FieldDefinition>? fields = fieldsShape == "empty-fields"
-            ? new Dictionary<string, FieldDefinition>()
+        SortedDictionary<string, FieldDefinition>? fields = fieldsShape == "empty-fields"
+            ? new SortedDictionary<string, FieldDefinition>()
             : null;
 
-        var field = new FieldDefinition("name", "String", null, args, fields);
+        var sortedArgs = args is null ? null : new SortedDictionary<string, object?>(args);
+        var field = new FieldDefinition("name", "String", null, sortedArgs, fields);
 
         field._arguments.Should().BeNull();
         field.HasFields.Should().BeFalse();

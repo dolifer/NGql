@@ -169,13 +169,13 @@ internal sealed class QueryTextBuilder
         }
     }
 
-    private void BuildFieldDefinitions(Dictionary<string, FieldDefinition> fields, int indent)
+    private void BuildFieldDefinitions(SortedDictionary<string, FieldDefinition> fields, int indent)
     {
         var count = fields.Count;
         if (count == 0) return;
 
-        // Dictionary<TKey,TValue> is insertion-ordered, not alphabetical. Copy values to a
-        // pooled buffer so RenderSortedFields can sort once and render with a stable order.
+        // SortedDictionary already iterates in key order; sort the rented buffer anyway so the
+        // render path uses _effectiveName ordering (alias-aware) rather than raw field name.
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
         try
         {
