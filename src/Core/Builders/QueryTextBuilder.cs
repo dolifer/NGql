@@ -156,8 +156,6 @@ internal sealed class QueryTextBuilder
     private void BuildFieldDefinitions(FieldChildren children, int indent)
     {
         var count = children.Count;
-        if (count == 0) return;
-
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
         try
         {

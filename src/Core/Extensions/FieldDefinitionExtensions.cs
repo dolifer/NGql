@@ -138,7 +138,6 @@ internal static class FieldDefinitionExtensions
     private static void MergeIncomingChildrenInPlace(FieldDefinition existing, FieldChildren? incomingChildren)
     {
         if (incomingChildren is null) return;
-        if (incomingChildren.Count == 0) return;
 
         // Existing._children is non-null on every path that reaches here through the public
         // Include API: type-compatibility means both sides are object-typed, and object-typed

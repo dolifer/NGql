@@ -136,7 +136,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         if (nodeField is not { HasFields: true }) return;
 
         var fieldsToPreserve = CollectFields(extractedPaths, paramsForPath, parameterTypes, alwaysPreserveFields);
-        PreserveFields(nodeField._children, fieldsToPreserve, fullPath);
+        PreserveFields(nodeField._children!, fieldsToPreserve, fullPath);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -353,12 +353,10 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void PreserveFields(
-        IReadOnlyDictionary<string, FieldDefinition>? nodeFields,
+        IReadOnlyDictionary<string, FieldDefinition> nodeFields,
         HashSet<string> fieldsToPreserve,
         string basePathStr)
     {
-        if (nodeFields == null) return;
-
         foreach (var field in fieldsToPreserve)
         {
             // Fast path: nested field
