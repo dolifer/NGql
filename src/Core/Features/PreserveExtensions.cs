@@ -44,8 +44,8 @@ internal static class PreserveExtensions
         return newQuery;
     }
 
-    private static void ExtractMatchingFields(SortedDictionary<string, FieldDefinition> sourceFields,
-        SortedDictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
+    private static void ExtractMatchingFields(Dictionary<string, FieldDefinition> sourceFields,
+        Dictionary<string, FieldDefinition> targetFields, ReadOnlySpan<char> path)
     {
         var isLeafPath = SplitFirstSegment(path, out var currentSegment, out var remainingPath);
 
@@ -115,7 +115,7 @@ internal static class PreserveExtensions
         return false;
     }
 
-    private static FieldDefinition GetOrAddTargetChild(SortedDictionary<string, FieldDefinition> target, string fieldKey, FieldDefinition source)
+    private static FieldDefinition GetOrAddTargetChild(Dictionary<string, FieldDefinition> target, string fieldKey, FieldDefinition source)
     {
         if (!target.TryGetValue(fieldKey, out var existing))
         {
@@ -200,7 +200,7 @@ internal static class PreserveExtensions
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ExtractVariablesFromFields(SortedDictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromFields(Dictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
     {
         foreach (var field in fields.Values)
         {

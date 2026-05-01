@@ -105,12 +105,38 @@ internal static class FieldDefinitionExtensions
     }
 
     /// <summary>
-    /// Merges two field definitions into a single field definition.
+    /// Deep-clones <paramref name="source"/> producing a new <see cref="FieldDefinition"/> that
+    /// shares no mutable state with the original. Used by <see cref="QueryMerger"/> when adding an
+    /// incoming field reference into the target dictionary, so subsequent in-place merges into the
+    /// target do not leak back into the source builder.
     /// </summary>
-    /// <param name="existing">The existing field definition</param>
-    /// <param name="incoming">The incoming field definition to merge</param>
-    /// <returns>A new merged field definition</returns>
-    /// <exception cref="QueryMergeException">Thrown when there are type conflicts</exception>
+    internal static FieldDefinition DeepClone(this FieldDefinition source)
+    {
+        var clone = new FieldDefinition(
+            source.Name,
+            source._type!,
+            source._alias,
+            source._arguments is null ? null : new SortedDictionary<string, object?>(source._arguments, StringComparer.OrdinalIgnoreCase))
+        {
+            Path = source.Path,
+            IsNeverMerge = source.IsNeverMerge,
+        };
+
+        if (source._metadata is { Count: > 0 })
+        {
+            foreach (var kvp in source._metadata) clone.Metadata[kvp.Key] = kvp.Value;
+        }
+
+        if (source._children is { Count: > 0 })
+        {
+            clone._children = new FieldChildren();
+            foreach (var child in source._children.AsSpan())
+                clone._children.Append(child.DeepClone());
+        }
+
+        return clone;
+    }
+
     /// <summary>
     /// Merges <paramref name="incoming"/> INTO <paramref name="existing"/>, mutating its child collection
     /// and argument dictionary in place. The caller must own <paramref name="existing"/> exclusively
@@ -167,17 +193,21 @@ internal static class FieldDefinitionExtensions
             return;
         }
 
+        // Deep-clone so target's tree never references nodes owned by the source builder. Any
+        // later in-place merges into existingChildren must not propagate back to the source.
+        var clone = incomingChild.DeepClone();
+
         // Effective-name conflict can only occur when the incoming field carries an alias
         // distinct from its name; otherwise the Name lookup above would have caught it.
         if (!ReferenceEquals(incomingChild._effectiveName, incomingChild.Name) &&
             HasEffectiveNameConflict(existingChildren, incomingChild._effectiveName))
         {
             var uniqueAlias = KeyGenerator.GenerateUniqueKey(incomingChild._effectiveName, existingChildren.AsSpan());
-            existingChildren.Append(incomingChild with { Alias = uniqueAlias });
+            existingChildren.Append(clone with { Alias = uniqueAlias });
         }
         else
         {
-            existingChildren.Append(incomingChild);
+            existingChildren.Append(clone);
         }
     }
 

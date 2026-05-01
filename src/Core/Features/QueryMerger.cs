@@ -54,7 +54,7 @@ internal static class QueryMerger
     /// existing approach so a chain of <c>Include()</c>s is O(K) per call instead of O(N+K).
     /// </summary>
     private static void ApplyFieldMerge(
-        SortedDictionary<string, FieldDefinition> fields,
+        Dictionary<string, FieldDefinition> fields,
         QueryDefinition incomingQuery,
         MergingStrategy rootStrategy,
         QueryMap queryMap)
@@ -86,7 +86,7 @@ internal static class QueryMerger
     }
 
     private static void ApplyMergeByFieldPath(
-        SortedDictionary<string, FieldDefinition> fields,
+        Dictionary<string, FieldDefinition> fields,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
@@ -129,7 +129,7 @@ internal static class QueryMerger
     }
 
     private static void AddFieldWithUniqueKey(
-        SortedDictionary<string, FieldDefinition> fields,
+        Dictionary<string, FieldDefinition> fields,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
@@ -137,15 +137,20 @@ internal static class QueryMerger
     {
         var uniqueKey = KeyGenerator.GenerateUniqueKey(incomingField._effectiveName, fields.Keys);
 
-        var fieldToAdd = !string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase)
-            ? incomingField with { Alias = uniqueKey, _effectiveName = uniqueKey }
-            : incomingField;
+        // Deep-clone so the target dictionary owns its subtree exclusively. Subsequent in-place
+        // merges (MergeFieldsInPlace below) must not leak field additions back into the source
+        // QueryBuilder that supplied incomingField.
+        var fieldToAdd = incomingField.DeepClone();
+        if (!string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase))
+        {
+            fieldToAdd = fieldToAdd with { Alias = uniqueKey, _effectiveName = uniqueKey };
+        }
 
         fields[uniqueKey] = fieldToAdd;
         queryMap.SetMapping(queryName, uniqueKey);
     }
 
-    private static (string Key, FieldDefinition Field)? FindMergeTarget(SortedDictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
+    private static (string Key, FieldDefinition Field)? FindMergeTarget(Dictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
     {
         foreach (var (key, existingField) in existingFields)
         {

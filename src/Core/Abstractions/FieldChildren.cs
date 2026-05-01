@@ -268,30 +268,13 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     }
 
     /// <summary>
-    /// Returns an enumerator over a snapshot of this collection. The snapshot is sorted by
-    /// <see cref="FieldDefinition.Name"/> using <see cref="StringComparer.OrdinalIgnoreCase"/>
-    /// so that public consumers (and JSON serialization) see deterministic, alphabetical order
-    /// regardless of insertion sequence.
+    /// Returns a zero-alloc struct enumerator over a snapshot of this collection.
     /// </summary>
     public FieldChildrenEnumerator GetEnumerator()
     {
         var count = Volatile.Read(ref _count);
         var items = Volatile.Read(ref _items);
-        if (items is null || count <= 1)
-            return new FieldChildrenEnumerator(items, count);
-
-        var sorted = new FieldDefinition[count];
-        Array.Copy(items, sorted, count);
-        Array.Sort(sorted, 0, count, FieldDefinitionNameComparer.Instance);
-        return new FieldChildrenEnumerator(sorted, count);
-    }
-
-    private sealed class FieldDefinitionNameComparer : IComparer<FieldDefinition>
-    {
-        internal static readonly FieldDefinitionNameComparer Instance = new();
-
-        public int Compare(FieldDefinition? x, FieldDefinition? y)
-            => StringComparer.OrdinalIgnoreCase.Compare(x?.Name, y?.Name);
+        return new FieldChildrenEnumerator(items, count);
     }
 
     // Explicit interface implementation — provides fallback for code that uses IEnumerable<T> directly

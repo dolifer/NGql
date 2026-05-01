@@ -12,7 +12,7 @@ public class FieldTypeTests
     public void Array_Type_Is_Preserved_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: First add an array field, then add nested fields to it
         var result = fieldBuilder
@@ -32,7 +32,7 @@ public class FieldTypeTests
     public void Custom_Array_Type_Is_Preserved_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Add a custom array type with nested fields
         var result = fieldBuilder
@@ -52,7 +52,7 @@ public class FieldTypeTests
     public void Nullable_Type_Is_Preserved_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Add a nullable type with nested fields
         var result = fieldBuilder
@@ -72,7 +72,7 @@ public class FieldTypeTests
     public void Default_Type_Is_Converted_To_Object_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Add a field with default type, then add nested fields
         var result = fieldBuilder
@@ -91,7 +91,7 @@ public class FieldTypeTests
     public void Already_Object_Type_Remains_Object_When_Adding_Nested_Fields()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root", "Root");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root", "Root");
 
         // Act: Add a field explicitly as object, then add nested fields
         var result = fieldBuilder
@@ -111,7 +111,7 @@ public class FieldTypeTests
     public void Complex_Nested_Structure_Preserves_Types_Correctly()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "document", "Document");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "document", "Document");
 
         // Act: Create a complex nested structure with various types
         var result = fieldBuilder

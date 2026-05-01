@@ -541,7 +541,7 @@ public class FieldBuilderTests
     public void Field_With_Name_Only_Has_String_Type_By_Default_And_Converts_To_Object_When_Nested_Field_Added()
     {
         // Arrange
-        var fieldBuilder = FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "user", "User");
+        var fieldBuilder = FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "user", "User");
 
         // Step 1: Add a field with name only (should default to String type)
         var intermediateBuilder = fieldBuilder.AddField("info");
@@ -870,7 +870,7 @@ public class FieldBuilderTests
     {
         var scenarios = new TestScenarioBag<FieldDefinition>()
             .Register("inline-array-type-with-subfields",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("[] items", ["id", "name"])
                     .Build(),
                 assert: result =>
@@ -881,7 +881,7 @@ public class FieldBuilderTests
                 }
             )
             .Register("inline-array-type-with-arguments",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("[] items", new Dictionary<string, object?> { { "first", 10 } })
                     .Build(),
                 assert: result =>
@@ -891,7 +891,7 @@ public class FieldBuilderTests
                 }
             )
             .Register("array-type-with-action",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("[] items", builder =>
                     {
                         builder.AddField("id").AddField("name");
@@ -905,7 +905,7 @@ public class FieldBuilderTests
                 }
             )
             .Register("custom-array-type-with-action",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("User[] users", builder =>
                     {
                         builder.AddField("id", "Int")
@@ -942,13 +942,13 @@ public class FieldBuilderTests
     {
         var scenarios = new TestScenarioBag<FieldDefinition>()
             .Register("type-overwrite",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("User[] items")
                     .AddField("String items")
                     .Build(),
                 assert: result => result.Fields["items"].Type.Should().Be("User[]"))
             .Register("array-state-lost",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("[] items")
                     .AddField("items.id")
                     .AddField("String items")
@@ -960,7 +960,7 @@ public class FieldBuilderTests
                     result.Fields["items"].Fields.Should().ContainKey("id");
                 })
             .Register("subfields-not-overwrite-type",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("String user", subFields: ["nested", "field"])
                     .Build(),
                 assert: result =>
@@ -969,7 +969,7 @@ public class FieldBuilderTests
                     result.Fields["user"].Fields.Should().ContainKeys("nested", "field");
                 })
             .Register("subfields-added-later",
-                arrange: () => FieldBuilder.Create(new SortedDictionary<string, FieldDefinition>(), "root")
+                arrange: () => FieldBuilder.Create(new Dictionary<string, FieldDefinition>(), "root")
                     .AddField("CustomType user")
                     .AddField("user.profile.name")
                     .AddField("user.profile.email")
@@ -1659,7 +1659,7 @@ public class FieldBuilderTests
     {
         if (scenario == "long-dotted-path")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f.g.h".AsSpan(), "Type".AsSpan(), null);
 
@@ -1669,7 +1669,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "dotted-with-args")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var arguments = new Dictionary<string, object?> { { "limit", 10 } };
 
             var result = FieldFactory.GetOrAddField(fields, "user.profile.data".AsSpan(), "String".AsSpan(), arguments);
@@ -1680,7 +1680,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "dotted-with-metadata")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var metadata = new Dictionary<string, object?> { { "key", "value" } };
 
             var result = FieldFactory.GetOrAddField(fields, "user.settings".AsSpan(), "Settings".AsSpan(), null, metadata: metadata);
@@ -1690,7 +1690,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "complex-type-annotation")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "User user.profile".AsSpan(), "Default".AsSpan(), null);
 
@@ -1699,7 +1699,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "merge-args")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var firstArgs = new Dictionary<string, object?> { { "first", "arg" } };
             var secondArgs = new Dictionary<string, object?> { { "second", "arg" } };
 
@@ -1710,7 +1710,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "type-conversion")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // First add as leaf
             FieldFactory.GetOrAddField(fields, "parent.child".AsSpan(), "String".AsSpan(), null);
@@ -1723,7 +1723,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "create-merge-conflicting")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var existing = new FieldDefinition("user", "User", null, new Dictionary<string, object?> { { "id", "123" } });
 
             _ = FieldFactory.CreateOrMergeField(fields, existing);
@@ -1734,7 +1734,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "valid-paths")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // These should all work without exceptions
             var r1 = FieldFactory.GetOrAddField(fields, "simple".AsSpan(), "Type".AsSpan(), null);
@@ -1758,7 +1758,7 @@ public class FieldBuilderTests
     {
         if (scenario == "fast-path")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "Type".AsSpan(), null, null, null);
 
@@ -1766,7 +1766,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "with-alias")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "User myAlias:user".AsSpan(), "Default".AsSpan(), null);
 
@@ -1792,7 +1792,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "multiple-segment")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "TypeC".AsSpan(), null);
             FieldFactory.GetOrAddField(fields, "a.b.d".AsSpan(), "TypeD".AsSpan(), null);
@@ -1804,7 +1804,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "reuse-field")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             _ = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
             var second = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "UserV2".AsSpan(), null);
@@ -1814,7 +1814,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "arg-sorting")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var argsZ = new Dictionary<string, object?> { { "z", 1 }, { "a", 2 } };
 
             var result = FieldFactory.GetOrAddField(fields, "field".AsSpan(), "Type".AsSpan(), argsZ);
@@ -1826,7 +1826,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "create-intermediates")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             _ = FieldFactory.GetOrAddField(fields, "user.profile.settings".AsSpan(), "Settings".AsSpan(), null);
 
@@ -1856,7 +1856,7 @@ public class FieldBuilderTests
     {
         if (scenario == "metadata-final")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var metadata = new Dictionary<string, object?> { { "cache", "5m" } };
 
             var result = FieldFactory.GetOrAddField(fields, "user.profile.avatar".AsSpan(), "Image".AsSpan(), null, metadata: metadata);
@@ -1866,7 +1866,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "deep-hierarchy")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             _ = FieldFactory.GetOrAddField(fields, "org.dept.team.member.contact".AsSpan(), "ContactInfo".AsSpan(), null);
 
@@ -1877,7 +1877,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "readd-with-metadata")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var metadata1 = new Dictionary<string, object?> { { "tag", "v1" } };
 
             _ = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null, metadata: metadata1);
@@ -1889,7 +1889,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "root-field")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             _ = FieldFactory.GetOrAddField(fields, "userData.settings".AsSpan(), "UserSettings".AsSpan(), null);
 
@@ -1899,7 +1899,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "long-path")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "a.b.c.d.e.f".AsSpan(), "F".AsSpan(), null);
 
@@ -1909,7 +1909,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "args-preserved")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var args = new Dictionary<string, object?> { { "limit", 10 }, { "offset", 0 } };
 
             var result = FieldFactory.GetOrAddField(fields, "user.posts.recent".AsSpan(), "Post".AsSpan(), args);
@@ -1930,7 +1930,7 @@ public class FieldBuilderTests
     {
         if (scenario == "branch-at-intermediate")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // Create first path
             FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
@@ -1944,7 +1944,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "dotted-then-direct")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
             _ = FieldFactory.GetOrAddField(fields, "admin".AsSpan(), "Admin".AsSpan(), null);
@@ -1955,7 +1955,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "update-intermediate")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // Create initial hierarchy
             _ = FieldFactory.GetOrAddField(fields, "data.values.count".AsSpan(), "Int".AsSpan(), null);
@@ -1970,7 +1970,7 @@ public class FieldBuilderTests
         {
             // Arrange - Create a path longer than 512 chars with metadata
             var longPath = string.Join(".", Enumerable.Range(1, 100).Select(i => $"segment{i}"));
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var metadata = new Dictionary<string, object?> { { "key", "value" } };
 
             // Act
@@ -2008,7 +2008,7 @@ public class FieldBuilderTests
             // Arrange - parentPath + fieldPath exceeds 512 chars
             var longParentPath = string.Concat(Enumerable.Range(1, 50).Select(i => $"/parent{i}"));
             var longFieldPath = string.Join(".", Enumerable.Range(1, 50).Select(i => $"field{i}"));
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var metadata = new Dictionary<string, object?> { { "src", "pooled" } };
 
             // Act
@@ -2022,7 +2022,7 @@ public class FieldBuilderTests
         else if (scenario == "stack-path")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var args = new Dictionary<string, object?> { { "limit", 5 } };
             var metadata = new Dictionary<string, object?> { { "meta", "data" } };
             var parentPath = "/parent";
@@ -2071,7 +2071,7 @@ public class FieldBuilderTests
         if (scenario == "whitespace-segments")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // Act
             var result = FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
@@ -2083,7 +2083,7 @@ public class FieldBuilderTests
         else if (scenario == "multiple-args")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var args = new Dictionary<string, object?> 
             { 
                 { "first", 1 },
@@ -2104,7 +2104,7 @@ public class FieldBuilderTests
         else if (scenario == "update-type")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // Act - Create field with one type
             var first = FieldFactory.GetOrAddField(fields, "user.data.value".AsSpan(), "Int".AsSpan(), null);
@@ -2120,7 +2120,7 @@ public class FieldBuilderTests
         else if (scenario == "merge-args")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var firstArgs = new Dictionary<string, object?> { { "limit", 10 } };
             var secondArgs = new Dictionary<string, object?> { { "offset", 5 } };
 
@@ -2135,7 +2135,7 @@ public class FieldBuilderTests
         else if (scenario == "preserve-alias")
         {
             // Arrange
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             // Act
             var result = FieldFactory.GetOrAddField(fields, "user.profile".AsSpan(), "Profile".AsSpan(), null);
@@ -2146,7 +2146,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "parent-path-no-meta")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var parentPath = "/users";
             
             var result = FieldFactory.GetOrAddField(fields, "profile.name".AsSpan(), "String".AsSpan(), 
@@ -2157,7 +2157,7 @@ public class FieldBuilderTests
         }
         else if (scenario == "parent-path-with-meta")
         {
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var parentPath = "/users";
             var metadata = new Dictionary<string, object?> { { "cached", true } };
             
@@ -2170,7 +2170,7 @@ public class FieldBuilderTests
         else if (scenario == "whitespace-segment")
         {
             // Covers the whitespace-segment skip branch when a dotted path contains an empty/blank segment.
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
 
             var result = FieldFactory.GetOrAddField(fields, "user. .profile".AsSpan(), "Profile".AsSpan(), null);
 
@@ -2206,7 +2206,7 @@ public class FieldBuilderTests
         if (scenario == "long-path-pooling")
         {
             // Covers the heap-pooled path-builder branch taken when estimatedPathLength exceeds the stack buffer.
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var longPath = string.Join(".", Enumerable.Range(0, 80).Select(i => $"segment{i}"));
             
             var result = FieldFactory.GetOrAddField(fields, longPath.AsSpan(), "Type".AsSpan(), null);
@@ -2230,7 +2230,7 @@ public class FieldBuilderTests
         else if (scenario == "complex-nested-args")
         {
             // Covers more argument handling paths in ProcessDottedSegment
-            var fields = new SortedDictionary<string, FieldDefinition>();
+            var fields = new Dictionary<string, FieldDefinition>();
             var args = new Dictionary<string, object?> 
             { 
                 { "limit", 20 },

@@ -19,7 +19,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_SimpleFieldPath_Works()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "name".AsSpan(), "String".AsSpan(), null);
@@ -34,7 +34,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_DottedPath_CreatesHierarchy()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "user.profile.name".AsSpan(), "String".AsSpan(), null);
@@ -50,7 +50,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_WithArguments_StoresArguments()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var arguments = new Dictionary<string, object?> { { "id", "123" } };
 
         // Act
@@ -65,7 +65,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_WithMetadata_StoresMetadata()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var metadata = new Dictionary<string, object?> { { "alias", "u" } };
 
         // Act
@@ -80,7 +80,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_EmptyType_DefaultsToString()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "field".AsSpan(), "".AsSpan(), null);
@@ -107,7 +107,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_ComplexPath_WithArguments_Works()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var arguments = new Dictionary<string, object?> { { "limit", 10 } };
 
         // Act
@@ -122,7 +122,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_LongPath_Buffer_Allocated()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var longPath = "a.b.c.d.e.f.g.h.i.j.k.l.m.n.o.p.q.r.s.t.u.v.w.x.y.z";
 
         // Act
@@ -137,7 +137,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_ExistingField_Reused()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var field1 = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
         
         // Act
@@ -152,7 +152,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_DottedPath_NoArguments_FastPath()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "user.name".AsSpan(), "String".AsSpan(), null, null, null);
@@ -166,7 +166,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_DottedPath_WithArguments_SlowPath()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var arguments = new Dictionary<string, object?> { { "arg", "value" } };
 
         // Act
@@ -180,7 +180,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_MultipleSimpleFields_AllCreated()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         _ = FieldFactory.GetOrAddField(fields, "id".AsSpan(), "ID".AsSpan(), null);
@@ -196,7 +196,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_IntermediateFieldBecomesObject()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         _ = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), null);
@@ -227,7 +227,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_ArgumentMerge_PreservesArguments()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var args1 = new Dictionary<string, object?> { { "first", 1 } };
 
         // Act
@@ -243,7 +243,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_TypeConversion_ToObject_ForIntermediates()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         FieldFactory.GetOrAddField(fields, "user.profile.email".AsSpan(), "String".AsSpan(), null);
@@ -256,7 +256,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_VeryDeepPath_AllSegmentsCreated()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var result = FieldFactory.GetOrAddField(
@@ -274,7 +274,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_SingleCharSegment_Works()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "a.b.c".AsSpan(), "String".AsSpan(), null);
@@ -288,7 +288,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_MetadataPreserved_WithDottedPath()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var metadata = new Dictionary<string, object?> { { "key", "value" } };
 
         // Act
@@ -308,7 +308,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_NullArguments_Handled()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "user".AsSpan(), "User".AsSpan(), arguments: null);
@@ -321,7 +321,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_EmptyArguments_Handled()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var arguments = new Dictionary<string, object?>();
 
         // Act
@@ -335,7 +335,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_SpecialCharacters_InPath_Works()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "user_profile.first_name".AsSpan(), "String".AsSpan(), null);
@@ -348,7 +348,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_RepeatedAccess_Idempotent()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var path = "user.profile.name".AsSpan();
         var type = "String".AsSpan();
 
@@ -371,7 +371,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_WithVariousTypes_StoresCorrectType(string type)
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, "field".AsSpan(), type.AsSpan(), null);
@@ -387,7 +387,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_VariousPaths_AllWork(string path)
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // Act
         var field = FieldFactory.GetOrAddField(fields, path.AsSpan(), "String".AsSpan(), null);
@@ -401,7 +401,7 @@ public class FieldFactoryPathHandlingTests
     public async Task FieldFactory_GetOrAddField_ConcurrentAccess_ThreadSafe()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var threadCount = 8;
         var tasks = new Task[threadCount];
         var exceptions = new System.Collections.Concurrent.ConcurrentBag<Exception>();
@@ -437,7 +437,7 @@ public class FieldFactoryPathHandlingTests
     public void FieldFactory_GetOrAddField_BufferSizeCalculation_VeryLongPath()
     {
         // Arrange
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
         var parts = new List<string>();
         for (int i = 0; i < 20; i++)
         {

@@ -49,7 +49,7 @@ public sealed record FieldDefinition
     /// <param name="alias">Optional response-side alias.</param>
     /// <param name="sortedArguments">Pre-sorted argument map (case-insensitive); null/empty stores null.</param>
     /// <param name="fields">Optional initial children; null/empty leaves the field as a leaf.</param>
-    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, SortedDictionary<string, FieldDefinition>? fields = null)
+    public FieldDefinition(string name, string type, string? alias, SortedDictionary<string, object?>? sortedArguments = null, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
         _alias = alias;
@@ -69,7 +69,7 @@ public sealed record FieldDefinition
     /// <param name="alias">Optional response-side alias.</param>
     /// <param name="arguments">Unsorted argument map; null/empty stores null.</param>
     /// <param name="fields">Optional initial children; null/empty leaves the field as a leaf.</param>
-    public FieldDefinition(string name, string type, string? alias, IDictionary<string, object?>? arguments, SortedDictionary<string, FieldDefinition>? fields = null)
+    public FieldDefinition(string name, string type, string? alias, IDictionary<string, object?>? arguments, Dictionary<string, FieldDefinition>? fields = null)
     {
         Name = name;
         _alias = alias;
@@ -88,7 +88,7 @@ public sealed record FieldDefinition
         return sorted;
     }
 
-    private static FieldChildren? AsChildren(SortedDictionary<string, FieldDefinition>? fields)
+    private static FieldChildren? AsChildren(Dictionary<string, FieldDefinition>? fields)
     {
         if (fields is null || fields.Count == 0) return null;
         var children = new FieldChildren();

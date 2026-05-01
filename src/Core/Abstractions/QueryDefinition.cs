@@ -8,7 +8,7 @@ namespace NGql.Core.Abstractions;
 /// </summary>
 public sealed record QueryDefinition(string Name, string Description = "")
 {
-    internal SortedDictionary<string, FieldDefinition>? _fields;
+    internal Dictionary<string, FieldDefinition>? _fields;
     internal SortedSet<Variable>? _variables;
     internal Dictionary<string, object?>? _metadata;
 
@@ -28,7 +28,7 @@ public sealed record QueryDefinition(string Name, string Description = "")
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public SortedDictionary<string, FieldDefinition> Fields
+    public Dictionary<string, FieldDefinition> Fields
     {
         get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
         internal set => _fields = value;

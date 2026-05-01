@@ -24,7 +24,7 @@ public static class FieldSignatureGenerator
     /// </summary>
     /// <param name="fields">The field definitions to generate signature for.</param>
     /// <returns>A unique hash representing the filter signature of the fields.</returns>
-    public static int GenerateSignature(SortedDictionary<string, FieldDefinition> fields)
+    public static int GenerateSignature(Dictionary<string, FieldDefinition> fields)
     {
         if (fields.Count == 0)
         {

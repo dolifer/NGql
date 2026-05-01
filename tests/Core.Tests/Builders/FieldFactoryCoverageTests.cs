@@ -414,7 +414,7 @@ public class FieldFactoryCoverageTests
     [Fact]
     public void FieldBuilder_Create_WithDictionary_AndDottedPath_WithArguments_MergesOnExisting()
     {
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         // First call creates "user.posts" without arguments on last segment
         _ = FieldBuilder.Create(fields, "user.posts");
@@ -429,7 +429,7 @@ public class FieldFactoryCoverageTests
     [Fact]
     public void FieldBuilder_Create_WithDictionary_ComplexFieldPath_WithTypeAnnotation()
     {
-        var fields = new SortedDictionary<string, FieldDefinition>();
+        var fields = new Dictionary<string, FieldDefinition>();
 
         _ = FieldBuilder.Create(fields, "userName", "User", arguments: new Dictionary<string, object?> { ["id"] = 123 });
 
