@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-and-test:
@@ -34,11 +34,23 @@ jobs:
         with:
           name: coverage-report
           path: artifacts/coverage-report
-      - name: Publish coverage report to GitHub Pages
+      - name: Upload Pages artifact
         if: github.event_name == 'push'
-        uses: peaceiris/actions-gh-pages@v4
+        uses: actions/upload-pages-artifact@v5
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: artifacts/coverage-report
-          publish_branch: gh-pages
-          force_orphan: true
+          path: artifacts/coverage-report
+
+  deploy-pages:
+    if: github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
