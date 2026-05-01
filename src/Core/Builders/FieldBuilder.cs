@@ -28,7 +28,9 @@ public sealed class FieldBuilder
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
         ArgumentNullException.ThrowIfNull(fieldDefinition);
-        Helpers.ValidateFieldName(fieldDefinition.Name.AsSpan());
+        // Dotted names are valid here — they are expanded into nested fields by FieldFactory,
+        // matching the string-overload behavior. Validate each segment individually.
+        ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
         var arguments = fieldDefinition._arguments;
 
         // FieldDefinition._type is always set non-null by every constructor path.
