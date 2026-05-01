@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
     <Product>NGql</Product>
-    <Description>Schemaless GraphQL client for .NET Core</Description>
+    <Description>Zero-dependency, schemaless GraphQL query builder for .NET. Composes queries and mutations from C# without an SDL or codegen step. Transport-agnostic — bring your own HTTP client.</Description>
     <Company>Denis Olifer</Company>
     <Authors>Denis Olifer</Authors>
     <Copyright>Copyright $([System.DateTime]::Now.Year) Maintainers of NGql</Copyright>
