@@ -28,7 +28,7 @@ var conditional = PreservationBuilder.Create(profile)
 
 ## What this took
 
-The branch landed **244 files changed, +33,169 / −3,255**, squashed into 23 thematic commits. About a third of that diff is tests — the Core namespace now sits at **99.93% line coverage and 99.32% branch coverage**, with 1,716 tests across .NET 8, 9, and 10.
+The branch landed with hundreds of files changed, squashed into thematic commits. About a third of that diff is tests — the Core namespace now sits at **99.93% line / 99.66% branch / 100% method coverage**, with 1,725 tests across .NET 8, 9, and 10.
 
 A few things I wasn't expecting going in:
 - The "consolidate scattered tests into Theories with scenario bags" pass deleted more lines than it added, while raising coverage. Worth doing on any test suite that's grown organically.

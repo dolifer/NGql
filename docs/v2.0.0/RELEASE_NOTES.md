@@ -60,8 +60,8 @@ The package now ships TFMs for `net8.0`, `net9.0`, and `net10.0`. The minimum su
 
 ## Quality
 
-- **1716 tests** (1625 unit + 91 integration), executed on all three target frameworks
-- **99.93% line coverage / 99.32% branch coverage** on the Core namespace
+- **1725 tests** (1634 unit + 91 integration), executed on all three target frameworks
+- **99.93% line coverage / 99.66% branch coverage / 100% method coverage** on the Core namespace
 - `TreatWarningsAsErrors` enforced across `src/`; SonarAnalyzer.CSharp 10.15 runs on every build
 - HTML coverage report and badges published from CI to GitHub Pages on every push to `main`
 
