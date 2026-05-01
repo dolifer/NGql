@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - feature/fix_type_drift_bug
   pull_request:
     branches:
       - main
@@ -35,13 +34,13 @@ jobs:
           name: coverage-report
           path: artifacts/coverage-report
       - name: Upload Pages artifact
-        if: github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
           path: artifacts/coverage-report
 
   deploy-pages:
-    if: github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: build-and-test
     runs-on: ubuntu-latest
     permissions:
