@@ -1,0 +1,39 @@
+name: Publish stable Skill from tag
+
+# Triggered on `skill-v*` tag pushes (e.g. `skill-v1.2.0`). Preview tags
+# (`skill-v*-preview.*`) are skipped — those go through the manual
+# `pre-release-skill.yml` workflow instead.
+on:
+  push:
+    tags:
+      - 'skill-v*'
+
+jobs:
+  publish:
+    if: ${{ !contains(github.ref_name, '-preview.') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.ref }}
+      - name: Install .NET SDKs (8, 9, 10)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Stage and publish
+        env:
+          CATALOG_REMOTE: https://x-access-token:${{ secrets.CLAUDE_PLUGINS_TOKEN }}@github.com/dolifer/claude-plugins.git
+          # Pin the published version to the tag string (strip the `skill-v` prefix). This
+          # avoids any computation drift between the tag and the catalog plugin.json — the
+          # tag IS the version.
+          VERSION: ${{ github.ref_name }}
+        run: |
+          # Strip the `skill-v` tag prefix to get a clean SemVer
+          VERSION="${VERSION#skill-v}"
+          export VERSION
+          make skill-publish-stable

@@ -1,0 +1,35 @@
+name: Publish pre-release Skill (preview channel)
+
+# Manual trigger to push the current branch's Skill content into
+# `dolifer/claude-plugins/plugins/ngql-preview/`. The version is computed by GitVersion
+# from this repo's commit history (see .claude/skills/ngql-local/GitVersion.yml) and
+# is independent of the library version.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # workflow_dispatch checks out a detached HEAD by default, which causes GitVersion
+          # to fall back to the literal label "--no-branch-". Pass the originating ref so
+          # we land on a real branch and the `feature` regex matches.
+          ref: ${{ github.ref }}
+      - name: Install .NET SDKs (8, 9, 10)
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+      - name: Stage and publish
+        env:
+          # The catalog repo is cloned over HTTPS using a fine-grained PAT (scoped to
+          # `dolifer/claude-plugins`, contents:read+write only). Locally, the Makefile
+          # default uses SSH (`git@github.com:...`); CI overrides to the token form.
+          CATALOG_REMOTE: https://x-access-token:${{ secrets.CLAUDE_PLUGINS_TOKEN }}@github.com/dolifer/claude-plugins.git
+        run: make skill-publish-preview
