@@ -219,10 +219,22 @@ internal sealed class QueryTextBuilder
                 BuildFieldArguments(field._arguments);
             }
 
-            if (field._children is { Count: > 0 })
+            // A field gets a `{ … }` block when it has either child fields OR inline fragments.
+            // Plain leaf fields (no children, no fragments) render as a bare name + newline.
+            var hasChildren = field._children is { Count: > 0 };
+            var hasFragments = field._fragments is { Count: > 0 };
+
+            if (hasChildren || hasFragments)
             {
                 _stringBuilder.AppendLine("{");
-                BuildFieldDefinitions(field._children, indent + IndentSize);
+                if (hasChildren)
+                {
+                    BuildFieldDefinitions(field._children!, indent + IndentSize);
+                }
+                if (hasFragments)
+                {
+                    BuildInlineFragments(field._fragments!, indent + IndentSize);
+                }
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }
@@ -230,6 +242,54 @@ internal sealed class QueryTextBuilder
             {
                 _stringBuilder.AppendLine();
             }
+        }
+    }
+
+    /// <summary>
+    /// Renders the inline fragments attached to a field. Each fragment is written as
+    /// <c>... on TypeName { … }</c> with its own selection set rendered recursively.
+    /// Fragments are sorted alphabetically by type name (case-sensitive — GraphQL type names
+    /// are case-sensitive) for deterministic output.
+    /// </summary>
+    private void BuildInlineFragments(Dictionary<string, InlineFragmentDefinition> fragments, int indent)
+    {
+        if (fragments.Count == 0) return;
+
+        // Snapshot type names into a pooled buffer and sort, mirroring how fields are sorted
+        // before rendering — keeps the output stable regardless of insertion order.
+        var typeNames = ArrayPool<string>.Shared.Rent(fragments.Count);
+        try
+        {
+            int i = 0;
+            foreach (var key in fragments.Keys) typeNames[i++] = key;
+            Array.Sort(typeNames, 0, fragments.Count, StringComparer.Ordinal);
+
+            var padding = GetPadding(indent);
+            for (int j = 0; j < fragments.Count; j++)
+            {
+                var fragment = fragments[typeNames[j]];
+                _stringBuilder.Append(padding);
+                _stringBuilder.Append("... on ");
+                _stringBuilder.Append(fragment.TypeName);
+                _stringBuilder.AppendLine("{");
+
+                if (fragment._fields is { Count: > 0 })
+                {
+                    BuildFieldDefinitions(fragment._fields, indent + IndentSize);
+                }
+                if (fragment._fragments is { Count: > 0 })
+                {
+                    BuildInlineFragments(fragment._fragments, indent + IndentSize);
+                }
+
+                _stringBuilder.Append(padding);
+                _stringBuilder.AppendLine("}");
+            }
+        }
+        finally
+        {
+            Array.Clear(typeNames, 0, fragments.Count);
+            ArrayPool<string>.Shared.Return(typeNames, clearArray: false);
         }
     }
 

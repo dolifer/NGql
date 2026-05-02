@@ -580,4 +580,54 @@ public sealed class FieldBuilder
 
         return this;
     }
+
+    /// <summary>
+    /// Adds an inline GraphQL fragment narrowing the current field's selection set to a
+    /// concrete type. Renders as <c>... on TypeName { … }</c>. Use when the parent field's
+    /// schema return type is a union or interface and you need fields that only exist on
+    /// a specific implementation.
+    /// </summary>
+    /// <param name="typeName">The concrete GraphQL type to narrow to (e.g. <c>"Repository"</c>).
+    /// Case-sensitive — emitted verbatim into the rendered GraphQL.</param>
+    /// <param name="action">Builder action for the fragment's selection set. The builder it
+    /// receives writes into the fragment, not the parent field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <remarks>
+    /// Multiple <c>OnType("Repository", …)</c> calls on the same parent merge into one
+    /// fragment definition (idempotent registration, then the lambda extends the existing
+    /// selection set). This matches the GraphQL semantics where two adjacent inline fragments
+    /// for the same type are equivalent to one combined fragment.
+    /// </remarks>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="typeName"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is null.</exception>
+    public FieldBuilder OnType(string typeName, Action<FieldBuilder> action)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            throw new ArgumentException("Inline fragment type name cannot be null or whitespace.", nameof(typeName));
+        }
+        ArgumentNullException.ThrowIfNull(action);
+
+        var fragment = _fieldDefinition.GetOrAddInlineFragment(typeName);
+
+        // Build a synthetic field whose `_children` aliases the fragment's field store, so the
+        // user's lambda body (which adds fields via the standard FieldBuilder.AddField overloads)
+        // writes straight into the fragment without an extra copy step.
+        var fragmentSurface = new FieldDefinition(
+            name: $"__inline_fragment_{typeName}",
+            type: Constants.DefaultFieldType)
+        {
+            _children = fragment.GetOrCreateFieldsStore(),
+            _fragments = fragment._fragments,
+        };
+
+        var inner = new FieldBuilder(fragmentSurface);
+        action(inner);
+
+        // The lambda may have created the nested-fragments map on the synthetic field; reflect
+        // that back onto the fragment so future OnType calls on the same fragment pick it up.
+        fragment._fragments = fragmentSurface._fragments;
+
+        return this;
+    }
 }
