@@ -12,8 +12,25 @@ NUGET_API_KEY  ?=
 
 TOOL_PROJECT   := tools/Tool/Tool.csproj
 
+# ── Skill publishing ──────────────────────────────────────────────────────────────────────────
+# The NGql Skill ships independently of the library on its own SemVer stream (see
+# .claude/skills/ngql-local/GitVersion.yml). It's published into a separate catalog repo
+# (default dolifer/claude-plugins) under one of two channels:
+#   preview -> plugins/ngql-preview
+#   stable  -> plugins/ngql
+# Override CATALOG_REPO if you want to test the publish flow against a fork.
+SKILL_SRC          := .claude/skills/ngql-local
+SKILL_STAGE_DIR    := $(ARTIFACTS)/skill
+SKILL_GITVERSION   := $(SKILL_SRC)/GitVersion.yml
+CATALOG_REPO       ?= dolifer/claude-plugins
+CATALOG_REMOTE     ?= git@github.com:$(CATALOG_REPO).git
+CATALOG_BRANCH     ?= main
+SKILL_BOT_NAME     ?= NGql Release Bot
+SKILL_BOT_EMAIL    ?= noreply@github.com
+DRY_RUN            ?=
+
 .DEFAULT_GOAL := test
-.PHONY: help clean restore build test coverage report pack publish ci rebuild tools skill-eval
+.PHONY: help clean restore build test coverage report pack publish ci rebuild tools skill-eval skill-version skill-stage skill-publish-preview skill-publish-stable
 
 help:
 	@echo "Targets:"
@@ -28,7 +45,11 @@ help:
 	@echo "  ci         clean + coverage (used by GitHub Actions; always starts fresh)"
 	@echo "  rebuild    clean + test (force-clean local rebuild)"
 	@echo "  tools      Install dotnet-reportgenerator-globaltool if missing"
-	@echo "  skill-eval Run NGql Skill fixtures (or pass SNIPPET=path/to/file.cs to eval one snippet)"
+	@echo "  skill-eval               Run NGql Skill fixtures (or pass SNIPPET=path/to/file.cs)"
+	@echo "  skill-version            Print the computed Skill SemVer (CHANNEL=preview|stable, default preview)"
+	@echo "  skill-stage              Stage the Skill into $(SKILL_STAGE_DIR)/<channel>/ for inspection"
+	@echo "  skill-publish-preview    Stage + publish to the preview channel (DRY_RUN=1 to skip the git push)"
+	@echo "  skill-publish-stable     Stage + publish to the stable channel (DRY_RUN=1 to skip the git push)"
 
 clean:
 	rm -rf $(ARTIFACTS)
@@ -81,6 +102,73 @@ ifdef SNIPPET
 else
 	dotnet run --project $(TOOL_PROJECT) -f net10.0 -- fixtures
 endif
+
+# Resolve the channel from CHANNEL=preview|stable. Default preview because that's the safer
+# (and far more common) operation — stable is the explicit one.
+CHANNEL ?= preview
+
+# VERSION can be overridden at the command line (useful for testing or for matching an
+# external tag). Without an override, derive from GitVersion using the Skill-specific config.
+ifndef VERSION
+SKILL_VERSION := $$(dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable SemVer)
+else
+SKILL_VERSION := $(VERSION)
+endif
+
+skill-version:
+	@command -v dotnet-gitversion >/dev/null 2>&1 || (echo "dotnet-gitversion not on PATH; run \`make tools\` first" && exit 1)
+	@dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable SemVer
+
+skill-stage:
+	@command -v python3 >/dev/null 2>&1 || (echo "python3 is required" && exit 1)
+	@command -v dotnet-gitversion >/dev/null 2>&1 || (echo "dotnet-gitversion not on PATH; run \`make tools\` first" && exit 1)
+	@version="$(SKILL_VERSION)"; \
+	out="$(SKILL_STAGE_DIR)/$(CHANNEL)"; \
+	rm -rf $$out; \
+	mkdir -p $$out; \
+	echo "==> Staging Skill (channel=$(CHANNEL), version=$$version) -> $$out"; \
+	python3 $(SKILL_SRC)/scripts/stage_skill.py \
+		--channel $(CHANNEL) \
+		--version $$version \
+		--source $(SKILL_SRC) \
+		--out $$out
+
+# Internal: shared by skill-publish-preview and skill-publish-stable. Don't invoke directly —
+# the channel-specific public targets set CHANNEL and force a fresh stage step.
+_skill-publish: skill-stage
+	@command -v git >/dev/null 2>&1 || (echo "git is required" && exit 1)
+	@version="$(SKILL_VERSION)"; \
+	stage="$(SKILL_STAGE_DIR)/$(CHANNEL)"; \
+	clone="$(SKILL_STAGE_DIR)/catalog-$(CHANNEL)"; \
+	plugin_name=$$([ "$(CHANNEL)" = "stable" ] && echo "ngql" || echo "ngql-preview"); \
+	echo "==> Cloning $(CATALOG_REMOTE) (branch $(CATALOG_BRANCH)) -> $$clone"; \
+	rm -rf $$clone; \
+	git clone --depth 1 --branch $(CATALOG_BRANCH) $(CATALOG_REMOTE) $$clone; \
+	echo "==> Copying staged plugin into the catalog clone"; \
+	mkdir -p $$clone/plugins/$$plugin_name; \
+	rm -rf $$clone/plugins/$$plugin_name/skills $$clone/plugins/$$plugin_name/.claude-plugin; \
+	cp -R $$stage/plugins/$$plugin_name/. $$clone/plugins/$$plugin_name/; \
+	cd $$clone && \
+	  git add plugins/$$plugin_name && \
+	  if git diff --cached --quiet; then \
+	    echo "==> No catalog changes for $$plugin_name@$$version (nothing to publish)"; \
+	    exit 0; \
+	  fi; \
+	  git -c user.name="$(SKILL_BOT_NAME)" -c user.email="$(SKILL_BOT_EMAIL)" \
+	      -c commit.gpgsign=false -c tag.gpgsign=false \
+	      commit -m "Sync $$plugin_name@$$version from dolifer/NGql"; \
+	  if [ -n "$(DRY_RUN)" ]; then \
+	    echo "==> DRY_RUN=1, skipping git push (commit prepared in $$clone)"; \
+	  else \
+	    git push origin $(CATALOG_BRANCH); \
+	    echo "==> Published $$plugin_name@$$version to $(CATALOG_REPO)"; \
+	  fi
+
+skill-publish-preview:
+	$(MAKE) _skill-publish CHANNEL=preview
+
+skill-publish-stable:
+	$(MAKE) _skill-publish CHANNEL=stable
 
 report: tools
 	reportgenerator \
