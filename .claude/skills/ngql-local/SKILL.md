@@ -295,26 +295,26 @@ NGql is a **schema-less query builder**. It doesn't model every GraphQL syntacti
 
 | GraphQL construct | NGql support |
 |---|---|
-| Inline fragments (`... on Type { … }`) | **None.** `.AddField("... on Repository")` renders the literal string as a field name. |
-| Named fragments (`fragment X on T { … }`, `...X`) | **None.** |
+| Inline fragments (`... on Type { … }`) | **Supported via `FieldBuilder.OnType("TypeName", b => …)`.** See worked example below. |
+| Unions / interfaces with multiple type narrowings | **Supported** — call `.OnType(…)` once per concrete type on the parent field. |
+| Named fragments (`fragment X on T { … }`, `...X`) | **None** — tracked in [issue #20](https://github.com/dolifer/NGql/issues/20). For now, inline the selection set at each use site. |
 | Directives (`@include`, `@skip`, `@deprecated`, custom) | **None** as first-class syntax. |
 | Subscriptions (`subscription S { … }`) | **None.** `QueryBuilder` and `Mutation` are the only operation types. |
-| Unions / interfaces with multiple type narrowings | **None** (since inline fragments are the mechanism). |
 
 ### The hard rule
 
-When the user's request needs ANY construct from that table:
+When the user's request needs ANY of the **unsupported** constructs above (named fragments, directives, subscriptions):
 
-1. **Stop before generating any C#.** Say so in one sentence: *"Your query needs an inline fragment, which NGql doesn't support."*
+1. **Stop before generating any C#.** Say so in one sentence: *"Your query uses named fragments, which NGql doesn't support yet (tracked in #20)."*
 2. **Offer concrete paths forward** — typically one of:
-   - Restructure to avoid the construct (e.g. use `viewer.repositories` instead of `search` to skip the union).
+   - Inline the equivalent selection set at each use site (works for named fragments — same fields, just duplicated).
    - Build the partial query that *is* supported, and have the user splice the missing GraphQL by hand. Make explicit which parts you'll skip.
-   - Pick a different field that returns the same data without the unsupported construct.
+   - Pick a different field/approach that doesn't need the construct.
 3. **Wait for the user's pick** before generating any code.
 
-**Do NOT generate the broken snippet "as a starting point" or "for reference."** Even with a warning beneath it, presenting `.AddField("... on Repository")` looks like working code and invites copy-paste. The output of `ngql snippet.cs` will be visibly wrong (a literal `Repository{ ... }` field instead of an inline fragment), which is exactly the "looks right, silently wrong" failure mode this rule exists to prevent. Skip the broken version entirely; make the user's first contact with code be code that actually works.
+**Do NOT generate broken code "as a starting point" or "for reference."** Generating something that *looks* like working NGql but renders to invalid GraphQL is the worst failure mode — it invites copy-paste and hides the gap. Skip the broken version entirely; the user's first contact with code should be code that actually works.
 
-The one exception: if the user, after seeing options 2 or 3, **explicitly** says "yes, give me the partial snippet and I'll splice the rest" — then generate the partial, clearly marked with a comment showing where the manual splice goes (e.g. `// TODO: paste your `... on Repository { name, stargazerCount }` fragment here`). Even then, don't write the broken `.AddField("... on Repository")` line.
+Inline fragments and union/interface narrowing are NOT in this restricted list anymore — generate them freely using `OnType` (see worked example below).
 
 ## Worked examples
 
@@ -389,6 +389,55 @@ var query = QueryBuilder.CreateDefaultBuilder("GetOrder")
 // Submit with variables: {"id": "42"} — NGql renders the operation only,
 // you bind variable values at the transport layer.
 ```
+
+### Inline fragments (union/interface narrowing)
+
+When a field returns a GraphQL union or interface (e.g. GitHub's `search.nodes` returns `SearchResultItem`, an interface implemented by `Repository`, `Issue`, `PullRequest`, …) and you need fields that only exist on a specific concrete type, use `FieldBuilder.OnType("ConcreteType", b => …)`. It renders as `... on ConcreteType { … }`.
+
+> "Build a query that searches GitHub for the top 10 starred repositories and returns name, stargazerCount, and url."
+
+```csharp
+using NGql.Core;
+using NGql.Core.Builders;
+
+QueryBuilder.CreateDefaultBuilder("TopRepos")
+    .AddField("search",
+        new Dictionary<string, object?>
+        {
+            ["query"] = "stars:>1",
+            ["type"]  = new EnumValue("REPOSITORY"),
+            ["first"] = 10,
+        },
+        b => b.AddField("nodes", n => n
+            .OnType("Repository", r => r
+                .AddField("name")
+                .AddField("stargazerCount")
+                .AddField("url"))));
+```
+
+Renders to:
+
+```graphql
+query TopRepos{
+    search(first:10, query:"stars:>1", type:REPOSITORY){
+        nodes{
+            ... on Repository{
+                name
+                stargazerCount
+                url
+            }
+        }
+    }
+}
+```
+
+Things to note:
+- The `"Repository"` string is a **schema type name**, not user-defined — it must match a real type on the server's schema.
+- Multiple `OnType` calls for the same parent are valid and common — one per concrete type the union/interface needs to narrow to. Repeated `OnType("Repository", …)` calls on the same parent merge into one fragment definition.
+- Fragments can nest: `OnType("PullRequest", p => p.OnType("Mergeable", m => …))` produces a fragment-inside-fragment.
+- Rendered fragments come *after* plain fields and are sorted alphabetically by type name (case-sensitive ordinal — GraphQL type names are case-sensitive).
+
+For **named** fragments (`fragment X on T { … }` + `...X` reuse), NGql doesn't support those yet — see [issue #20](https://github.com/dolifer/NGql/issues/20). Inline the equivalent selection set at each use site for now.
 
 ### Refactor / preserve
 
