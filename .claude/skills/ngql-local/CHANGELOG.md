@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Skill confirms non-localhost endpoint URLs and `--allow-mutations` once per session before its first run, since the cost of an unintended POST is high and the cost of one extra confirmation is low.
 - Skill reports `ngql` exit codes and stderr verbatim on failure, mapping each to a concrete next step (compile fix for exit 1, error interpretation for exit 2, install command for exit 127, etc.). One run per ask, no auto-retry loops.
 - Skill no longer treats exit 0 as automatic success. If the response body looks like HTML, an echo dump, or anything other than a JSON object with a `data` field, the Skill calls this out instead of claiming the query worked — caught when the user pointed `--execute` at webhook.site and the tool correctly printed the HTML body verbatim, but the Skill's interpretation needed nuance.
+- When `ngql` is missing (exit 127), Skill asks which channel to install — stable or preview — instead of guessing. Includes a note that stable doesn't exist on NuGet yet, so preview (`--prerelease`) is the practical answer for now. Also flags the `~/.dotnet/tools/` PATH issue as an alternative cause of "command not found."
 
 ## [1.0.0] - 2026-05-02
 

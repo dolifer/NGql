@@ -45,8 +45,8 @@ NGql ships two optional companions alongside the library. Use them when they hel
 A .NET global tool that compiles a `QueryBuilder` snippet against `NGql.Core` and prints the GraphQL it renders to. Useful for sanity-checking a snippet, snapshotting expected query text in CI scripts, or executing a rendered operation against a live endpoint.
 
 ```bash
-dotnet tool install -g dotnet-ngql            # one-time install
-dotnet tool update  -g dotnet-ngql            # update to latest
+dotnet tool install -g dotnet-ngql --prerelease   # one-time install (preview-only on NuGet today)
+dotnet tool update  -g dotnet-ngql --prerelease   # update to latest preview
 
 ngql snippet.cs                               # render a file
 echo '<snippet>' | ngql                       # or read from stdin

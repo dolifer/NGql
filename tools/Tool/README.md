@@ -5,16 +5,32 @@ Command-line tool for [NGql](https://github.com/dolifer/NGql) — compiles a C# 
 ## Install
 
 ```bash
-dotnet tool install -g dotnet-ngql
+dotnet tool install -g dotnet-ngql --prerelease
 ```
+
+The `--prerelease` flag is required while NuGet only has preview versions. Once a stable `2.x.0` ships, the flag becomes optional.
 
 ## Update
 
 ```bash
-dotnet tool update -g dotnet-ngql
+dotnet tool update -g dotnet-ngql --prerelease
 ```
 
-The tool's version tracks `NGql.Core` in lockstep — installing a specific NGql version is `--version 2.1.0`.
+The tool's version tracks `NGql.Core` in lockstep — installing a specific NGql version is `--version 2.1.0-preview.X --prerelease`.
+
+## If `ngql` reports "command not found"
+
+The .NET SDK installs global tools to `~/.dotnet/tools/`, but doesn't always add that path to new shells. Either persist it in your shell rc:
+
+```bash
+echo 'export PATH="$PATH:$HOME/.dotnet/tools"' >> ~/.zshrc   # or ~/.bashrc
+```
+
+…or set it for the current shell:
+
+```bash
+export PATH="$PATH:$HOME/.dotnet/tools"
+```
 
 ## Use
 
