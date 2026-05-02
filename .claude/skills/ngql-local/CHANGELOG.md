@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Skill may now invoke the `ngql` CLI on the user's behalf when explicitly asked ("send this", "run that", "execute it"). Other binaries — `which`, `dotnet tool list`, `curl`, etc. — require the Skill to surface its intent and ask first before running. Earlier preview rules (`.7`–`.14`) were too absolute and forced the user to copy-paste commands even for "run that for me" requests; this pivot keeps the safety (no silent diagnostics) while restoring the natural "you ask, I run" UX.
 - Skill confirms non-localhost endpoint URLs and `--allow-mutations` once per session before its first run, since the cost of an unintended POST is high and the cost of one extra confirmation is low.
 - Skill reports `ngql` exit codes and stderr verbatim on failure, mapping each to a concrete next step (compile fix for exit 1, error interpretation for exit 2, install command for exit 127, etc.). One run per ask, no auto-retry loops.
+- Skill no longer treats exit 0 as automatic success. If the response body looks like HTML, an echo dump, or anything other than a JSON object with a `data` field, the Skill calls this out instead of claiming the query worked — caught when the user pointed `--execute` at webhook.site and the tool correctly printed the HTML body verbatim, but the Skill's interpretation needed nuance.
 
 ## [1.0.0] - 2026-05-02
 
