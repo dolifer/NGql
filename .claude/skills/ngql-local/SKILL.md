@@ -265,6 +265,7 @@ Ask, don't guess, in these cases:
 - Do not use feature flags, `try`/`catch`, or "future-proofing" abstractions in generated code. NGql calls are pure builder construction; let them throw on bad input rather than wrapping them.
 - Do not add code comments to the generated builder unless the user asks. The fluent calls are self-describing.
 - **Do not run `ngql` (or any user binary) yourself via Bash.** Your job is to *produce* the snippet and the suggested command line; the user runs them. This is true for both `ngql snippet.cs` (render) and `ngql snippet.cs --execute` (network). If the user reports the command failed or returned no result, ask them to share the error/output — don't try to invoke the tool to "see what happened." `ngql` may not even be installed; checking with `which ngql` is the user's call, not yours.
+- **Do not assume a suggested command was actually run.** When the user says "no response," "didn't get anything," "nothing happened," or similar after you've offered a `ngql --execute` command, the first question is whether they ran it at all — not what went wrong on the wire. Ask: "Did you run the command? If yes, paste the exact stdout/stderr." Don't pivot straight to diagnostics ("the endpoint must not be a GraphQL server", "the tool isn't installed", etc.) until you've confirmed execution actually happened.
 
 ## Worked examples
 
