@@ -12,6 +12,7 @@ public sealed record FieldDefinition
 {
     // Fields
     internal FieldChildren? _children;
+    internal Dictionary<string, InlineFragmentDefinition>? _fragments;
     internal string? _type;
     internal string? _alias;
     internal string _effectiveName;
@@ -139,6 +140,24 @@ public sealed record FieldDefinition
     public IReadOnlyDictionary<string, FieldDefinition> Fields
         => _children ?? EmptyReadOnlyFields;
 
+    private static readonly IReadOnlyDictionary<string, InlineFragmentDefinition> EmptyReadOnlyFragments
+        = new Dictionary<string, InlineFragmentDefinition>();
+
+    /// <summary>
+    /// Inline fragments attached to this field, keyed by the fragment's GraphQL type name
+    /// (case-sensitive). Each fragment renders as <c>... on TypeName { … }</c> after the
+    /// field's plain children, alphabetical by type name.
+    /// </summary>
+    /// <remarks>
+    /// Used when the field's schema return type is a union or interface and the caller needs
+    /// type narrowing. See <see cref="NGql.Core.Builders.FieldBuilder.OnType(string, Action{NGql.Core.Builders.FieldBuilder})"/>
+    /// for the builder-side API. Multiple <c>OnType</c> calls for the same type name merge
+    /// into one fragment definition.
+    /// </remarks>
+    [JsonPropertyName("inlineFragments")]
+    public IReadOnlyDictionary<string, InlineFragmentDefinition> InlineFragments
+        => (IReadOnlyDictionary<string, InlineFragmentDefinition>?)_fragments ?? EmptyReadOnlyFragments;
+
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
@@ -180,6 +199,35 @@ public sealed record FieldDefinition
     /// </summary>
     [JsonIgnore]
     public bool HasFields => _children is { Count: > 0 };
+
+    /// <summary>
+    /// Gets a value indicating whether this field has any inline fragments.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasInlineFragments => _fragments is { Count: > 0 };
+
+    /// <summary>
+    /// True when this field has any selection set content — children fields or inline fragments.
+    /// Drives the renderer's decision between <c>field{ … }</c> and bare <c>field</c>.
+    /// </summary>
+    [JsonIgnore]
+    internal bool HasSelectionSet => HasFields || HasInlineFragments;
+
+    /// <summary>
+    /// Returns the existing inline fragment for <paramref name="typeName"/>, or appends a new
+    /// one. Used by the builder to merge multiple <c>OnType("Repository", …)</c> calls on the
+    /// same parent into a single fragment definition.
+    /// </summary>
+    internal InlineFragmentDefinition GetOrAddInlineFragment(string typeName)
+    {
+        _fragments ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+        if (!_fragments.TryGetValue(typeName, out var fragment))
+        {
+            fragment = new InlineFragmentDefinition(typeName);
+            _fragments[typeName] = fragment;
+        }
+        return fragment;
+    }
 
     /// <summary>
     /// When <c>true</c>, the merger treats this field as opaque — it will not be merged with
