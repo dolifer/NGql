@@ -8,6 +8,9 @@ The companion Claude Code Skill is versioned independently — see [`.claude/ski
 
 ## [Unreleased]
 
+### Added
+- **Inline fragment support** via `FieldBuilder.OnType("TypeName", b => …)`. Renders as `... on TypeName { … }` after the field's plain children, sorted alphabetically by type name. Multiple `OnType` calls for the same type on the same parent merge into one combined fragment definition. Nested fragments (fragment-inside-fragment) work recursively. Solves union/interface narrowing for queries like GitHub's `search.nodes`. New `InlineFragmentDefinition` record exposes the data model. Public API additions: `FieldBuilder.OnType`, `FieldDefinition.InlineFragments`, `FieldDefinition.HasInlineFragments`, `Abstractions.InlineFragmentDefinition`. Named fragments (`fragment X on T { … }` + `...X` spreads) remain unsupported — tracked in [issue #20](https://github.com/dolifer/NGql/issues/20).
+
 ## [2.1.0] - 2026-05-02
 
 ### Added

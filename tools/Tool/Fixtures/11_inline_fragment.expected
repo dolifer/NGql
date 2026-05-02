@@ -1,0 +1,11 @@
+query TopRepos{
+    search(first:10, query:"stars:>1", type:REPOSITORY){
+        nodes{
+            ... on Repository{
+                name
+                stargazerCount
+                url
+            }
+        }
+    }
+}
