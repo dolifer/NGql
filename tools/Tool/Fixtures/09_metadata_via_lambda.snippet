@@ -1,0 +1,9 @@
+var idVar = new Variable("$id", "ID!");
+
+QueryBuilder.CreateDefaultBuilder("GetUser")
+    .AddField("user",
+        new Dictionary<string, object?> { ["id"] = idVar },
+        b => b
+            .WithMetadata(new Dictionary<string, object> { ["cached"] = true, ["tag"] = "user-v2" })
+            .AddField("name")
+            .AddField("email"))

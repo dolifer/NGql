@@ -1,0 +1,6 @@
+query SearchUsers{
+    users(first:10, search:"john"){
+        email
+        name
+    }
+}

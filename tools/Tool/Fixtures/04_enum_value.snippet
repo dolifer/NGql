@@ -1,0 +1,4 @@
+QueryBuilder.CreateDefaultBuilder("ListAdmins")
+    .AddField("users",
+        new Dictionary<string, object?> { ["role"] = new EnumValue("ADMIN") },
+        new[] { "id", "name" })

@@ -1,0 +1,6 @@
+query ListAdmins{
+    users(role:ADMIN){
+        id
+        name
+    }
+}
