@@ -159,6 +159,63 @@ The `NGql.Core.Query` and `NGql.Core.Mutation` classes are the NGql 1.x classic 
 | `.Select("a", "b")` | `.AddField("a").AddField("b")` or `new[] { "a", "b" }` |
 | `.Include<T>("name")` | no direct equivalent — extract field names from the type yourself and call `AddField` |
 
+## Value types — argument literals and `--var` strings
+
+Two distinct contexts need correct value handling: **argument literals inside the C# snippet** (handed to NGql.Core) and **shell `--var key=value` strings** (handed to `ngql --execute`). Pick the right form for each context.
+
+### In the C# snippet (argument literals)
+
+When generating arguments for `AddField`, `Where`, etc., these CLR types map to GraphQL value forms:
+
+| GraphQL value | CLR literal | Renders as |
+|---|---|---|
+| `Int` | `int`, `long`, `short`, `sbyte` (and unsigned counterparts) | `42` |
+| `Float` | `float`, `double`, `decimal` | `3.14` |
+| `String` | `string` | `"alice"` (quotes, backslashes, and control chars are escaped — just write the string naturally) |
+| `Boolean` | `bool` | `true` / `false` |
+| `null` | `null` | `null` |
+| `ID` | `string` | `"abc123"` (GraphQL `ID` is a string on the wire) |
+| **enum literal** | `new EnumValue("ADMIN")` | `ADMIN` (unquoted) |
+| **variable reference** | `new Variable("$id", "ID!")` | `$id` (auto-promoted to the operation signature) |
+| **List of T** | `new[] { ... }`, `new List<T> { ... }`, or any `IList` | `[1, 2, 3]` / `[ADMIN, EDITOR]` |
+| **Input object** | `new Dictionary<string, object?> { ["k"] = v, ... }` | `{k:v, ...}` (keys alphabetized) |
+| **DateTime / DateTimeOffset** | `new DateTime(...)` | ISO-8601 quoted string. Most GraphQL servers expect a custom scalar here — verify the wire shape matches the server's contract. |
+
+CLR enums (`StringComparison.Ordinal`) also work — they render as their `.ToString()` name. **Prefer `new EnumValue("EXACT_NAME")` over CLR enums** unless the CLR enum's casing already matches the server's expected name; GraphQL convention is `SCREAMING_SNAKE_CASE` while C# is `PascalCase`.
+
+Nested freely: a `Dictionary` inside a `Dictionary`, a list of `Dictionary`s, all combine. Variables can sit anywhere a CLR value can.
+
+### In `--var key=value` (execute mode)
+
+The tool JSON-parses each value; if parsing fails, the value is treated as a bare string. So:
+
+| You want | Pass | Becomes (JSON variable) |
+|---|---|---|
+| number | `--var first=10` | `10` |
+| boolean | `--var active=true` | `true` |
+| null | `--var maybe=null` | `null` |
+| **string** | `--var name=alice` | `"alice"` (parse fails → bare-string fallback) |
+| **string with spaces** | `--var name="Anne Ware"` | `"Anne Ware"` |
+| **list** | `--var ids='[1,2,3]'` | `[1, 2, 3]` |
+| **list of strings** | `--var tags='["a","b"]'` | `["a", "b"]` |
+| **input object** | `--var filter='{"min":10,"tags":["a"]}'` | `{"min": 10, "tags": ["a"]}` |
+
+Single-quote the value when it contains JSON syntax — otherwise the shell will eat the brackets/quotes/braces. The tool does not validate against a schema, so a wrong type silently reaches the server (which will reject it). This matches what curl users already do.
+
+When the user wants to execute a snippet that uses `Variable("$x", "T")` references, they must pass matching `--var x=value` flags (the `$` prefix is for the snippet, not the CLI). Example:
+
+```csharp
+// snippet.cs:
+QueryBuilder.CreateDefaultBuilder("GetOrder")
+    .AddField("order",
+        new Dictionary<string, object?> { ["id"] = new Variable("$id", "ID!") },
+        new[] { "id", "status" })
+```
+
+```bash
+ngql snippet.cs --execute --endpoint https://... --var id=42
+```
+
 ## Output rules
 
 The user's `ToString()` calls produce GraphQL with these conventions — match them when you describe expected output:
