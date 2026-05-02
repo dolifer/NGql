@@ -1,0 +1,367 @@
+---
+name: ngql
+description: |
+  Translate the user's GraphQL intent into NGql query-builder C# code. Use when the user asks to "build a query", pastes a GraphQL operation or curl that needs porting to NGql, asks to filter / preserve fields from an existing builder, or mentions QueryBuilder / Mutation / PreservationBuilder / NGql by name. NGql is a zero-dependency, schema-less .NET GraphQL query builder — the user supplies the schema knowledge (field names, types), the Skill produces the fluent code.
+---
+
+# NGql Query Builder Skill
+
+You are generating NGql query-builder code for a .NET project. **NGql does not own a schema.** The user knows their GraphQL API. Your job is to render their intent as fluent NGql calls — not to invent fields, types, or arguments they didn't supply.
+
+## Three modes
+
+Pick one based on the user's input. If you can't tell, ask before generating code.
+
+### Mode 1 — Natural language → builder
+
+> "Get the top 10 repositories of GitHub user `dolifer`, with stargazer counts."
+
+1. Decide whether the target API is **well-known** (GitHub, Stripe, Shopify, public schemas in the training data) or **unknown** (private API).
+   - Well-known: proceed and call out which fields you assumed in a one-line "assumed schema" note.
+   - Unknown: ask the user for the field names / arg names you need before writing code. Don't guess.
+2. Extract: operation name, root field, arguments (name + value + GraphQL type for variables), nested fields.
+3. Generate using the builder API: `QueryBuilder.CreateDefaultBuilder(...)` for queries, `QueryBuilder.CreateMutationBuilder(...)` for mutations. Both share the same fluent surface (`AddField`, `Include`, `WithMetadata`, etc.) — the only difference is the operation prefix at render time.
+
+### Mode 2 — GraphQL or curl → builder
+
+> "Here's the curl I have today, port it to NGql:" (paste)
+
+1. Extract the GraphQL operation from the input. Curl bodies are usually JSON `{"query": "...", "variables": {...}}` — pull `query` and `variables` out before parsing.
+2. Map each construct to NGql:
+   - `query Foo($x: ID!)` → `QueryBuilder.CreateDefaultBuilder("Foo")` plus `new Variable("$x", "ID!")` passed as an argument value (auto-promoted to the operation signature).
+   - `field(arg: 5, name: "bob")` → `.AddField("field", new Dictionary<string, object?> { ["arg"] = 5, ["name"] = "bob" }, ...)`.
+   - Enum literals (unquoted in GraphQL) → `new EnumValue("ADMIN")` as the argument value.
+   - Nested selection sets → either dot-paths (`.AddField("user.profile.name")`) or a sub-field lambda (`.AddField("user", b => b.AddField("name"))`). Prefer dot-paths when there are no per-level arguments; use the lambda when intermediate levels carry args or you need readable nesting.
+   - Fragments / multiple operations → split into separate builders and compose with `.Include(other)`.
+   - `mutation` → use `QueryBuilder.CreateMutationBuilder("Name")`. The fluent surface is the same as the query path; only the operation prefix differs at render time.
+3. Preserve the original operation name and variable types verbatim — they are the schema contract.
+
+### Mode 3 — Refactor / preserve
+
+> "Take this builder and produce a public view that drops `ssn` and `email`."
+
+1. Use `PreservationBuilder.Create(source).Preserve("path.a", "path.b").Build()` to keep listed paths.
+2. For LINQ-driven extraction (typed): `PreserveFromExpression<T>(x => x.user.profile.email != null)`. Mention the `T` model class must mirror the query shape — the Skill cannot synthesize that DTO without seeing or being told its structure.
+3. `Preserve(...)` is **inclusive** ("keep these"), not exclusive ("drop these"). If the user says "drop X", flip it: list everything *except* X, or use `PreserveFromExpression` with a predicate that excludes the field.
+
+## API quick reference (current as of NGql 2.1+)
+
+### Namespaces
+```csharp
+using NGql.Core;            // Variable, EnumValue, MergingStrategy
+using NGql.Core.Builders;   // QueryBuilder, FieldBuilder, PreservationBuilder
+```
+
+`Query` and `Mutation` types still exist in `NGql.Core` for back-compat, but you should not generate code that uses them — see the "Legacy types" section at the bottom.
+
+### `QueryBuilder` — the fluent API for both queries and mutations
+
+```csharp
+QueryBuilder.CreateDefaultBuilder("OperationName");                                  // query Operation { ... }
+QueryBuilder.CreateDefaultBuilder("OperationName", MergingStrategy.MergeByFieldPath);
+
+QueryBuilder.CreateMutationBuilder("OperationName");                                 // mutation Operation { ... }
+QueryBuilder.CreateMutationBuilder("OperationName", MergingStrategy.MergeByFieldPath);
+```
+
+The two factories return the same `QueryBuilder` type with the same fluent methods — `CreateMutationBuilder` only changes the operation prefix at `ToString()` time. Variables, arguments, sub-fields, `Include`, `WithMetadata`, `PreservationBuilder` — all work identically across the two.
+
+`AddField` — pick the shape that matches your intent. These are the **only** call shapes you should generate; together they cover every realistic case.
+
+```csharp
+.AddField("path.to.field")                                         // simple, including dot-paths
+.AddField("users", new Dictionary<string, object?> { ... })        // with arguments
+.AddField("users", new[] { "id", "name" })                         // with sub-field names
+.AddField("users", new Dictionary<string, object?> { ... },
+                   new[] { "id", "name" })                         // arguments + sub-fields (args FIRST)
+.AddField("user", b => b.AddField("name").AddField("email"))       // sub-field lambda
+.AddField("user", new Dictionary<string, object?> { ... },
+                   b => b.AddField("name"))                        // arguments + sub-field lambda
+.AddField("amount", "Money!")                                      // typed leaf (rare)
+```
+
+Inside a sub-field lambda you call the same set of shapes on the lambda's `b`. Args go BEFORE sub-fields, exactly the same as on the outer `QueryBuilder`.
+
+**Metadata** (the per-field `Dictionary<string, object?>` for telemetry/tags/etc., separate from GraphQL arguments) is attached via a lambda, not as a positional dict:
+
+```csharp
+.AddField("user", new Dictionary<string, object?> { ["id"] = idVar }, b => b
+    .WithMetadata(new Dictionary<string, object> { ["cached"] = true })
+    .AddField("name"))
+```
+
+Never pass a metadata dict as a positional argument — always use the `WithMetadata(...)` step inside a sub-field lambda. (This rule means callers and Claude never have to disambiguate two adjacent `Dictionary<string, object?>` parameters.)
+
+Use `Dictionary<string, object?>` (not `IDictionary<,>`) at the call site — that is what the public overloads declare.
+
+Compose:
+```csharp
+var combined = QueryBuilder
+    .CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
+    .Include(fragmentA)
+    .Include(fragmentB);
+```
+
+`MergingStrategy` values:
+- `MergeByDefault` — inherit parent
+- `MergeByFieldPath` — merge same-path fragments, auto-alias on argument conflict (the default for a fresh `CreateDefaultBuilder`)
+- `NeverMerge` — keep every `Include` distinct
+
+### `Variable`
+
+```csharp
+var idVar = new Variable("$id", "ID!");      // name *includes* the $ prefix
+```
+
+Pass the `Variable` instance as an argument *value* and it is auto-promoted to the operation's variable list:
+
+```csharp
+.AddField("user", new Dictionary<string, object?> { ["id"] = idVar }, new[] { "name" })
+```
+
+### `EnumValue`
+
+```csharp
+.AddField("users", new Dictionary<string, object?> {
+    ["role"] = new EnumValue("ADMIN")    // renders unquoted: role:ADMIN
+})
+```
+
+Without `EnumValue`, a string would render as `"ADMIN"` (quoted). Always wrap GraphQL enum literals.
+
+### `PreservationBuilder`
+
+```csharp
+var publicView = PreservationBuilder.Create(fullQuery)
+    .Preserve("user.name", "user.email")
+    .Build();
+
+var conditional = PreservationBuilder.Create(fullQuery)
+    .PreserveFromExpression<UserDto>(x => x.user.profile.email != null)
+    .Build();
+
+var scoped = PreservationBuilder.Create(fullQuery)
+    .PreserveAtPath("createdAt", "user.posts")   // only keep `createdAt` under `user.posts`
+    .Build();
+```
+
+`Build()` returns a fresh `QueryBuilder` — the source is never mutated.
+
+### Legacy types — `Query` and `Mutation` (do not generate)
+
+The `NGql.Core.Query` and `NGql.Core.Mutation` classes are the NGql 1.x classic API. They still render correctly and are not removed, but **new code should not use them** — `QueryBuilder.CreateDefaultBuilder` and `QueryBuilder.CreateMutationBuilder` cover both surfaces with a richer fluent API. If you encounter user code that uses these types, you can read it (to extract intent) but do not produce more of it. When porting, map:
+
+| Classic | New |
+|---|---|
+| `new Query("Foo", vars)` | `QueryBuilder.CreateDefaultBuilder("Foo")` |
+| `new Mutation("Foo", vars)` | `QueryBuilder.CreateMutationBuilder("Foo")` |
+| `.Where("name", value)` (on a sub-query for arguments) | argument dictionary on `AddField(...)` |
+| `.Select("a", "b")` | `.AddField("a").AddField("b")` or `new[] { "a", "b" }` |
+| `.Include<T>("name")` | no direct equivalent — extract field names from the type yourself and call `AddField` |
+
+## Output rules
+
+The user's `ToString()` calls produce GraphQL with these conventions — match them when you describe expected output:
+
+- 4-space indentation, opening brace tight to the field name (`users{` not `users {`)
+- Fields **sorted alphabetically** within a selection set (insertion order is not preserved)
+- Aliases appended after the un-aliased duplicate
+- Strings double-quoted; enums (via `EnumValue`) unquoted; `null` literal; numbers raw
+- Variables render as `$name:Type` in the operation signature
+
+Example — given:
+```csharp
+var query = QueryBuilder.CreateDefaultBuilder("GetUsers")
+    .AddField("users.name")
+    .AddField("users.email");
+```
+
+`query.ToString()` produces:
+```graphql
+query GetUsers{
+    users{
+        email
+        name
+    }
+}
+```
+
+Note `email` before `name` — alphabetical, not insertion order.
+
+## When to ask before writing code
+
+Ask, don't guess, in these cases:
+
+1. **Private/unknown API, no schema given.** Don't invent field names. One sentence: "What field names does your `repositories` query expose?"
+2. **Mutations that mutate state** (e.g. `delete`, `transferFunds`). Confirm the operation name and the input shape before generating — the cost of a wrong mutation is higher than a wrong query.
+3. **Refactor where "drop" is ambiguous.** "Drop sensitive fields" — confirm which fields count as sensitive, since `Preserve` is inclusive.
+4. **The pasted operation has fragments with the same name appearing in multiple places.** Confirm whether the user wants merging, separation, or aliasing before picking a `MergingStrategy`.
+
+## What NOT to do
+
+- Do not generate the classic `Query` or `Mutation` API (`new Query(...)`, `new Mutation(...)`, `.Where(...)`, `.Include<T>(...)`). They are soft-deprecated in 2.1 — `QueryBuilder.CreateDefaultBuilder` and `QueryBuilder.CreateMutationBuilder` cover both surfaces with a richer fluent API. The classic types still render correctly for back-compat but are no longer the recommended path.
+- Do not invent a schema. If the user wants `repos.totalStars` and you don't know the real field name (`stargazerCount` on GitHub), ask — don't generate code that won't compile against their server.
+- Do not output GraphQL alongside the C# unless asked. The user wants NGql code. They can run `.ToString()` themselves to see the GraphQL.
+- Do not add `using` directives for namespaces you don't reference.
+- Do not generate `IDictionary<string, object?>` literals — the public overloads take `Dictionary<string, object?>`. Use a concrete dictionary at the call site.
+- Do not pass a `metadata` dictionary as a positional argument to `AddField`. Attach metadata via a sub-field lambda using `b.WithMetadata(...)`. This keeps `arguments` as the only positional `Dictionary<string, object?>` slot and removes the only place where two adjacent dicts could be confused.
+- Do not use feature flags, `try`/`catch`, or "future-proofing" abstractions in generated code. NGql calls are pure builder construction; let them throw on bad input rather than wrapping them.
+- Do not add code comments to the generated builder unless the user asks. The fluent calls are self-describing.
+
+## Worked examples
+
+### NL → builder (well-known API)
+
+> "Get the top 10 repositories of GitHub user `dolifer`, with name and stargazer count."
+
+```csharp
+using NGql.Core;
+using NGql.Core.Builders;
+
+var query = QueryBuilder.CreateDefaultBuilder("TopRepos")
+    .AddField("user",
+        new Dictionary<string, object?> { ["login"] = "dolifer" },
+        b => b.AddField("repositories",
+            new Dictionary<string, object?>
+            {
+                ["first"] = 10,
+                ["orderBy"] = new Dictionary<string, object?>
+                {
+                    ["field"]     = new EnumValue("STARGAZERS"),
+                    ["direction"] = new EnumValue("DESC"),
+                },
+            },
+            new[] { "name", "stargazerCount" }));
+```
+
+> Assumed schema (GitHub v4): `user(login: String!) { repositories(first, orderBy) { name, stargazerCount } }`. If your schema differs, swap the field names.
+
+### NL → builder (mutation)
+
+> "Build a `CreateUser` mutation taking `$name` and `$email`, returning `id` and `createdAt`."
+
+```csharp
+using NGql.Core;
+using NGql.Core.Builders;
+
+var nameVar  = new Variable("$name",  "String!");
+var emailVar = new Variable("$email", "String!");
+
+var mutation = QueryBuilder.CreateMutationBuilder("CreateUser")
+    .AddField("createUser",
+        new Dictionary<string, object?>
+        {
+            ["name"]  = nameVar,
+            ["email"] = emailVar,
+        },
+        new[] { "createdAt", "id" });
+```
+
+### curl → builder
+
+Input:
+```bash
+curl https://api.example.com/graphql \
+  -H 'authorization: Bearer XXX' \
+  -d '{"query":"query GetOrder($id: ID!) { order(id: $id) { id status total } }","variables":{"id":"42"}}'
+```
+
+Output:
+```csharp
+using NGql.Core;
+using NGql.Core.Builders;
+
+var idVar = new Variable("$id", "ID!");
+
+var query = QueryBuilder.CreateDefaultBuilder("GetOrder")
+    .AddField("order",
+        new Dictionary<string, object?> { ["id"] = idVar },
+        new[] { "id", "status", "total" });
+
+// Submit with variables: {"id": "42"} — NGql renders the operation only,
+// you bind variable values at the transport layer.
+```
+
+### Refactor / preserve
+
+> "Take `fullProfile` and produce a public view with only name and avatar."
+
+```csharp
+using NGql.Core.Builders;
+
+var publicView = PreservationBuilder.Create(fullProfile)
+    .Preserve("user.name", "user.avatar")
+    .Build();
+```
+
+## Verifying the generated code with `ngql`
+
+NGql ships a companion .NET global tool, `dotnet-ngql`, that compiles a snippet against the bundled `NGql.Core` and prints the rendered GraphQL. It's the cleanest way for the user to confirm what the code actually produces.
+
+**Install (one-time):**
+
+```bash
+dotnet tool install -g dotnet-ngql
+```
+
+**Update to the latest:**
+
+```bash
+dotnet tool update -g dotnet-ngql
+```
+
+The tool's version tracks `NGql.Core` in lockstep — if the user is on a specific `NGql.Core` version, install the matching tool version (`--version 2.1.0` etc.).
+
+### Render-only
+
+If the user just wants to see the GraphQL produced by a snippet:
+
+```bash
+ngql snippet.cs                                    # from a file
+echo '<snippet body>' | ngql                       # from stdin
+```
+
+The tool prints the GraphQL to stdout. Exit code 0 on success, 1 on compile/runtime error. Composable with shell redirects:
+
+```bash
+ngql snippet.cs > expected.graphql
+```
+
+### Execute against a live endpoint
+
+When the user signals they have a real GraphQL endpoint to test against — e.g. mentions "verify against...", "run this against...", "test it on the staging API", or pastes a curl that includes a server URL — suggest the `--execute` flow. **Do not assume an endpoint; if the user hasn't provided one, ask.** The Skill should never invent endpoint URLs.
+
+```bash
+ngql snippet.cs --execute \
+    --endpoint https://api.example.com/graphql \
+    -H "Authorization: Bearer $TOKEN" \
+    --var id=42 \
+    --var login=octocat
+```
+
+- `-H "Name: value"` is repeatable; one per header.
+- `--var key=value` is repeatable. Values are JSON-parsed when possible — numbers, booleans, arrays, and objects all work without quoting tricks. Bare strings (`--var login=octocat`) are passed as-is.
+- The response JSON is pretty-printed (with syntax highlighting in interactive terminals).
+- Exit codes: `0` success, `2` GraphQL `errors` array in response, `3` HTTP failure, `4` mutation blocked, `1` snippet failed to render, `64` invalid usage.
+
+### Mutations require explicit opt-in
+
+`ngql --execute` **refuses to send mutations by default.** When the rendered operation begins with `mutation`, the tool prints a refusal message and exits with code `4` unless the user passes `--allow-mutations`.
+
+If the user asks to execute a mutation and you suggest the command line, also flag the side-effect risk in the same message:
+
+> Heads up — this is a mutation, so it'll actually change data on the server. If you're sure (the endpoint is a sandbox, you have a backup, etc.), pass `--allow-mutations`. Otherwise dry-run by dropping `--execute` to just see the rendered GraphQL first.
+
+Don't pre-add `--allow-mutations` to suggested command lines unless the user has explicitly confirmed the side effect is intended.
+
+### When to offer execution vs stay render-only
+
+- **Offer execution** when the user mentions an endpoint, asks to "test"/"verify"/"run against" something, pastes a curl with a server URL, or asks "does this work" / "did I get this right" about a real API.
+- **Stay render-only** for "build me a query" / "port this snippet" / "add a field" — the user may not have an endpoint, and offering to hit one without context is noise.
+
+### If the snippet doesn't compile
+
+When `ngql` reports a compile error, the most common causes are:
+- Missing `using NGql.Core.Builders;` (for `QueryBuilder` / `PreservationBuilder` / `FieldBuilder`). The tool auto-imports this for stdin/file snippets, but if the user is integrating the snippet into their own project, they need it.
+- Passing `IDictionary<string, object?>` instead of `Dictionary<string, object?>` to `AddField`.
+- Using `new EnumValue(MyEnum.Admin)` — that overload exists, but for safety prefer `new EnumValue("ADMIN")` with the literal GraphQL enum name; CLR enum names may not match GraphQL enum names.
