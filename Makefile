@@ -108,27 +108,19 @@ endif
 CHANNEL ?= preview
 
 # VERSION can be overridden at the command line (useful for testing or for matching an
-# external tag). Without an override, derive from GitVersion using the Skill-specific config.
-#
-# We can't use GitVersion's built-in `SemVer` because on a feature branch with no new tag,
-# the prerelease number stays at 1 — every commit produces the same `1.0.1-preview.1` and
-# downstream tooling treats them as equal. We compose the version manually so the commit
-# count drives the prerelease number: `<MajorMinorPatch>-<label>.<commits-since-tag>`.
-# On `main` (no label), we just use MajorMinorPatch.
+# external tag). Without an override, ask GitVersion using the Skill-specific config — the
+# `feature` branch entry there is set to `mode: ContinuousDelivery`, so every commit ticks
+# the prerelease number (`1.0.1-preview.1` -> `.2` -> `.3`...). Distinct catalog versions
+# per publish without Makefile-side composition.
 ifndef VERSION
-SKILL_VERSION = $$( \
-  base=$$(dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable MajorMinorPatch); \
-  label=$$(dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable PreReleaseLabel); \
-  commits=$$(dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable CommitsSinceVersionSource); \
-  if [ -n "$$label" ]; then echo "$$base-$$label.$$commits"; else echo "$$base"; fi \
-)
+SKILL_VERSION := $$(dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable SemVer)
 else
 SKILL_VERSION := $(VERSION)
 endif
 
 skill-version:
 	@command -v dotnet-gitversion >/dev/null 2>&1 || (echo "dotnet-gitversion not on PATH; run \`make tools\` first" && exit 1)
-	@echo "$(SKILL_VERSION)"
+	@dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable SemVer
 
 skill-stage:
 	@command -v python3 >/dev/null 2>&1 || (echo "python3 is required" && exit 1)

@@ -34,6 +34,12 @@ branches:
     regex: ^features?[/-]
     increment: Inherit
     label: preview
+    # ContinuousDelivery so each commit on a feature branch ticks the prerelease number.
+    # Without this, every commit produces the same `<base>-preview.1` and the catalog can't
+    # distinguish two preview publishes from the same branch. (Note: `ContinuousDeployment` is
+    # different — it's for trunk-style auto-deploy semantics — and combined with the `feature`
+    # entry it silently breaks the config in GitVersion 6.5.)
+    mode: ContinuousDelivery
   hotfix:
     regex: ^hotfix(es)?[/-]
     increment: Patch
