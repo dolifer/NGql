@@ -11,6 +11,10 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          # workflow_dispatch checks out a detached HEAD by default, which causes GitVersion
+          # to fall back to the literal label "--no-branch-" (yielding versions like
+          # `2.0.1--no-branch-.10`). Pass the originating ref so we land on a real branch.
+          ref: ${{ github.ref }}
       - name: Install .NET SDKs (8, 9, 10)
         uses: actions/setup-dotnet@v5
         with:
