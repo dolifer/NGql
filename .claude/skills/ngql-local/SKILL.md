@@ -291,17 +291,30 @@ That's it. No `var query =`, no `return`, no `Console.WriteLine`. If you find yo
 
 ## NGql feature gaps — when to refuse, not fake
 
-NGql is a **schema-less query builder**. It doesn't model every GraphQL syntactic construct. The following constructs are **not supported** by NGql and you should NOT generate code that pretends otherwise:
+NGql is a **schema-less query builder**. It doesn't model every GraphQL syntactic construct. The following constructs are **not supported** by NGql:
 
-| GraphQL construct | NGql support | What to do |
-|---|---|---|
-| Inline fragments (`... on Type { … }`) | **None.** `.AddField("... on Repository")` renders the literal string as a field name (wrong). | Tell the user. Generate the rest of the query without the fragment, and show them the GraphQL syntax they'll need to splice in by hand (or restructure to avoid the union/interface). |
-| Named fragments (`fragment X on T { … }`, `...X`) | **None.** | Same — explain the gap and either restructure or ask the user how they want to handle it. |
-| Directives (`@include`, `@skip`, `@deprecated`, custom) | **None** as first-class syntax. | Tell the user; offer to generate the body without directives. |
-| Subscriptions (`subscription S { … }`) | **None.** `QueryBuilder` and `Mutation` are the only operation types. | Refuse — NGql doesn't render subscriptions. |
-| Unions / interfaces with multiple type narrowings | **None** (since inline fragments are the mechanism). | Refuse for the union part. Build the common-fields part if useful. |
+| GraphQL construct | NGql support |
+|---|---|
+| Inline fragments (`... on Type { … }`) | **None.** `.AddField("... on Repository")` renders the literal string as a field name. |
+| Named fragments (`fragment X on T { … }`, `...X`) | **None.** |
+| Directives (`@include`, `@skip`, `@deprecated`, custom) | **None** as first-class syntax. |
+| Subscriptions (`subscription S { … }`) | **None.** `QueryBuilder` and `Mutation` are the only operation types. |
+| Unions / interfaces with multiple type narrowings | **None** (since inline fragments are the mechanism). |
 
-Pattern when the user's request needs an unsupported construct: **say so up front, in one sentence**, then offer the closest thing NGql can build. Don't generate broken code that *looks* right and silently produces wrong GraphQL — that's the worst failure mode.
+### The hard rule
+
+When the user's request needs ANY construct from that table:
+
+1. **Stop before generating any C#.** Say so in one sentence: *"Your query needs an inline fragment, which NGql doesn't support."*
+2. **Offer concrete paths forward** — typically one of:
+   - Restructure to avoid the construct (e.g. use `viewer.repositories` instead of `search` to skip the union).
+   - Build the partial query that *is* supported, and have the user splice the missing GraphQL by hand. Make explicit which parts you'll skip.
+   - Pick a different field that returns the same data without the unsupported construct.
+3. **Wait for the user's pick** before generating any code.
+
+**Do NOT generate the broken snippet "as a starting point" or "for reference."** Even with a warning beneath it, presenting `.AddField("... on Repository")` looks like working code and invites copy-paste. The output of `ngql snippet.cs` will be visibly wrong (a literal `Repository{ ... }` field instead of an inline fragment), which is exactly the "looks right, silently wrong" failure mode this rule exists to prevent. Skip the broken version entirely; make the user's first contact with code be code that actually works.
+
+The one exception: if the user, after seeing options 2 or 3, **explicitly** says "yes, give me the partial snippet and I'll splice the rest" — then generate the partial, clearly marked with a comment showing where the manual splice goes (e.g. `// TODO: paste your `... on Repository { name, stargazerCount }` fragment here`). Even then, don't write the broken `.AddField("... on Repository")` line.
 
 ## Worked examples
 
