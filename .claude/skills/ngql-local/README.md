@@ -1,6 +1,20 @@
-# `ngql` — Claude Code Skill
+# `ngql-local` — editable in-repo copy of the NGql Claude Code Skill
 
 A [Claude Code](https://docs.claude.com/en/docs/claude-code) Skill that teaches Claude to author [NGql](https://github.com/dolifer/NGql) query-builder C# from natural language, pasted GraphQL operations, or curl commands.
+
+## Channel naming
+
+This Skill ships under three distinct plugin names — they all coexist in one Claude Code session and you can install any combination:
+
+| Name | Where it lives | Who uses it | Updated when |
+|---|---|---|---|
+| **`ngql-local`** | `.claude/skills/ngql-local/` in this repo | Contributors editing the Skill or the library it teaches | Every commit on this branch |
+| **`ngql-preview`** | `plugins/ngql-preview/` in `dolifer/claude-plugins` | Users testing upcoming changes | Every preview release tag on NGql |
+| **`ngql`** | `plugins/ngql/` in `dolifer/claude-plugins` | End users on a stable NGql release | Every stable release tag on NGql |
+
+The three are **the same content at different snapshots**. `ngql-local` is the source of truth; release CI on this repo copies it into the catalog repo and rewrites the frontmatter `name` for each channel.
+
+Inside Claude Code, invoke them as `/ngql-local:ngql`, `/ngql-preview:ngql`, or `/ngql:ngql`. The plugin name in the prefix tells you which copy you're using.
 
 ## What it does
 
@@ -20,30 +34,21 @@ It will **ask** before guessing schema details for private APIs, before generati
 
 ## Install
 
-### Project-local (this repo)
+### `ngql-local` — automatic when working inside this repo
 
-The Skill lives at `.claude/skills/ngql/SKILL.md`. Anyone running Claude Code inside the NGql repo gets `/ngql` automatically — no install step.
+When you run Claude Code inside the NGql repo, `ngql-local` is auto-discovered from `.claude/skills/ngql-local/SKILL.md`. Invoke as `/ngql-local:ngql`. No install step.
 
-### Global (use NGql from any project)
+### `ngql-preview` and `ngql` — via the plugin marketplace
 
-Copy the Skill folder into your user-level Claude Code config:
+Once published, both shared channels live in the [`dolifer/claude-plugins`](https://github.com/dolifer/claude-plugins) catalog. Inside any Claude Code session:
 
-```bash
-mkdir -p ~/.claude/skills
-cp -R /path/to/NGql/.claude/skills/ngql ~/.claude/skills/
+```
+/plugin marketplace add dolifer/claude-plugins
+/plugin install ngql@dolifer            # stable
+/plugin install ngql-preview@dolifer    # preview
 ```
 
-After this, `/ngql` is available in any Claude Code session, regardless of `cwd`.
-
-### Updating
-
-Re-copy the folder when NGql ships a new minor/major release — the Skill encodes API specifics that change with the library:
-
-```bash
-cp -R /path/to/NGql/.claude/skills/ngql ~/.claude/skills/
-```
-
-(A future CI workflow may publish the Skill as a release artifact / GitHub Pages download — see the project tracker.)
+Both can be installed simultaneously alongside `ngql-local`. Pull updates with `/plugin marketplace update`.
 
 ## Usage
 
