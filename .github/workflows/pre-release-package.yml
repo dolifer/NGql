@@ -1,6 +1,19 @@
 name: Publish pre-release NuGet packages
 
 on:
+  # Auto-publish when library or tool source changes land on main. Documentation,
+  # workflow tweaks, and skill content don't trigger here — they'd just push
+  # duplicate `--skip-duplicate` no-ops to NuGet, which is wasted CI minutes and noise.
+  push:
+    branches: [main]
+    paths:
+      - 'src/Core/**'
+      - 'tools/Tool/**'
+      - 'GitVersion.yml'
+      - 'Directory.Build.props'
+      - '.github/workflows/pre-release-package.yml'
+  # Manual trigger stays for re-runs, testing the publish flow, or shipping a release
+  # that touches none of the paths above (e.g. a CHANGELOG-only fix).
   workflow_dispatch:
 
 jobs:
