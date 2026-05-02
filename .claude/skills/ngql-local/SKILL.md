@@ -264,6 +264,7 @@ Ask, don't guess, in these cases:
 - Do not pass a `metadata` dictionary as a positional argument to `AddField`. Attach metadata via a sub-field lambda using `b.WithMetadata(...)`. This keeps `arguments` as the only positional `Dictionary<string, object?>` slot and removes the only place where two adjacent dicts could be confused.
 - Do not use feature flags, `try`/`catch`, or "future-proofing" abstractions in generated code. NGql calls are pure builder construction; let them throw on bad input rather than wrapping them.
 - Do not add code comments to the generated builder unless the user asks. The fluent calls are self-describing.
+- **Do not run `ngql` (or any user binary) yourself via Bash.** Your job is to *produce* the snippet and the suggested command line; the user runs them. This is true for both `ngql snippet.cs` (render) and `ngql snippet.cs --execute` (network). If the user reports the command failed or returned no result, ask them to share the error/output — don't try to invoke the tool to "see what happened." `ngql` may not even be installed; checking with `which ngql` is the user's call, not yours.
 
 ## Worked examples
 
@@ -354,6 +355,8 @@ var publicView = PreservationBuilder.Create(fullProfile)
 ## Verifying the generated code with `ngql`
 
 NGql ships a companion .NET global tool, `dotnet-ngql`, that compiles a snippet against the bundled `NGql.Core` and prints the rendered GraphQL. It's the cleanest way for the user to confirm what the code actually produces.
+
+> **You produce the command, the user runs it.** Never invoke `ngql` yourself via Bash — neither for render verification nor for `--execute`. If a command "didn't return anything" or seems to have failed, ask the user to share the actual stdout/stderr; don't shell out to debug. The tool may not be installed at all, and probing for it isn't your call.
 
 **Install (one-time):**
 
