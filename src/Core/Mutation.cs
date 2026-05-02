@@ -7,6 +7,20 @@ namespace NGql.Core;
 /// embed a sub-<see cref="Query"/> that carries arguments via <see cref="Query.Where(string, object)"/>,
 /// or <see cref="Select(string[])"/> for plain field names.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>New code should prefer <see cref="Builders.QueryBuilder.CreateMutationBuilder(string)"/>.</b>
+/// The fluent <see cref="Builders.QueryBuilder"/> surface is the recommended way to author both
+/// queries and mutations in NGql 2.x and beyond — it offers a richer API (<c>Include</c>,
+/// <c>WithMetadata</c>, sub-field lambdas, <c>PreservationBuilder</c> support) and avoids the
+/// classic <see cref="Query"/>+<c>Where</c> idiom required by <see cref="Mutation"/> for
+/// argument-bearing root fields.
+/// </para>
+/// <para>
+/// <see cref="Mutation"/> remains supported for backwards compatibility with NGql 1.x call sites
+/// and continues to render the same GraphQL output. There is currently no removal timeline.
+/// </para>
+/// </remarks>
 /// <param name="name">Operation name (rendered as <c>mutation Name(...)</c>).</param>
 /// <param name="variables">Operation variables; their <c>$name:Type</c> declarations appear in the operation signature.</param>
 public sealed class Mutation(string name, params Variable[] variables)

@@ -6,11 +6,24 @@ namespace NGql.Core;
 /// <summary>
 /// Classic-API query builder. Compose with <c>.Where(...)</c> for arguments and
 /// <c>.Select(...)</c> for fields; nest queries by passing a <see cref="Query"/> to a parent's
-/// <c>Select</c>. The new <see cref="NGql.Core.Builders.QueryBuilder"/> is independent of
-/// this type — they both render to GraphQL but go through separate code paths. Use
-/// <see cref="Query"/> when you want hand-built selection sets or when embedding a
-/// sub-query inside a <see cref="Mutation"/>.
+/// <c>Select</c>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>New code should prefer <see cref="NGql.Core.Builders.QueryBuilder.CreateDefaultBuilder(string)"/>.</b>
+/// The fluent <see cref="NGql.Core.Builders.QueryBuilder"/> surface is the recommended way to author
+/// queries in NGql 2.x and beyond — it offers a richer API (<c>Include</c>, <c>WithMetadata</c>,
+/// sub-field lambdas, <c>PreservationBuilder</c> support, dot-path field composition) over the
+/// classic <c>Where</c> / <c>Select</c> idiom.
+/// </para>
+/// <para>
+/// <see cref="Query"/> remains supported for backwards compatibility with NGql 1.x call sites and
+/// continues to render the same GraphQL output. It is also the only way to attach arguments to
+/// the root field of a <see cref="Mutation"/> built via the classic API; new mutation code should
+/// use <see cref="NGql.Core.Builders.QueryBuilder.CreateMutationBuilder(string)"/> instead, which
+/// avoids that round-trip. There is currently no removal timeline for <see cref="Query"/>.
+/// </para>
+/// </remarks>
 public sealed class Query
 {
     public QueryBlock Block { get; }
