@@ -140,7 +140,8 @@ skill-stage:
 # the channel-specific public targets set CHANNEL and force a fresh stage step.
 _skill-publish: skill-stage
 	@command -v git >/dev/null 2>&1 || (echo "git is required" && exit 1)
-	@version="$(SKILL_VERSION)"; \
+	@set -e; \
+	version="$(SKILL_VERSION)"; \
 	stage="$(SKILL_STAGE_DIR)/$(CHANNEL)"; \
 	clone="$(SKILL_STAGE_DIR)/catalog-$(CHANNEL)"; \
 	plugin_name=$$([ "$(CHANNEL)" = "stable" ] && echo "ngql" || echo "ngql-preview"); \
