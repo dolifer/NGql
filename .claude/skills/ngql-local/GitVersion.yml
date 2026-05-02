@@ -1,0 +1,40 @@
+# GitVersion configuration for the NGql Skill — independent versioning from the library.
+#
+# The Skill releases its own SemVer stream pinned to tags of the form `skill-v<X.Y.Z>` (or
+# `skill-v<X.Y.Z>-preview.N` for previews). The skill workflows invoke GitVersion with this
+# config so the tool only sees skill-prefixed tags; the library workflows continue to use the
+# repo-root GitVersion.yml and only see `<X.Y.Z>` tags.
+#
+# Concretely: lib `2.1.0-preview.4` and skill `1.0.0-preview.1` can ship from the same commit
+# without colliding. The publish actions are filtered on the tag prefix so each tag fires only
+# the matching workflow.
+
+# `next-version` is intentionally omitted: GitVersion 6.5 has a bug where it concatenates
+# `tag-prefix` onto `next-version` before parsing, so `tag-prefix: 'skill-v' + next-version: '1.0.0'`
+# tries (and fails) to parse `skill-v1.0.0`. See https://github.com/GitTools/GitVersion/issues/4478.
+#
+# Workaround: omit `next-version`. Before the first release, GitVersion computes from defaults
+# (0.0.1 + branch label). For the first real release, manually tag `skill-v1.0.0`; subsequent
+# releases increment automatically.
+tag-prefix: 'skill-v'
+
+branches:
+  main:
+    regex: ^master$|^main$
+    increment: Patch
+  develop:
+    regex: ^dev(elop)?(ment)?$
+    increment: Minor
+    label: preview
+  release:
+    regex: ^releases?[/-]
+    increment: None
+    label: beta
+  feature:
+    regex: ^features?[/-]
+    increment: Inherit
+    label: preview
+  hotfix:
+    regex: ^hotfix(es)?[/-]
+    increment: Patch
+    label: beta
