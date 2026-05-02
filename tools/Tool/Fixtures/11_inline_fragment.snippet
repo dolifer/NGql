@@ -1,0 +1,16 @@
+// Inline fragments via FieldBuilder.OnType (added in 2.1+).
+// Models the canonical "GitHub search returns a union, narrow it to Repository" use case
+// that motivated adding fragment support to NGql.
+QueryBuilder.CreateDefaultBuilder("TopRepos")
+    .AddField("search",
+        new Dictionary<string, object?>
+        {
+            ["query"] = "stars:>1",
+            ["type"]  = new EnumValue("REPOSITORY"),
+            ["first"] = 10,
+        },
+        b => b.AddField("nodes", n => n
+            .OnType("Repository", r => r
+                .AddField("name")
+                .AddField("stargazerCount")
+                .AddField("url"))))
