@@ -151,8 +151,11 @@ _skill-publish: skill-stage
 	mkdir -p $$clone/plugins/$$plugin_name; \
 	rm -rf $$clone/plugins/$$plugin_name/skills $$clone/plugins/$$plugin_name/.claude-plugin; \
 	cp -R $$stage/plugins/$$plugin_name/. $$clone/plugins/$$plugin_name/; \
+	echo "==> Mirroring plugin.json into _data/plugins/ for Pages version display"; \
+	mkdir -p $$clone/_data/plugins; \
+	cp $$stage/plugins/$$plugin_name/.claude-plugin/plugin.json $$clone/_data/plugins/$$plugin_name.json; \
 	cd $$clone && \
-	  git add plugins/$$plugin_name && \
+	  git add plugins/$$plugin_name _data/plugins/$$plugin_name.json && \
 	  if git diff --cached --quiet; then \
 	    echo "==> No catalog changes for $$plugin_name@$$version (nothing to publish)"; \
 	    exit 0; \
