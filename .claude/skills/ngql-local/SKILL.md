@@ -266,7 +266,7 @@ Ask, don't guess, in these cases:
 - Do not add code comments to the generated builder unless the user asks. The fluent calls are self-describing.
 - **You may run `ngql` via Bash when the user explicitly asks** ("send this", "run that", "execute it", "try it against the endpoint"). For any other binary — `which`, `dotnet tool list`, `curl`, `cat`, `gh`, `git`, etc. — **ask first** and get explicit consent before running. Pattern: surface the intent ("want me to check whether `ngql` is installed by running `which ngql`?"), wait for "yes" / "go" / similar, then run. Never silently shell out for diagnostics.
 - **Before running `ngql` for the first time in a session, confirm two things in your message: (1) the endpoint isn't going to surprise the user — read the URL aloud (`localhost`, `staging`, `prod`, third-party) and pause for go-ahead if it's anything other than localhost or a clear sandbox; and (2) for mutations, that `--allow-mutations` is intentional.** For pure queries against localhost or services the user clearly owns, you can run without asking. For everything else, single-line confirm.
-- **If `ngql` exits non-zero, report the actual exit code and stderr verbatim, then offer one fix.** Common cases: exit 1 = the snippet didn't compile (offer to fix the snippet); exit 2 = the server returned a GraphQL `errors` array (interpret the errors); exit 3 = HTTP failure (surface the status code); exit 4 = mutation blocked (offer the `--allow-mutations` form, with the safety re-check from the previous bullet); exit 127 or "command not found" = `ngql` isn't installed — give the install command (`dotnet tool install -g dotnet-ngql`) and offer to verify the install (with permission) by running `which ngql`.
+- **If `ngql` exits non-zero, report the actual exit code and stderr verbatim, then offer one fix.** Common cases: exit 1 = the snippet didn't compile (offer to fix the snippet); exit 2 = the server returned a GraphQL `errors` array (interpret the errors); exit 3 = HTTP failure (surface the status code); exit 4 = mutation blocked (offer the `--allow-mutations` form, with the safety re-check from the previous bullet); exit 127 or "command not found" = either `ngql` isn't installed *or* `~/.dotnet/tools/` isn't on `$PATH`. **For "not installed", ask which channel the user wants** — stable (`dotnet tool install -g dotnet-ngql`, may not exist yet) or preview (`dotnet tool install -g dotnet-ngql --prerelease`, currently the only published channel). Default suggestion: preview, with a note that stable will be the answer once it ships. Also offer to add the .NET tools folder to PATH (`export PATH="$PATH:$HOME/.dotnet/tools"`) for the current shell. Don't assume install is the right fix — check both install and PATH.
 - **Exit 0 doesn't always mean "useful GraphQL response."** It means "the server accepted the POST and didn't signal a GraphQL `errors` array." If the response body looks like HTML, plain text, an echo dump (e.g. webhook.site, request bins), or anything other than a JSON object with a `data` field, **call that out explicitly**: "the server returned a 200 but the body isn't a GraphQL response — looks like &lt;HTML/echo/etc&gt;. Is this actually a GraphQL endpoint?" Don't claim success just because the exit code was 0.
 - **Do not loop or auto-retry on failure.** One run, one report. The user decides whether to retry.
 - **If the user reports a problem without asking you to do anything** ("no response," "didn't work," "nothing happened"), first confirm whether they ran the command at all — don't assume execution and pivot to diagnostics. Pattern: "did you run it? if yes, paste the stdout/stderr." Then, if needed, *ask* before running diagnostics.
@@ -363,19 +363,22 @@ NGql ships a companion .NET global tool, `dotnet-ngql`, that compiles a snippet 
 
 > **You may run `ngql` for the user when explicitly asked.** "Send this," "run that," "execute," "try it" — go ahead and run `ngql ...`. For first-time runs against non-localhost endpoints, single-line confirm the URL is intended. For mutations, confirm `--allow-mutations` is intended. For probing the environment (`which ngql`, `dotnet tool list`), **ask before running** — surface the intent in your message, wait for go-ahead. Never silently shell out for diagnostics.
 
-**Install (one-time):**
+**Install (one-time):** ask the user which channel they want before suggesting a command. Two channels exist:
 
-```bash
-dotnet tool install -g dotnet-ngql
-```
+| Channel | Command | When to pick |
+|---|---|---|
+| stable | `dotnet tool install -g dotnet-ngql` | Production-ready code, predictable upgrades. **Note: as of this Skill version, no stable release exists on NuGet yet — this command will fail with "not found in NuGet feeds." Tell the user to use preview until stable ships.** |
+| preview | `dotnet tool install -g dotnet-ngql --prerelease` | Tracking the latest features (incl. `--execute`, mutation support, current API surface). The `--prerelease` flag is required to see preview versions. |
 
-**Update to the latest:**
+If the user doesn't express a preference, default-suggest preview and explain why ("preview is what's published today; stable hasn't shipped yet").
 
-```bash
-dotnet tool update -g dotnet-ngql
-```
+**Update to the latest:** same channel split — `dotnet tool update -g dotnet-ngql` for stable, `--prerelease` for preview.
 
-The tool's version tracks `NGql.Core` in lockstep — if the user is on a specific `NGql.Core` version, install the matching tool version (`--version 2.1.0` etc.).
+If `update` reports `requested version is lower than existing version`, the tool is already at a higher version locally — the user may have installed from a local feed (`--add-source ./artifacts/packages`) during development. Either accept the higher local version or `dotnet tool uninstall -g dotnet-ngql` first.
+
+The tool's version tracks `NGql.Core` in lockstep — if the user is on a specific `NGql.Core` version, install the matching tool version (`--version 2.1.0-preview.X --prerelease` etc.).
+
+**If `ngql` runs but reports "command not found" after install**, the user's shell can't find `~/.dotnet/tools/` on `$PATH`. Tell them to add it (`export PATH="$PATH:$HOME/.dotnet/tools"` for the current shell, or persist in `~/.zshrc` / `~/.bashrc`) — the .NET SDK installs the tool there but doesn't always update PATH for new shells.
 
 ### Render-only
 

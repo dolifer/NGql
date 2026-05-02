@@ -74,9 +74,9 @@ take the `fullProfile` builder and produce a public view with only name and avat
 The Skill is paired with a companion .NET global tool, `dotnet-ngql`, which compiles a generated snippet and prints the GraphQL it renders to.
 
 ```bash
-dotnet tool install -g dotnet-ngql        # one-time
-ngql snippet.cs                           # render to stdout
-echo '<snippet>' | ngql                   # or read from stdin
+dotnet tool install -g dotnet-ngql --prerelease   # one-time (preview-only on NuGet today)
+ngql snippet.cs                                   # render to stdout
+echo '<snippet>' | ngql                           # or read from stdin
 ```
 
 To run the rendered operation against a live endpoint and see the response:
@@ -90,7 +90,7 @@ ngql snippet.cs --execute \
 
 Mutations are refused by default — pass `--allow-mutations` once you're sure the side effect is intended.
 
-The tool's version tracks `NGql.Core` in lockstep, so installing a specific NGql version is `dotnet tool install -g dotnet-ngql --version 2.1.0`. Update with `dotnet tool update -g dotnet-ngql`.
+The tool's version tracks `NGql.Core` in lockstep, so installing a specific NGql version is `dotnet tool install -g dotnet-ngql --version 2.1.0-preview.X --prerelease`. Update with `dotnet tool update -g dotnet-ngql --prerelease`. The `--prerelease` flag stays required until a stable `2.x.0` ships.
 
 Full tool docs: <https://www.nuget.org/packages/dotnet-ngql>.
 
