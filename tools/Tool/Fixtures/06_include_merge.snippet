@@ -1,0 +1,9 @@
+var fragmentA = QueryBuilder.CreateDefaultBuilder("FragA")
+    .AddField("user.name");
+
+var fragmentB = QueryBuilder.CreateDefaultBuilder("FragB")
+    .AddField("user.email");
+
+QueryBuilder.CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
+    .Include(fragmentA)
+    .Include(fragmentB)

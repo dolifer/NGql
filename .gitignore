@@ -347,5 +347,7 @@ consolidation_plan.txt
 refactored_tests.txt
 view_uncovered_source.py
 
-# Claude Code working directory
-.claude/
+# Claude Code working directory — keep per-user state ignored, but check in shared skills.
+# Skill source-of-truth lives at .claude/skills/ngql/; release CI copies it to the catalog repo.
+.claude/*
+!.claude/skills/

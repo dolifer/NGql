@@ -1,0 +1,48 @@
+// Pins the wire format for every value type ValueFormatter handles, so that
+// a future change in NGql.Core's argument rendering trips this fixture.
+// Excludes non-deterministic types (DateTime.UtcNow) and CLR enums (their
+// rendered name depends on the chosen enum, which is implementation noise).
+QueryBuilder.CreateDefaultBuilder("Matrix")
+    .AddField("everything", new Dictionary<string, object?>
+    {
+        // Scalars
+        ["intArg"]      = 42,
+        ["longArg"]     = 9000000000L,
+        ["floatArg"]    = 3.14,
+        ["decimalArg"]  = 1.50m,
+        ["stringArg"]   = "hello \"world\"",
+        ["boolArg"]     = true,
+        ["nullArg"]     = null,
+        ["dateArg"]     = new DateTime(2026, 5, 2, 14, 30, 0, DateTimeKind.Utc),
+
+        // Enums
+        ["roleEnum"]    = new EnumValue("ADMIN"),
+
+        // Variable reference (auto-promoted to the operation signature)
+        ["varArg"]      = new Variable("$id", "ID!"),
+
+        // Lists
+        ["ids"]         = new[] { 1, 2, 3 },
+        ["names"]       = new List<string> { "alice", "bob" },
+        ["roles"]       = new[] { new EnumValue("ADMIN"), new EnumValue("EDITOR") },
+
+        // Nested input object
+        ["filter"] = new Dictionary<string, object?>
+        {
+            ["status"] = new EnumValue("ACTIVE"),
+            ["min"]    = 10,
+            ["tags"]   = new[] { "a", "b" },
+            ["nested"] = new Dictionary<string, object?>
+            {
+                ["deep"] = true,
+            },
+        },
+
+        // List of input objects
+        ["users"] = new[]
+        {
+            new Dictionary<string, object?> { ["name"] = "alice", ["age"] = 30 },
+            new Dictionary<string, object?> { ["name"] = "bob",   ["age"] = 25 },
+        },
+    },
+    new[] { "ok" })

@@ -58,6 +58,36 @@ public sealed class QueryBuilder
     }
 
     /// <summary>
+    ///     Creates a new <see cref="QueryBuilder"/> that renders as a GraphQL <c>mutation</c>.
+    ///     The fluent surface (<c>AddField</c>, <c>Include</c>, etc.) is identical to the
+    ///     query path; only the operation prefix differs at render time.
+    /// </summary>
+    /// <param name="name">The name of the mutation.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/> in mutation mode.</returns>
+    public static QueryBuilder CreateMutationBuilder(string name)
+    {
+        var definition = new QueryDefinition(name) { OperationType = OperationType.Mutation };
+        return new(definition);
+    }
+
+    /// <summary>
+    ///     Creates a new <see cref="QueryBuilder"/> that renders as a GraphQL <c>mutation</c>,
+    ///     with a specific merging strategy.
+    /// </summary>
+    /// <param name="name">The name of the mutation.</param>
+    /// <param name="mergingStrategy">The merging strategy to use.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/> in mutation mode.</returns>
+    public static QueryBuilder CreateMutationBuilder(string name, MergingStrategy mergingStrategy)
+    {
+        var definition = new QueryDefinition(name)
+        {
+            OperationType = OperationType.Mutation,
+            MergingStrategy = mergingStrategy,
+        };
+        return new(definition);
+    }
+
+    /// <summary>
     ///     Sets the merging strategy for this query builder.
     /// </summary>
     /// <param name="strategy">The merging strategy to use.</param>
@@ -222,6 +252,43 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
     public QueryBuilder AddField(string field, string type, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
         => AddFieldBuilderCore(field, type, null, metadata, fieldBuilder);
+
+    /// <summary>
+    ///     Adds a field to the query using a field builder with arguments. Convenience overload —
+    ///     equivalent to passing <c>metadata: null</c> to the four-arg form.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="arguments">The arguments for the field</param>
+    /// <param name="fieldBuilder">The field builder action</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
+    public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Action<FieldBuilder> fieldBuilder)
+        => AddField(field, arguments, metadata: null, fieldBuilder);
+
+    /// <summary>
+    ///     Adds a field with explicit sub-field names and a field builder action — useful when
+    ///     the caller wants both static sub-fields AND a chance to add nested structure via the builder.
+    /// </summary>
+    /// <param name="field">Field name or path</param>
+    /// <param name="subFields">The static sub-field names to seed into the field</param>
+    /// <param name="fieldBuilder">The field builder action invoked after the static sub-fields are added</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when the fieldBuilder is null.</exception>
+    public QueryBuilder AddField(string field, string[] subFields, Action<FieldBuilder> fieldBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(fieldBuilder);
+        return AddField(field, b =>
+        {
+            foreach (var sub in subFields)
+            {
+                b.AddField(sub);
+            }
+
+            fieldBuilder(b);
+        });
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private QueryBuilder AddFieldFastPath(string field)

@@ -10,6 +10,7 @@
     <PackageProjectUrl>https://github.com/dolifer/NGql</PackageProjectUrl>
     <PackageIcon>icon.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>See https://github.com/dolifer/NGql/blob/main/CHANGELOG.md for the full changelog.</PackageReleaseNotes>
     <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
 

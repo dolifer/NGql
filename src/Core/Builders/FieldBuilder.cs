@@ -53,6 +53,19 @@ public sealed class FieldBuilder
         => AddFieldCore(fieldName, Constants.ObjectFieldType, arguments, subFields, metadata);
 
     /// <summary>
+    /// Adds a field with arguments, then nested subfields and optional metadata. This is the args-first
+    /// counterpart to <see cref="AddField(string, string[], Dictionary{string, object?}?, Dictionary{string, object?}?)"/>
+    /// and matches the parameter order used by <see cref="QueryBuilder.AddField(string, Dictionary{string, object?}, string[], Dictionary{string, object?}?)"/>.
+    /// </summary>
+    /// <param name="fieldName">The name of the parent field to add.</param>
+    /// <param name="arguments">GraphQL arguments for the parent field.</param>
+    /// <param name="subFields">Array of subfield names to add under this field.</param>
+    /// <param name="metadata">Optional metadata dictionary to associate with the parent field.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, arguments, subFields, metadata);
+
+    /// <summary>
     /// Adds a field with a specific type, GraphQL arguments, and optional metadata to the builder.
     /// </summary>
     /// <param name="fieldName">The name of the field to add. Supports dotted notation for nested fields.</param>
@@ -149,16 +162,24 @@ public sealed class FieldBuilder
         => AddFieldCore(fieldName, action: action);
 
     /// <summary>
-    /// Adds a field with metadata and a nested builder action for configuring subfields dynamically.
+    /// Adds a field with GraphQL arguments and a nested builder action for configuring subfields dynamically.
     /// The field will have the default String type.
     /// </summary>
+    /// <remarks>
+    /// <b>Behavior change in 2.1:</b> the dictionary at this position is now interpreted as
+    /// <c>arguments</c>, matching the conventions of <see cref="QueryBuilder.AddField(string, Dictionary{string, object?}, Action{FieldBuilder})"/>
+    /// and the rest of the <see cref="FieldBuilder"/> args-first overloads. In NGql 2.0 the same
+    /// signature was interpreted as <c>metadata</c>; callers that relied on the old behavior must
+    /// switch to the four-arg form with named arguments:
+    /// <c>AddField(field, arguments: null, metadata: dict, action)</c>.
+    /// </remarks>
     /// <param name="fieldName">The name of the field to add. Supports dotted notation for nested fields.</param>
-    /// <param name="metadata">Optional metadata dictionary to associate with the field for custom processing.</param>
+    /// <param name="arguments">GraphQL arguments for the field.</param>
     /// <param name="action">A delegate that receives a FieldBuilder instance for configuring nested fields within this field.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown when fieldName or action is null.</exception>
-    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
-        => AddFieldCore(fieldName, metadata: metadata, action: action);
+    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? arguments, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, arguments: arguments, action: action);
 
     /// <summary>
     /// Adds a field with a specific type and a nested builder action for configuring subfields dynamically.
@@ -284,6 +305,31 @@ public sealed class FieldBuilder
     /// <exception cref="ArgumentNullException">Thrown when fieldName, subFields, or action is null.</exception>
     public FieldBuilder AddField(string fieldName, string[] subFields, Dictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
         => AddFieldCore(fieldName, Constants.ObjectFieldType, arguments, subFields, metadata, action);
+
+    /// <summary>
+    /// Args-first counterpart of <see cref="AddField(string, string[], Dictionary{string, object?}?, Dictionary{string, object?}?, Action{FieldBuilder})"/>.
+    /// Mirrors the parameter order used by <see cref="QueryBuilder.AddField(string, Dictionary{string, object?}, string[], Dictionary{string, object?}?)"/>.
+    /// </summary>
+    /// <param name="fieldName">The name of the parent field to add.</param>
+    /// <param name="arguments">GraphQL arguments for the parent field.</param>
+    /// <param name="subFields">Array of subfield names to add under this field.</param>
+    /// <param name="metadata">Optional metadata dictionary to associate with the parent field.</param>
+    /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? arguments, string[] subFields, Dictionary<string, object?>? metadata, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, arguments, subFields, metadata, action);
+
+    /// <summary>
+    /// Args-first variant of <see cref="AddField(string, string[], Dictionary{string, object?}?, Dictionary{string, object?}?, Action{FieldBuilder})"/>
+    /// without metadata. Convenience overload that passes <c>metadata: null</c>.
+    /// </summary>
+    /// <param name="fieldName">The name of the parent field to add.</param>
+    /// <param name="arguments">GraphQL arguments for the parent field.</param>
+    /// <param name="subFields">Array of subfield names to add under this field.</param>
+    /// <param name="action">A delegate that receives a FieldBuilder instance for configuring additional nested fields.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    public FieldBuilder AddField(string fieldName, Dictionary<string, object?>? arguments, string[] subFields, Action<FieldBuilder> action)
+        => AddFieldCore(fieldName, Constants.ObjectFieldType, arguments, subFields, action: action);
 
     /// <summary>
     /// Adds a field with a specific type, predefined subfields, GraphQL arguments, metadata, and a nested builder action for additional dynamic configuration.

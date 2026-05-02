@@ -1,0 +1,11 @@
+var nameVar  = new Variable("$name",  "String!");
+var emailVar = new Variable("$email", "String!");
+
+QueryBuilder.CreateMutationBuilder("CreateUser")
+    .AddField("createUser",
+        new Dictionary<string, object?>
+        {
+            ["name"]  = nameVar,
+            ["email"] = emailVar,
+        },
+        new[] { "createdAt", "id" })

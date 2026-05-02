@@ -67,8 +67,61 @@ internal static class ValueFormatter
     private static void AppendString(StringBuilder builder, string s)
     {
         builder.Append('"');
-        builder.Append(s);
+        if (NeedsEscape(s))
+        {
+            AppendEscapedBody(builder, s);
+        }
+        else
+        {
+            builder.Append(s);
+        }
         builder.Append('"');
+    }
+
+    /// <summary>
+    /// Per GraphQL spec § 2.9.4 a regular string literal must escape <c>\</c>, <c>"</c>, and
+    /// the C0 control characters. Non-control Unicode characters pass through verbatim — the
+    /// transport carries UTF-8.
+    /// </summary>
+    private static bool NeedsEscape(string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            if (c == '"' || c == '\\' || c < 0x20)
+                return true;
+        }
+        return false;
+    }
+
+    private static void AppendEscapedBody(StringBuilder builder, string s)
+    {
+        for (var i = 0; i < s.Length; i++)
+        {
+            var c = s[i];
+            switch (c)
+            {
+                case '"':  builder.Append("\\\""); break;
+                case '\\': builder.Append("\\\\"); break;
+                case '\b': builder.Append("\\b");  break;
+                case '\f': builder.Append("\\f");  break;
+                case '\n': builder.Append("\\n");  break;
+                case '\r': builder.Append("\\r");  break;
+                case '\t': builder.Append("\\t");  break;
+                default:
+                    if (c < 0x20)
+                    {
+                        // Other C0 controls — emit as \u00XX (GraphQL accepts EscapedUnicode).
+                        builder.Append("\\u");
+                        builder.Append(((int)c).ToString("x4", CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        builder.Append(c);
+                    }
+                    break;
+            }
+        }
     }
 
     private static void AppendBoolean(StringBuilder builder, bool b)

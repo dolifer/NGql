@@ -1,0 +1,6 @@
+query Combined{
+    user{
+        email
+        name
+    }
+}

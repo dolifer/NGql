@@ -63,6 +63,13 @@ public sealed record QueryDefinition(string Name, string Description = "")
     [JsonPropertyName("mergingStrategy")]
     public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
 
+    /// <summary>
+    /// The kind of root operation rendered by this definition (query or mutation).
+    /// Selected by the factory on <see cref="QueryBuilder"/>; consumers do not set this directly.
+    /// </summary>
+    [JsonIgnore]
+    internal OperationType OperationType { get; set; } = OperationType.Query;
+
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString()
     {

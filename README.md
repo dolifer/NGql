@@ -36,6 +36,37 @@ dotnet add package NGql.Core
 
 ---
 
+## Companion Tools
+
+NGql ships two optional companions alongside the library. Use them when they help; ignore them otherwise — the library is fully usable on its own.
+
+### `dotnet-ngql` — command-line renderer
+
+A .NET global tool that compiles a `QueryBuilder` snippet against `NGql.Core` and prints the GraphQL it renders to. Useful for sanity-checking a snippet, snapshotting expected query text in CI scripts, or executing a rendered operation against a live endpoint.
+
+```bash
+dotnet tool install -g dotnet-ngql            # one-time install
+dotnet tool update  -g dotnet-ngql            # update to latest
+
+ngql snippet.cs                               # render a file
+echo '<snippet>' | ngql                       # or read from stdin
+
+ngql snippet.cs --execute \
+    --endpoint https://api.example.com/graphql \
+    -H "Authorization: Bearer $TOKEN" \
+    --var id=42                               # render and POST to a real endpoint
+```
+
+The tool's version tracks `NGql.Core` in lockstep. Mutations are refused by default; pass `--allow-mutations` to opt in. Full docs: <https://www.nuget.org/packages/dotnet-ngql>.
+
+### `ngql` Claude Code skill
+
+A [Claude Code](https://docs.claude.com/en/docs/claude-code) skill that teaches Claude to author NGql code from natural language ("build a query that fetches a user's last 5 orders") or from a pasted GraphQL operation / curl. Pairs with the `dotnet-ngql` tool to verify generated snippets against a live endpoint.
+
+The skill lives at [`.claude/skills/ngql/`](https://github.com/dolifer/NGql/tree/main/.claude/skills/ngql) — running Claude Code inside a clone of this repo picks it up automatically. To use it from any project, copy the folder to `~/.claude/skills/ngql/`. See [`.claude/skills/ngql/README.md`](.claude/skills/ngql/README.md) for install and usage.
+
+---
+
 ## Quick Start
 
 > All sample output blocks below are pasted verbatim from `QueryBuilder.ToString()`.
