@@ -22,6 +22,11 @@ branches:
   main:
     regex: ^master$|^main$
     increment: Patch
+    label: preview
+    # Untagged commits on main produce `<base>-preview.<commits>` so manual previews
+    # from main (via workflow_dispatch) are clearly labeled. A real `skill-v*` tag
+    # bypasses this — release-skill.yml passes the tag string as VERSION directly.
+    mode: ContinuousDelivery
   develop:
     regex: ^dev(elop)?(ment)?$
     increment: Minor

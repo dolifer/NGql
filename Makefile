@@ -122,9 +122,8 @@ skill-version:
 	@command -v dotnet-gitversion >/dev/null 2>&1 || (echo "dotnet-gitversion not on PATH; run \`make tools\` first" && exit 1)
 	@dotnet-gitversion /config $(SKILL_GITVERSION) /showvariable SemVer
 
-skill-stage:
+skill-stage: tools
 	@command -v python3 >/dev/null 2>&1 || (echo "python3 is required" && exit 1)
-	@command -v dotnet-gitversion >/dev/null 2>&1 || (echo "dotnet-gitversion not on PATH; run \`make tools\` first" && exit 1)
 	@version="$(SKILL_VERSION)"; \
 	out="$(SKILL_STAGE_DIR)/$(CHANNEL)"; \
 	rm -rf $$out; \
