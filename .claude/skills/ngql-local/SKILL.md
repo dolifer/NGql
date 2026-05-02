@@ -270,6 +270,38 @@ Ask, don't guess, in these cases:
 - **Exit 0 doesn't always mean "useful GraphQL response."** It means "the server accepted the POST and didn't signal a GraphQL `errors` array." If the response body looks like HTML, plain text, an echo dump (e.g. webhook.site, request bins), or anything other than a JSON object with a `data` field, **call that out explicitly**: "the server returned a 200 but the body isn't a GraphQL response — looks like &lt;HTML/echo/etc&gt;. Is this actually a GraphQL endpoint?" Don't claim success just because the exit code was 0.
 - **Do not loop or auto-retry on failure.** One run, one report. The user decides whether to retry.
 - **If the user reports a problem without asking you to do anything** ("no response," "didn't work," "nothing happened"), first confirm whether they ran the command at all — don't assume execution and pivot to diagnostics. Pattern: "did you run it? if yes, paste the stdout/stderr." Then, if needed, *ask* before running diagnostics.
+- **When you announce an action, perform exactly that action — don't substitute a different tool.** If you say "I'll run `which ngql`", run `Bash: which ngql`, not a file search or grep. Substituting tools mid-action confuses the user about what your message meant and breaks the trust contract that the announcement matched the run.
+
+## Snippets must be runnable by `ngql` as-is
+
+`ngql` evaluates a snippet as a C# script (Roslyn scripting). The contract is **"the final expression yields the builder"** — it's not a normal C# program. Concretely:
+
+- **No `Console.WriteLine(...)`.** `ngql` calls `.ToString()` on the script's last expression value and prints that itself. Adding `Console.WriteLine` either won't be invoked or duplicates output.
+- **The last line must be an expression**, not a statement assignment. Either drop the `var x = ...;` and let the builder be the bare last expression, or end with a bare reference (`x` on its own line). **Do not** use `return` — top-level scripts don't allow it.
+- **Auto-imported namespaces** (provided by `ngql`): `System`, `System.Collections.Generic`, `System.Linq`, `NGql.Core`, `NGql.Core.Builders`. Do not add `using` directives for these. Other namespaces (e.g. `System.Text.Json`) need explicit `using`.
+
+Canonical shape:
+
+```csharp
+QueryBuilder.CreateDefaultBuilder("Hello")
+    .AddField("world.name")
+```
+
+That's it. No `var query =`, no `return`, no `Console.WriteLine`. If you find yourself writing any of those, the snippet is wrong for `ngql` — fix it before running.
+
+## NGql feature gaps — when to refuse, not fake
+
+NGql is a **schema-less query builder**. It doesn't model every GraphQL syntactic construct. The following constructs are **not supported** by NGql and you should NOT generate code that pretends otherwise:
+
+| GraphQL construct | NGql support | What to do |
+|---|---|---|
+| Inline fragments (`... on Type { … }`) | **None.** `.AddField("... on Repository")` renders the literal string as a field name (wrong). | Tell the user. Generate the rest of the query without the fragment, and show them the GraphQL syntax they'll need to splice in by hand (or restructure to avoid the union/interface). |
+| Named fragments (`fragment X on T { … }`, `...X`) | **None.** | Same — explain the gap and either restructure or ask the user how they want to handle it. |
+| Directives (`@include`, `@skip`, `@deprecated`, custom) | **None** as first-class syntax. | Tell the user; offer to generate the body without directives. |
+| Subscriptions (`subscription S { … }`) | **None.** `QueryBuilder` and `Mutation` are the only operation types. | Refuse — NGql doesn't render subscriptions. |
+| Unions / interfaces with multiple type narrowings | **None** (since inline fragments are the mechanism). | Refuse for the union part. Build the common-fields part if useful. |
+
+Pattern when the user's request needs an unsupported construct: **say so up front, in one sentence**, then offer the closest thing NGql can build. Don't generate broken code that *looks* right and silently produces wrong GraphQL — that's the worst failure mode.
 
 ## Worked examples
 
