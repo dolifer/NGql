@@ -37,6 +37,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Drop the repo-root README that Directory.Build.props packs by default; the tool ships
+         its own README from this folder. Without this Remove, both end up at the same path
+         in the .nupkg and `nuget push` rejects it as a duplicate file. -->
+    <None Remove="$(MSBuildThisFileDirectory)..\..\README.md" />
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
