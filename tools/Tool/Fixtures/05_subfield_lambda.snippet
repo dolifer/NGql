@@ -1,0 +1,15 @@
+// 2.1+ ergonomics: no metadata: null boilerplate, args-first on both outer and inner AddField.
+QueryBuilder.CreateDefaultBuilder("TopRepos")
+    .AddField("user",
+        new Dictionary<string, object?> { ["login"] = "dolifer" },
+        b => b.AddField("repositories",
+            new Dictionary<string, object?>
+            {
+                ["first"] = 10,
+                ["orderBy"] = new Dictionary<string, object?>
+                {
+                    ["field"] = new EnumValue("STARGAZERS"),
+                    ["direction"] = new EnumValue("DESC")
+                }
+            },
+            new[] { "name", "stargazerCount" }))

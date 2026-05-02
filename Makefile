@@ -10,8 +10,10 @@ PACKAGES_DIR   := $(ARTIFACTS)/packages
 NUGET_SOURCE   := https://api.nuget.org/v3/index.json
 NUGET_API_KEY  ?=
 
+TOOL_PROJECT   := tools/Tool/Tool.csproj
+
 .DEFAULT_GOAL := test
-.PHONY: help clean restore build test coverage report pack publish ci rebuild tools
+.PHONY: help clean restore build test coverage report pack publish ci rebuild tools skill-eval
 
 help:
 	@echo "Targets:"
@@ -26,6 +28,7 @@ help:
 	@echo "  ci         clean + coverage (used by GitHub Actions; always starts fresh)"
 	@echo "  rebuild    clean + test (force-clean local rebuild)"
 	@echo "  tools      Install dotnet-reportgenerator-globaltool if missing"
+	@echo "  skill-eval Run NGql Skill fixtures (or pass SNIPPET=path/to/file.cs to eval one snippet)"
 
 clean:
 	rm -rf $(ARTIFACTS)
@@ -72,6 +75,13 @@ tools:
 	@command -v reportgenerator >/dev/null 2>&1 || dotnet tool install -g dotnet-reportgenerator-globaltool
 	@command -v dotnet-gitversion >/dev/null 2>&1 || dotnet tool install -g GitVersion.Tool
 
+skill-eval:
+ifdef SNIPPET
+	dotnet run --project $(TOOL_PROJECT) -f net10.0 -- $(SNIPPET)
+else
+	dotnet run --project $(TOOL_PROJECT) -f net10.0 -- fixtures
+endif
+
 report: tools
 	reportgenerator \
 		"-reports:$(COVERLET_DIR)/*.cobertura.xml" \
@@ -92,6 +102,12 @@ pack: build tools
 	echo "==> Packing $(CORE_PROJECT) as $$version"; \
 	dotnet pack $(CORE_PROJECT) --configuration $(CONFIG) --no-build --output $(PACKAGES_DIR) \
 		/p:PackageVersion=$$version \
+		/p:UpdateVersionProperties=false; \
+	echo "==> Packing $(TOOL_PROJECT) as $$version (lockstep with NGql.Core)"; \
+	dotnet pack $(TOOL_PROJECT) --configuration $(CONFIG) --output $(PACKAGES_DIR) \
+		/p:PackageVersion=$$version \
+		/p:Version=$$version \
+		/p:InformationalVersion=$$version \
 		/p:UpdateVersionProperties=false
 
 publish: pack

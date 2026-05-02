@@ -1,0 +1,8 @@
+query TopRepos{
+    user(login:"dolifer"){
+        repositories(first:10, orderBy:{direction:DESC, field:STARGAZERS}){
+            name
+            stargazerCount
+        }
+    }
+}

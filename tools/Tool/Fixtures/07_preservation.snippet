@@ -1,0 +1,8 @@
+var profile = QueryBuilder.CreateDefaultBuilder("Profile")
+    .AddField("user.name")
+    .AddField("user.email")
+    .AddField("user.ssn");
+
+PreservationBuilder.Create(profile)
+    .Preserve("user.name", "user.email")
+    .Build()
