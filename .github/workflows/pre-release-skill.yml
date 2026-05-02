@@ -1,10 +1,18 @@
 name: Publish pre-release Skill (preview channel)
 
-# Manual trigger to push the current branch's Skill content into
-# `dolifer/claude-plugins/plugins/ngql-preview/`. The version is computed by GitVersion
-# from this repo's commit history (see .claude/skills/ngql-local/GitVersion.yml) and
-# is independent of the library version.
+# Pushes the current Skill content into `dolifer/claude-plugins/plugins/ngql-preview/`.
+# The version is computed by GitVersion from this repo's commit history (see
+# .claude/skills/ngql-local/GitVersion.yml) and is independent of the library version.
 on:
+  # Auto-publish when Skill content lands on main. The descriptions, scripts, and
+  # GitVersion config are part of the Skill release surface; everything else (the
+  # SKILL.md content itself) lives directly under .claude/skills/ngql-local/.
+  push:
+    branches: [main]
+    paths:
+      - '.claude/skills/ngql-local/**'
+      - '.github/workflows/pre-release-skill.yml'
+  # Manual trigger stays for re-runs and testing the publish flow.
   workflow_dispatch:
 
 jobs:
