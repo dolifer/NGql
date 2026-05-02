@@ -1014,7 +1014,8 @@ public class FieldBuilderTests
     }
 
     [Theory]
-    [InlineData("metadata-with-action")]
+    [InlineData("arguments-with-action")]
+    [InlineData("metadata-with-action-named")]
     [InlineData("type-with-action")]
     [InlineData("type-metadata-and-action")]
     [InlineData("arguments-metadata-and-action")]
@@ -1022,9 +1023,10 @@ public class FieldBuilderTests
     public void FieldBuilder_AddField_WithActionOverloads_Should_Chain(string scenario)
     {
         var scenarios = new TestScenarioBag<FieldDefinition>()
-            .Register("metadata-with-action",
+            .Register("arguments-with-action",
+                // 2.1 contract: positional dict in (field, dict, action) is arguments, not metadata.
                 arrange: () => FieldBuilder.Create([], "root")
-                    .AddField("profile", new Dictionary<string, object?> { { "note", "Complex" } }, pfb =>
+                    .AddField("profile", new Dictionary<string, object?> { { "first", 5 } }, pfb =>
                     {
                         pfb.AddField("bio").AddField("avatar");
                     })
@@ -1032,7 +1034,27 @@ public class FieldBuilderTests
                 assert: result =>
                 {
                     var field = result.Fields["profile"];
+                    field.Arguments.Should().NotBeNull().And.HaveCount(1);
+                    field.Metadata.Should().BeNullOrEmpty();
+                    field.Fields.Should().HaveCount(2);
+                }
+            )
+            .Register("metadata-with-action-named",
+                // To attach metadata + a lambda, use the four-arg form with named arguments.
+                arrange: () => FieldBuilder.Create([], "root")
+                    .AddField("profile",
+                        arguments: null,
+                        metadata: new Dictionary<string, object?> { { "note", "Complex" } },
+                        pfb =>
+                        {
+                            pfb.AddField("bio").AddField("avatar");
+                        })
+                    .Build(),
+                assert: result =>
+                {
+                    var field = result.Fields["profile"];
                     field.Metadata.Should().NotBeNull().And.HaveCount(1);
+                    field.Arguments.Should().BeNullOrEmpty();
                     field.Fields.Should().HaveCount(2);
                 }
             )
