@@ -1,0 +1,8 @@
+QueryBuilder.CreateDefaultBuilder("SearchUsers")
+    .AddField("users",
+        new Dictionary<string, object?>
+        {
+            ["first"] = 10,
+            ["search"] = "john"
+        },
+        new[] { "email", "name" })

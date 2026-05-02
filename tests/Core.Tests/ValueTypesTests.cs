@@ -315,4 +315,32 @@ public class ValueTypesTests
     }
 
     #endregion
+
+    #region String Escaping (GraphQL spec § 2.9.4)
+
+    [Theory]
+    [InlineData("plain", "\"plain\"")]
+    [InlineData("with \"quotes\"", "\"with \\\"quotes\\\"\"")]
+    [InlineData("path\\with\\slashes", "\"path\\\\with\\\\slashes\"")]
+    [InlineData("line1\nline2", "\"line1\\nline2\"")]
+    [InlineData("tab\there", "\"tab\\there\"")]
+    [InlineData("carriage\rreturn", "\"carriage\\rreturn\"")]
+    [InlineData("back\bspace", "\"back\\bspace\"")]
+    [InlineData("form\ffeed", "\"form\\ffeed\"")]
+    [InlineData("unicode  control", "\"unicode \\u0001 control\"")]
+    [InlineData("emoji 👋 passes through", "\"emoji 👋 passes through\"")]
+    [InlineData("", "\"\"")]
+    public void StringArgument_Escapes_Per_GraphQL_Spec(string input, string expectedQuotedLiteral)
+    {
+        // Arrange & Act — render a string argument through the builder so the assertion
+        // sees the exact wire form, including the surrounding quotes.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("f", new System.Collections.Generic.Dictionary<string, object?> { ["s"] = input })
+            .ToString();
+
+        // Assert
+        query.Should().Contain($"f(s:{expectedQuotedLiteral})");
+    }
+
+    #endregion
 }

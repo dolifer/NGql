@@ -2,8 +2,10 @@ name: Publish NuGet packages from tag
 
 on:
   push:
-    tags:
-      - '*'
+    # Ignore skill release tags — those go through release-skill.yml and don't ship NuGet.
+    # `tags-ignore` alone (without `tags`) means "all tags except these patterns."
+    tags-ignore:
+      - 'skill-v*'
 
 jobs:
   publish:

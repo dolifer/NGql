@@ -312,12 +312,14 @@ public class BuildersNamespaceCompletionTests
     [Fact]
     public void FieldBuilder_AddFieldWithMetadataAndActionCallback_IncludesMetadataWithNesting()
     {
+        // The (field, dict, action) shape was reinterpreted in 2.1 to mean (field, arguments, action) —
+        // callers that want the metadata semantic must use named arguments for clarity.
         var builder = QueryBuilder.CreateDefaultBuilder("GetUser");
         var metadata = new Dictionary<string, object?> { { "cached", true } };
 
         builder.AddField("user", fieldBuilder =>
         {
-            fieldBuilder.AddField("cache", metadata, innerFb =>
+            fieldBuilder.AddField("cache", arguments: null, metadata: metadata, innerFb =>
             {
                 innerFb.AddField("key");
                 innerFb.AddField("value");

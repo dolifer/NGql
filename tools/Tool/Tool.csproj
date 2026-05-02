@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <RootNamespace>NGql.Tool</RootNamespace>
+    <AssemblyName>NGql.Tool</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
+
+    <!-- Pack as a .NET global tool. -->
+    <PackAsTool>true</PackAsTool>
+    <PackageId>dotnet-ngql</PackageId>
+    <ToolCommandName>ngql</ToolCommandName>
+
+    <!-- NuGet metadata. -->
+    <Description>Command-line tool for NGql — compiles a C# QueryBuilder snippet against NGql.Core and prints the rendered GraphQL. Reads from a file path or stdin. Intended for hand verification of NGql snippets and for use alongside the NGql Claude Code skill.</Description>
+    <PackageTags>graphql gql ngql tool cli render</PackageTags>
+    <PackageProjectUrl>https://github.com/dolifer/NGql</PackageProjectUrl>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/dolifer/NGql</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Core\Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="4.11.0" />
+    <PackageReference Include="Spectre.Console" Version="0.49.1" />
+    <PackageReference Include="Spectre.Console.Cli" Version="0.49.1" />
+    <PackageReference Include="Spectre.Console.Json" Version="0.49.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Drop the repo-root README that Directory.Build.props packs by default; the tool ships
+         its own README from this folder. Without this Remove, both end up at the same path
+         in the .nupkg and `nuget push` rejects it as a duplicate file. -->
+    <None Remove="$(MSBuildThisFileDirectory)..\..\README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Fixtures are for the contributor regression harness only; do not ship them in the package. -->
+  <ItemGroup>
+    <None Remove="Fixtures\**" />
+    <Content Remove="Fixtures\**" />
+  </ItemGroup>
+
+</Project>

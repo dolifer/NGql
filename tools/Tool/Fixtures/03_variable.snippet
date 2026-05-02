@@ -1,0 +1,5 @@
+var idVar = new Variable("$id", "ID!");
+QueryBuilder.CreateDefaultBuilder("GetOrder")
+    .AddField("order",
+        new Dictionary<string, object?> { ["id"] = idVar },
+        new[] { "id", "status", "total" })

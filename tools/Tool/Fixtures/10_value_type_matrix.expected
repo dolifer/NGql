@@ -1,0 +1,5 @@
+query Matrix($id:ID!){
+    everything(boolArg:true, dateArg:"2026-05-02T14:30:00.000Z", decimalArg:1.50, filter:{min:10, nested:{deep:true}, status:ACTIVE, tags:["a", "b"]}, floatArg:3.14, ids:[1, 2, 3], intArg:42, longArg:9000000000, names:["alice", "bob"], nullArg:null, roleEnum:ADMIN, roles:[ADMIN, EDITOR], stringArg:"hello \"world\"", users:[{age:30, name:"alice"}, {age:25, name:"bob"}], varArg:$id){
+        ok
+    }
+}

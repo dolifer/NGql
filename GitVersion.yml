@@ -17,6 +17,10 @@ branches:
     regex: ^features?[/-]
     increment: Inherit
     label: preview
+    # ContinuousDelivery so each commit on a feature branch ticks the prerelease number
+    # (`2.1.0-preview.1` -> `.2` -> `.3`...). Without this, every preview build from the
+    # same branch lands on `<base>-preview.1` and NuGet rejects the duplicate version.
+    mode: ContinuousDelivery
   hotfix:
     regex: ^hotfix(es)?[/-]
     increment: Patch

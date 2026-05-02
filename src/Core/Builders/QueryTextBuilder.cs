@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Collections;
 using System.Text;
+using NGql.Core;
 using NGql.Core.Abstractions;
 using NGql.Core.Caching;
 using NGql.Core.Extensions;
@@ -120,7 +121,7 @@ internal sealed class QueryTextBuilder
     public string Build(QueryDefinition queryDefinition)
     {
         _stringBuilder.Clear();
-        _stringBuilder.Append("query ");
+        _stringBuilder.Append(queryDefinition.OperationType == OperationType.Mutation ? "mutation " : "query ");
 
         if (!string.IsNullOrEmpty(queryDefinition.Name))
         {
