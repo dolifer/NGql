@@ -89,10 +89,13 @@ QueryBuilder.CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
 ### Don't generate
 
 - `IDictionary<string, object?>` literals — overloads take `Dictionary<string, object?>`
-- `using` directives for namespaces you don't reference
+- `using` directives for namespaces you don't reference (and never the auto-imports — see snippet contract)
 - `try/catch`, feature flags, or "future-proofing" — let bad input throw
 - Code comments unless asked
 - GraphQL alongside the C# unless asked — use `ngql` to render
+- **`var query = …;` followed by anything** — the snippet must end in a bare expression, never a statement. Drop the `var` and let the builder be the last expression.
+- **`Console.WriteLine(…)`** — `ngql` calls `.ToString()` itself. Adding `Console.WriteLine` either won't run or duplicates output. If the user asks for "a complete program" rather than an `ngql` snippet, that's a different request — confirm before generating it.
+- **`return …;`** at the script root — Roslyn scripts disallow it. The bare expression *is* the return.
 
 ## Value types
 
@@ -140,7 +143,7 @@ The CLI evaluates a snippet as a Roslyn script: **the final expression yields th
 - **No** `var x = ...; ...` (drop the assignment, end with the bare builder expression)
 - **No** `Console.WriteLine(...)` (the tool prints `.ToString()` itself)
 - **No** `return` (top-level scripts disallow it)
-- Auto-imported: `System`, `System.Collections.Generic`, `System.Linq`, `NGql.Core`, `NGql.Core.Builders` — don't add `using` for these. Other namespaces need explicit `using`.
+- **No `using` lines for the auto-imported namespaces.** `ngql` already imports `System`, `System.Collections.Generic`, `System.Linq`, `NGql.Core`, `NGql.Core.Builders`. Adding `using NGql.Core.Builders;` to a generated snippet is dead bytes — strip it. Only add `using` for namespaces you actually reference that aren't on that list (rare in practice — `System.Text.Json` if a value-formatter need it). The snippets in the worked examples below show the canonical bare shape.
 
 Canonical shape:
 
@@ -199,7 +202,7 @@ Never pre-add `--allow-mutations` unless the user has explicitly confirmed.
 | Exit | Meaning | Next step |
 |---|---|---|
 | 0 | OK | If response body looks like HTML / echo dump / not a JSON `data` object — **call it out**. Don't claim success. |
-| 1 | Snippet failed to compile | Offer to fix the snippet. Common causes: missing `using NGql.Core.Builders;`, `IDictionary<,>` instead of `Dictionary<,>`, `EnumValue(MyEnum.X)` casing mismatch. |
+| 1 | Snippet failed to compile | Offer to fix the snippet. Common causes: `IDictionary<,>` instead of `Dictionary<,>`, `EnumValue(MyEnum.X)` casing mismatch, an extra `var x = …; …` that left the file ending in a statement instead of a bare expression. |
 | 2 | Server returned `errors` array | Interpret the GraphQL errors. |
 | 3 | HTTP failure | Surface status code + stderr. |
 | 4 | Mutation blocked | Offer `--allow-mutations` form (with safety re-check). |
@@ -238,9 +241,6 @@ Ask: *"Local (recommended — pins the version) or global?"* Wait for answer.
 > "Get the top 10 repositories of GitHub user `dolifer` with name and stargazer count."
 
 ```csharp
-using NGql.Core;
-using NGql.Core.Builders;
-
 QueryBuilder.CreateDefaultBuilder("TopRepos")
     .AddField("user",
         new Dictionary<string, object?> { ["login"] = "dolifer" },
@@ -264,9 +264,6 @@ QueryBuilder.CreateDefaultBuilder("TopRepos")
 > "`CreateUser` taking `$name`/`$email`, returning `id` and `createdAt`."
 
 ```csharp
-using NGql.Core;
-using NGql.Core.Builders;
-
 var nameVar  = new Variable("$name",  "String!");
 var emailVar = new Variable("$email", "String!");
 
@@ -295,9 +292,6 @@ curl https://api.example.com/graphql \
 Generated snippet:
 
 ```csharp
-using NGql.Core;
-using NGql.Core.Builders;
-
 var idVar = new Variable("$id", "ID!");
 
 QueryBuilder.CreateDefaultBuilder("GetOrder")
@@ -317,9 +311,6 @@ Standard execute consent rules apply (always ask; confirm endpoint isn't surpris
 > "Search GitHub for top 10 starred repos, return name + stargazerCount + url."
 
 ```csharp
-using NGql.Core;
-using NGql.Core.Builders;
-
 QueryBuilder.CreateDefaultBuilder("TopRepos")
     .AddField("search",
         new Dictionary<string, object?>
