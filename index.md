@@ -66,7 +66,7 @@ Mutations use `CreateMutationBuilder("Op")` with the same fluent surface. Inline
 | | |
 |---|---|
 | **[Install](install/)** | NuGet package, optional CLI tool, optional Claude Code skill — pick what you need. |
-| **[Skill](skill/)** | The companion Claude Code skill that translates "build me a query for X" → working NGql code. |
+| **Skill** | The companion Claude Code skill that translates "build me a query for X" → working NGql code. Two channels in the `dolifer` plugin marketplace: [stable (`ngql`)](https://dolifer.github.io/claude-plugins/skills/ngql/) (coming soon) · [preview (`ngql-preview`)](https://dolifer.github.io/claude-plugins/skills/ngql-preview/) (live). |
 | **[Coverage](coverage/)** | Full coverage report for the Core namespace. Currently ~99.9% line / 99% branch. |
 | **[CHANGELOG](https://github.com/dolifer/NGql/blob/main/CHANGELOG.md)** | What's in 2.1, what changed from 2.0. |
 | **[README on GitHub](https://github.com/dolifer/NGql#readme)** | Long-form docs with runnable examples for every API. |
@@ -80,7 +80,7 @@ Mutations use `CreateMutationBuilder("Op")` with the same fluent surface. Inline
 |---|---|
 | **Latest stable** | See the NuGet badge above. The library uses GitVersion-driven SemVer; previews ship as `<X.Y.Z>-preview.N`. |
 | **Companion tool** | [`dotnet-ngql`](install/#cli-tool-dotnet-ngql) — compiles a snippet, renders the GraphQL, optionally executes against a live endpoint. |
-| **Companion skill** | [`ngql-preview`](skill/) — a Claude Code skill in the [`dolifer` plugin marketplace](https://dolifer.github.io/claude-plugins/). |
+| **Companion skill** | [`ngql`](https://dolifer.github.io/claude-plugins/skills/ngql/) (stable, coming soon) and [`ngql-preview`](https://dolifer.github.io/claude-plugins/skills/ngql-preview/) (preview, live) — Claude Code skills in the [`dolifer` plugin marketplace](https://dolifer.github.io/claude-plugins/). Both can coexist in one session. |
 | **Min runtime** | .NET 8.0 |
 
 License: MIT.
