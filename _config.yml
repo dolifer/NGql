@@ -3,6 +3,11 @@ description: A zero-dependency, schema-less GraphQL query builder for .NET — f
 theme: jekyll-theme-cayman
 show_downloads: false
 
+# `pretty` permalinks render `install.md` to `install/index.html`, so the URL
+# `/NGql/install/` resolves. Without this, only `/NGql/install.html` works and
+# the trailing-slash form 404s.
+permalink: pretty
+
 # Pages-only content lives at the repo root (index.md, install.md, skill.md). Everything else
 # is library source / tests / build artifacts and must NOT be served as Pages content.
 exclude:
