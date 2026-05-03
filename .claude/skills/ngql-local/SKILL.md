@@ -265,6 +265,7 @@ Ask, don't guess, in these cases:
 - Do not use feature flags, `try`/`catch`, or "future-proofing" abstractions in generated code. NGql calls are pure builder construction; let them throw on bad input rather than wrapping them.
 - Do not add code comments to the generated builder unless the user asks. The fluent calls are self-describing.
 - **You may run `ngql` via Bash when the user explicitly asks** ("send this", "run that", "execute it", "try it against the endpoint"). For any other binary — `which`, `dotnet tool list`, `curl`, `cat`, `gh`, `git`, etc. — **ask first** and get explicit consent before running. Pattern: surface the intent ("want me to check whether `ngql` is installed by running `which ngql`?"), wait for "yes" / "go" / similar, then run. Never silently shell out for diagnostics.
+- **After every snippet you generate, proactively offer to render it via `ngql` using stdin.** Don't wait to be asked. The offer should be one short sentence after the snippet block and should propose the actual command, e.g. *"Want me to render this — `echo '<snippet>' | ngql`?"* If the user has also given an endpoint, propose execute mode: *"Want me to run it against `<URL>` — `echo '<snippet>' | ngql --execute --endpoint <URL>`?"* (subject to the endpoint-confirmation and mutation-safety rules above). The user can say "yes" / "go" / similar and you run it in one Bash call. **Default to stdin** (`echo '…' | ngql`) — it's a single Bash invocation, a single permission prompt, no file write needed. Only use the file path form (`ngql snippet.cs`) when the snippet is too long for a clean inline echo (~ 30+ lines, intricate quoting). When you do write a file, mention it briefly so the user knows why: *"This snippet is long enough that I'll write it to `snippet.cs` and run `ngql snippet.cs`."*
 - **Before running `ngql` for the first time in a session, confirm two things in your message: (1) the endpoint isn't going to surprise the user — read the URL aloud (`localhost`, `staging`, `prod`, third-party) and pause for go-ahead if it's anything other than localhost or a clear sandbox; and (2) for mutations, that `--allow-mutations` is intentional.** For pure queries against localhost or services the user clearly owns, you can run without asking. For everything else, single-line confirm.
 - **If `ngql` exits non-zero, report the actual exit code and stderr verbatim, then offer one fix.** Common cases: exit 1 = the snippet didn't compile (offer to fix the snippet); exit 2 = the server returned a GraphQL `errors` array (interpret the errors); exit 3 = HTTP failure (surface the status code); exit 4 = mutation blocked (offer the `--allow-mutations` form, with the safety re-check from the previous bullet); exit 127 or "command not found" = either `ngql` isn't installed *or* `~/.dotnet/tools/` isn't on `$PATH`. For "not installed", **see the install section below** — ask the user about channel (default to whichever channel matches this Skill's plugin name) and scope (default-suggest local). For "PATH issue", offer `export PATH="$PATH:$HOME/.dotnet/tools"` for the current shell. Check both — don't assume install is the right fix.
 - **Exit 0 doesn't always mean "useful GraphQL response."** It means "the server accepted the POST and didn't signal a GraphQL `errors` array." If the response body looks like HTML, plain text, an echo dump (e.g. webhook.site, request bins), or anything other than a JSON object with a `data` field, **call that out explicitly**: "the server returned a 200 but the body isn't a GraphQL response — looks like &lt;HTML/echo/etc&gt;. Is this actually a GraphQL endpoint?" Don't claim success just because the exit code was 0.
@@ -486,30 +487,35 @@ Wait for the user's pick before running anything. The `dotnet tool` commands abo
 
 ### Render-only
 
-If the user just wants to see the GraphQL produced by a snippet:
+If the user just wants to see the GraphQL produced by a snippet, pipe it via stdin (no file needed):
 
 ```bash
-ngql snippet.cs                                    # from a file
-echo '<snippet body>' | ngql                       # from stdin
+echo '<snippet body>' | ngql
 ```
+
+Stdin is the preferred form because it's a single shell call — one Bash invocation, one user permission prompt. Use a file path (`ngql snippet.cs`) when the snippet is long enough that an inline `echo` is awkward (~ 30+ lines, anything with intricate quoting).
 
 The tool prints the GraphQL to stdout. Exit code 0 on success, 1 on compile/runtime error. Composable with shell redirects:
 
 ```bash
-ngql snippet.cs > expected.graphql
+echo '<snippet>' | ngql > expected.graphql
 ```
 
 ### Execute against a live endpoint
 
 When the user signals they have a real GraphQL endpoint to test against — e.g. mentions "verify against...", "run this against...", "test it on the staging API", or pastes a curl that includes a server URL — suggest the `--execute` flow. **Do not assume an endpoint; if the user hasn't provided one, ask.** The Skill should never invent endpoint URLs.
 
+Same stdin-first preference here:
+
 ```bash
-ngql snippet.cs --execute \
+echo '<snippet>' | ngql --execute \
     --endpoint https://api.example.com/graphql \
     -H "Authorization: Bearer $TOKEN" \
     --var id=42 \
     --var login=octocat
 ```
+
+For long snippets, write the snippet to a file first and pass the path: `ngql snippet.cs --execute --endpoint …`. The file-based form takes two Bash calls (Write + ngql) instead of one — useful when the snippet really is too long for a clean inline echo.
 
 - `-H "Name: value"` is repeatable; one per header.
 - `--var key=value` is repeatable. Values are JSON-parsed when possible — numbers, booleans, arrays, and objects all work without quoting tricks. Bare strings (`--var login=octocat`) are passed as-is.
