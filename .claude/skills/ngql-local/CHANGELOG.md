@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 - **Inline fragment generation now works.** With NGql 2.1's `FieldBuilder.OnType("TypeName", b => …)` shipping, the Skill removes inline fragments and union/interface narrowing from the gap table and adds a worked example covering the canonical GitHub-search use case. The "feature gap" rule still applies to named fragments, directives, and subscriptions. EVAL prompt #8 (top-10 GitHub repos) flips from "refuses to generate" to "generates clean snippet using OnType." A new EVAL prompt #16 covers named fragments — those still refuse, pointing at https://github.com/dolifer/NGql/issues/20.
+- **Skill now proactively offers to render via `ngql` after every snippet.** Reduces back-and-forth from "here's a snippet" → "now run it" → "ok running" to a single offer the user accepts in one word. Defaults to stdin (`echo '<snippet>' | ngql`) because that's one Bash call, one permission prompt, no file write. File-path form (`ngql snippet.cs`) reserved for snippets too long to inline-echo cleanly. The Render-only and Execute sections were also rewritten to lead with stdin.
 
 ## [1.0.0] - 2026-05-02
 
