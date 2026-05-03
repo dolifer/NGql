@@ -1,0 +1,32 @@
+title: NGql
+description: A zero-dependency, schema-less GraphQL query builder for .NET — fluent composition, runtime fragment merging, field preservation, no SDL or codegen.
+theme: jekyll-theme-cayman
+show_downloads: false
+
+# Pages-only content lives at the repo root (index.md, install.md, skill.md). Everything else
+# is library source / tests / build artifacts and must NOT be served as Pages content.
+exclude:
+  - .claude-plugin/
+  - .claude/
+  - .config/
+  - .github/
+  - artifacts/
+  - docs/
+  - node_modules/
+  - plugins/
+  - src/
+  - tests/
+  - tmp/
+  - tools/
+  - BenchmarkDotNet.Artifacts/
+  - CHANGELOG.md         # link to GitHub-rendered version, don't shadow with a Pages copy
+  - CLAUDE.md
+  - Directory.Build.props
+  - GitVersion.yml
+  - LICENSE
+  - Makefile
+  - NGql.sln
+  - NGql.sln.DotSettings.user
+  - README.md
+  - icon.png             # served from raw.githubusercontent.com instead
+  - make.cmd
