@@ -38,7 +38,7 @@ For the long-form docs with every API + runnable examples, see the [README on Gi
 
 ## CLI tool: `dotnet-ngql`
 
-A .NET global tool that compiles a `QueryBuilder` snippet and prints the rendered GraphQL. Optionally executes the query against a live endpoint with `--execute`. Useful for hand-verifying snippets, snapshotting expected query text in CI, or pairing with the [Claude Code skill](skill/) to run generated code without leaving your terminal.
+A .NET global tool that compiles a `QueryBuilder` snippet and prints the rendered GraphQL. Optionally executes the query against a live endpoint with `--execute`. Useful for hand-verifying snippets, snapshotting expected query text in CI, or pairing with the Claude Code skill ([stable](https://dolifer.github.io/claude-plugins/skills/ngql/) or [preview](https://dolifer.github.io/claude-plugins/skills/ngql-preview/)) to run generated code without leaving your terminal.
 
 **Install (preview only — no stable release on NuGet yet):**
 
@@ -75,7 +75,16 @@ The tool's version tracks `NGql.Core` in lockstep — install a specific version
 
 ## Claude Code skill (optional)
 
-The `ngql-preview` Claude Code skill teaches Claude to author NGql code from natural language, pasted GraphQL, or curl. It pairs with the `dotnet-ngql` CLI to verify what it generated.
+A Claude Code skill that teaches Claude to author NGql code from natural language, pasted GraphQL, or curl. It pairs with the `dotnet-ngql` CLI to verify what it generated.
+
+Two channels in the [`dolifer` plugin marketplace](https://dolifer.github.io/claude-plugins/) — install one or both:
+
+| Channel | Install | Invoke | Status | Docs |
+|---|---|---|---|---|
+| `ngql` (stable) | `/plugin install ngql@dolifer` | `/ngql:ngql …` | Coming soon — install will fail until the first stable release ships. | [docs](https://dolifer.github.io/claude-plugins/skills/ngql/) |
+| `ngql-preview` (preview) | `/plugin install ngql-preview@dolifer` | `/ngql-preview:ngql …` | Live, tracking the latest NGql preview. | [docs](https://dolifer.github.io/claude-plugins/skills/ngql-preview/) |
+
+Both channels can coexist in the same Claude Code session — `/ngql:ngql` invokes stable, `/ngql-preview:ngql` invokes preview. Until stable ships, install preview:
 
 ```text
 /plugin marketplace add dolifer/claude-plugins
@@ -83,8 +92,6 @@ The `ngql-preview` Claude Code skill teaches Claude to author NGql code from nat
 ```
 
 Then in any session: `/ngql-preview:ngql build me a query for…`.
-
-Full skill docs: [dolifer.github.io/claude-plugins/skills/ngql-preview/](https://dolifer.github.io/claude-plugins/skills/ngql-preview/).
 
 ---
 

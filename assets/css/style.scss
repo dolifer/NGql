@@ -1,0 +1,12 @@
+---
+# Front matter required so Jekyll processes this file as Sass instead of serving it raw.
+---
+
+@import "{{ site.theme }}";
+
+// Cayman ships with a relatively narrow content width that makes wide tables and code
+// blocks crowd. 76rem lines up with most modern browser default widths and keeps long
+// code samples (especially the `--execute` invocation) on one line.
+.main-content {
+  max-width: 76rem;
+}
