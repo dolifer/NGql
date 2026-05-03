@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Removed
 - All mention of legacy `Query` / `Mutation` types and migration guidance from the classic API. The Skill teaches `QueryBuilder.CreateDefaultBuilder` and `CreateMutationBuilder` exclusively; new users shouldn't even see the deprecated names. Existing user code that still references the classic types remains supported by NGql.Core itself — but the Skill won't generate it or help convert it.
+- `using NGql.Core; using NGql.Core.Builders;` lines stripped from all worked examples — `ngql` auto-imports those namespaces, so the lines were dead bytes that pushed Claude to repeat them in generated snippets. The snippet-contract section is now explicit: omit `using` for auto-imported namespaces; add only for names not on the auto-import list (e.g. `System.Text.Json`, rare in practice). Caught when a real Rick & Morty session showed Claude leading every variant snippet with the redundant pair.
 
 ## [1.0.0] - 2026-05-02
 
