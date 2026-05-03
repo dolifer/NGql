@@ -45,7 +45,11 @@ jobs:
           destination: ./_site
       - name: Merge coverage report into _site/coverage/
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        # `actions/jekyll-build-pages` runs Jekyll in a Docker container and writes _site/
+        # owned by root. The runner user can't mkdir/cp inside it without sudo. Take ownership
+        # back first so the cp (and any later steps) work as the unprivileged runner.
         run: |
+          sudo chown -R "$USER:$USER" _site
           mkdir -p _site/coverage
           cp -R artifacts/coverage-report/. _site/coverage/
       - name: Upload Pages artifact
