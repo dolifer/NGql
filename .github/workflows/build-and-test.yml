@@ -33,11 +33,26 @@ jobs:
         with:
           name: coverage-report
           path: artifacts/coverage-report
+      # Build the Jekyll site (landing + install + skill pages) and merge the coverage
+      # report under /coverage/ so a single Pages artifact carries both. The Jekyll source
+      # lives at the repo root (_config.yml, index.md, install.md, skill.md); coverage
+      # comes from artifacts/coverage-report/ produced by `make ci` above.
+      - name: Build Pages site (Jekyll + coverage)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./
+          destination: ./_site
+      - name: Merge coverage report into _site/coverage/
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          mkdir -p _site/coverage
+          cp -R artifacts/coverage-report/. _site/coverage/
       - name: Upload Pages artifact
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: artifacts/coverage-report
+          path: _site
 
   deploy-pages:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
