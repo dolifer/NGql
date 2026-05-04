@@ -13,6 +13,7 @@ public sealed record FieldDefinition
     // Fields
     internal FieldChildren? _children;
     internal Dictionary<string, InlineFragmentDefinition>? _fragments;
+    internal List<string>? _spreadFragments;
     internal string? _type;
     internal string? _alias;
     internal string _effectiveName;
@@ -157,6 +158,42 @@ public sealed record FieldDefinition
     [JsonPropertyName("inlineFragments")]
     public IReadOnlyDictionary<string, InlineFragmentDefinition> InlineFragments
         => (IReadOnlyDictionary<string, InlineFragmentDefinition>?)_fragments ?? EmptyReadOnlyFragments;
+
+    private static readonly IReadOnlyList<string> EmptyReadOnlySpreadFragments = Array.Empty<string>();
+
+    /// <summary>
+    /// Names of <see cref="NamedFragmentDefinition"/>s spread into this field's selection set
+    /// (rendered as <c>...Name</c>). Order is preserved from <c>SpreadFragment</c> calls; the
+    /// renderer emits spreads in declaration order after plain fields and inline fragments.
+    /// </summary>
+    /// <remarks>
+    /// A list, not a set: the same fragment may legitimately appear multiple times at the
+    /// same selection set once directives are added in a future release (e.g.
+    /// <c>...Foo @include(if: $a) ...Foo @include(if: $b)</c>). Today, repeated spreads of
+    /// the same name produce duplicate <c>...Name</c> output that the server collapses; the
+    /// builder de-duplicates eagerly at <c>FieldBuilder.SpreadFragment</c> to keep render
+    /// output minimal.
+    ///
+    /// Spreads are not validated against <see cref="QueryDefinition.NamedFragments"/> — an
+    /// undeclared spread renders verbatim and the server rejects it. NGql is schemaless.
+    /// </remarks>
+    [JsonPropertyName("spreadFragments")]
+    public IReadOnlyList<string> SpreadFragments
+        => (IReadOnlyList<string>?)_spreadFragments ?? EmptyReadOnlySpreadFragments;
+
+    /// <summary>
+    /// Append a fragment-spread reference to this field's selection set. No-ops when the
+    /// fragment name is already present, keeping the render output minimal until directives
+    /// (which would distinguish duplicate spreads) are supported.
+    /// </summary>
+    internal void AddSpreadFragment(string name)
+    {
+        _spreadFragments ??= new List<string>();
+        if (!_spreadFragments.Contains(name, StringComparer.Ordinal))
+        {
+            _spreadFragments.Add(name);
+        }
+    }
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

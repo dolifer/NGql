@@ -11,6 +11,7 @@ public sealed record QueryDefinition(string Name, string Description = "")
     internal Dictionary<string, FieldDefinition>? _fields;
     internal SortedSet<Variable>? _variables;
     internal Dictionary<string, object?>? _metadata;
+    internal Dictionary<string, NamedFragmentDefinition>? _namedFragments;
 
     /// <summary>
     /// The name of the query.
@@ -55,6 +56,49 @@ public sealed record QueryDefinition(string Name, string Description = "")
     {
         get => _metadata ??= [];
         set => _metadata = value;
+    }
+
+    /// <summary>
+    ///     Named fragments declared at this operation's top level, keyed by fragment name
+    ///     (case-sensitive). Each fragment renders as <c>fragment Name on TypeName { … }</c>
+    ///     after the operation block, sorted alphabetically by name.
+    /// </summary>
+    /// <remarks>
+    ///     Fragments are referenced from a field's selection set via
+    ///     <see cref="FieldDefinition.SpreadFragments"/>. NGql does not validate that every
+    ///     spread points at a declared fragment — undeclared spreads render as <c>...Name</c>
+    ///     and the server rejects them with a clear error. This keeps NGql schemaless.
+    /// </remarks>
+    [JsonPropertyName("namedFragments")]
+    public IReadOnlyDictionary<string, NamedFragmentDefinition> NamedFragments
+        => (IReadOnlyDictionary<string, NamedFragmentDefinition>?)_namedFragments ?? EmptyNamedFragments;
+
+    private static readonly IReadOnlyDictionary<string, NamedFragmentDefinition> EmptyNamedFragments
+        = new Dictionary<string, NamedFragmentDefinition>();
+
+    /// <summary>
+    /// Returns the existing named fragment for <paramref name="name"/>, or appends a new one
+    /// declared on <paramref name="onType"/>. Used by the builder to back
+    /// <c>QueryBuilder.AddFragment</c>. Throws <see cref="InvalidOperationException"/> if the
+    /// fragment exists with a different <c>OnType</c> — silent override is the worst failure
+    /// mode for a refactor that mistakenly reuses a fragment name.
+    /// </summary>
+    internal NamedFragmentDefinition GetOrAddNamedFragment(string name, string onType)
+    {
+        _namedFragments ??= new Dictionary<string, NamedFragmentDefinition>(StringComparer.Ordinal);
+        if (_namedFragments.TryGetValue(name, out var fragment))
+        {
+            if (!string.Equals(fragment.OnType, onType, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Named fragment '{name}' is already declared on type '{fragment.OnType}' — cannot redeclare on '{onType}'.");
+            }
+            return fragment;
+        }
+
+        fragment = new NamedFragmentDefinition(name, onType);
+        _namedFragments[name] = fragment;
+        return fragment;
     }
 
     /// <summary>
