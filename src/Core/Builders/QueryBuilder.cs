@@ -472,12 +472,63 @@ public sealed class QueryBuilder
     /// <returns>Current QueryBuilder instance for method chaining</returns>
     private QueryBuilder IncludeImpl(in QueryDefinition queryDefinition)
     {
+        // Fragments (named, inline, and spreads) are not yet handled by the merger — silently
+        // dropping them would emit GraphQL with broken references, so we reject upfront. When
+        // fragment merge semantics are designed (issue #20 follow-up), this guard goes away.
+        ThrowIfIncomingHasFragments(queryDefinition);
+
         QueryMerger.MergeQuery(_definition, QueryMapInstance, this, in queryDefinition);
-        
+
         // Phase 3: Invalidate lookup caches after merge since fields changed
         InvalidateLookupCaches();
-        
+
         return this;
+    }
+
+    private static void ThrowIfIncomingHasFragments(in QueryDefinition queryDefinition)
+    {
+        if (queryDefinition._namedFragments is { Count: > 0 })
+        {
+            throw new NotSupportedException(
+                "Include does not yet support queries that declare named fragments. " +
+                "Inline the fragment's fields manually, or build the merged query without fragments.");
+        }
+
+        if (queryDefinition._fields is { Count: > 0 } && AnyFieldHasFragment(queryDefinition._fields.Values))
+        {
+            throw new NotSupportedException(
+                "Include does not yet support queries that contain inline fragments or fragment spreads. " +
+                "Build the merged query without fragments, or apply Include before adding fragments.");
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Hot path on every Include call — a foreach with early return avoids the enumerator allocation that LINQ Any/Where would incur.")]
+    private static bool AnyFieldHasFragment(IEnumerable<FieldDefinition> fields)
+    {
+        foreach (var field in fields)
+        {
+            if (FieldHasAnyFragment(field)) return true;
+        }
+        return false;
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Recursive walk over a Span<FieldDefinition>; LINQ does not span-iterate.")]
+    private static bool FieldHasAnyFragment(FieldDefinition field)
+    {
+        if (field._fragments is { Count: > 0 }) return true;
+        if (field._spreadFragments is { Count: > 0 }) return true;
+        if (field._children is { Count: > 0 })
+        {
+            foreach (var child in field._children.AsSpan())
+            {
+                if (FieldHasAnyFragment(child)) return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

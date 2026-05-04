@@ -8,7 +8,11 @@ The companion Claude Code Skill is versioned independently — see [`.claude/ski
 
 ## [Unreleased]
 
-## [2.1.0] - 2026-05-04
+### Added
+- **Named fragment support** via `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)`. Renders as `fragment Name on TypeName { … }` after the operation block (sorted alphabetically by name), with `...Name` spreads emitted at each use site (declaration order preserved). Spreads work inside fields, inline fragments, and other named fragments. New `InlineFragmentDefinition.SpreadFragments` and `NamedFragmentDefinition.SpreadFragments` properties expose the data model. Closes [#20](https://github.com/dolifer/NGql/issues/20). Public API additions: `QueryBuilder.AddFragment`, `FieldBuilder.SpreadFragment`, `QueryDefinition.NamedFragments`, `FieldDefinition.SpreadFragments`, `Abstractions.NamedFragmentDefinition`.
+
+### Changed
+- `QueryBuilder.Include` now throws `NotSupportedException` when the incoming query contains any fragments (named, inline, or spreads). Previously, fragments were silently dropped — emitting GraphQL with broken or missing references. The new guard surfaces the limitation at build time. To merge fragment-bearing queries, build the merged query without fragments or apply `Include` *before* adding fragments. Tracking issue for fragment-aware `Include` is a follow-up to #20.
 
 ### Added
 - **Inline fragment support** via `FieldBuilder.OnType("TypeName", b => …)`. Renders as `... on TypeName { … }` after the field's plain children, sorted alphabetically by type name. Multiple `OnType` calls for the same type on the same parent merge into one combined fragment definition. Nested fragments (fragment-inside-fragment) work recursively. Solves union/interface narrowing for queries like GitHub's `search.nodes`. New `InlineFragmentDefinition` record exposes the data model. Public API additions: `FieldBuilder.OnType`, `FieldDefinition.InlineFragments`, `FieldDefinition.HasInlineFragments`, `Abstractions.InlineFragmentDefinition`. Named fragments (`fragment X on T { … }` + `...X` spreads) remain unsupported — tracked in [issue #20](https://github.com/dolifer/NGql/issues/20).
