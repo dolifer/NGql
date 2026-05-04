@@ -9,4 +9,14 @@
 // code samples (especially the `--execute` invocation) on one line.
 .main-content {
   max-width: 76rem;
+
+  // The "Status" and "Where to next" tables on the landing page use a borderless
+  // header (`| | |`) with a bold label in the first column. Cayman's default table
+  // layout shrinks that column until labels like "Companion tool" / "Latest stable"
+  // wrap onto two lines. `:has()` lets us target only tables whose first <th> is
+  // empty (i.e., the label tables, not real data tables) and pin the column.
+  table:has(thead th:first-child:empty) td:first-child {
+    white-space: nowrap;
+    width: 1%; // collapse to content width; nowrap keeps the label intact
+  }
 }
