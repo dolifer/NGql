@@ -20,6 +20,8 @@ dotnet add package NGql.Core
 
 Multi-targets `net8.0` / `net9.0` / `net10.0`. Zero runtime dependencies. Add the package, write `using NGql.Core; using NGql.Core.Builders;`, and you're building queries.
 
+Want the latest unreleased changes? Pin to a preview version (e.g. `dotnet add package NGql.Core --version 2.1.1-preview.X`) — previews ship as `<X.Y.Z>-preview.<N>` and track every push to `main`.
+
 ```csharp
 using NGql.Core.Builders;
 
@@ -40,13 +42,17 @@ For the long-form docs with every API + runnable examples, see the [README on Gi
 
 A .NET global tool that compiles a `QueryBuilder` snippet and prints the rendered GraphQL. Optionally executes the query against a live endpoint with `--execute`. Useful for hand-verifying snippets, snapshotting expected query text in CI, or pairing with the Claude Code skill ([stable](https://dolifer.github.io/claude-plugins/skills/ngql/) or [preview](https://dolifer.github.io/claude-plugins/skills/ngql-preview/)) to run generated code without leaving your terminal.
 
-**Install (preview only — no stable release on NuGet yet):**
+**Install (stable):**
+
+```bash
+dotnet tool install -g dotnet-ngql
+```
+
+Want the latest unreleased changes (newest features, may have rough edges)? Add `--prerelease` to opt into the preview channel — preview versions ship as `<X.Y.Z>-preview.<N>` and track every push to `main`:
 
 ```bash
 dotnet tool install -g dotnet-ngql --prerelease
 ```
-
-The `--prerelease` flag is required while only preview versions exist. Drop it once a stable `2.x.0` ships.
 
 **Use:**
 
@@ -67,9 +73,9 @@ echo '<snippet>' | ngql --execute \
 
 Mutations are refused by default — pass `--allow-mutations` once you're sure the side effect is intended. Full options: `ngql --help`.
 
-**Update:** `dotnet tool update -g dotnet-ngql --prerelease`.
+**Update:** `dotnet tool update -g dotnet-ngql` (add `--prerelease` to track preview).
 
-The tool's version tracks `NGql.Core` in lockstep — install a specific version with `--version 2.1.0-preview.X --prerelease`.
+The tool's version tracks `NGql.Core` in lockstep — install a specific version with `--version 2.1.0` (or `--version 2.1.1-preview.X --prerelease` for previews).
 
 ---
 

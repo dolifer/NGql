@@ -45,8 +45,9 @@ NGql ships two optional companions alongside the library. Use them when they hel
 A .NET global tool that compiles a `QueryBuilder` snippet against `NGql.Core` and prints the GraphQL it renders to. Useful for sanity-checking a snippet, snapshotting expected query text in CI scripts, or executing a rendered operation against a live endpoint.
 
 ```bash
-dotnet tool install -g dotnet-ngql --prerelease   # one-time install (preview-only on NuGet today)
-dotnet tool update  -g dotnet-ngql --prerelease   # update to latest preview
+dotnet tool install -g dotnet-ngql        # one-time install (latest stable)
+dotnet tool update  -g dotnet-ngql        # update to latest stable
+# Add `--prerelease` to either command to opt into the preview channel (newest features, may have rough edges).
 
 ngql snippet.cs                               # render a file
 echo '<snippet>' | ngql                       # or read from stdin
@@ -63,7 +64,14 @@ The tool's version tracks `NGql.Core` in lockstep. Mutations are refused by defa
 
 A [Claude Code](https://docs.claude.com/en/docs/claude-code) skill that teaches Claude to author NGql code from natural language ("build a query that fetches a user's last 5 orders") or from a pasted GraphQL operation / curl. Pairs with the `dotnet-ngql` tool to verify generated snippets against a live endpoint.
 
-The skill lives at [`.claude/skills/ngql/`](https://github.com/dolifer/NGql/tree/main/.claude/skills/ngql) — running Claude Code inside a clone of this repo picks it up automatically. To use it from any project, copy the folder to `~/.claude/skills/ngql/`. See [`.claude/skills/ngql/README.md`](.claude/skills/ngql/README.md) for install and usage.
+Install via the [`dolifer/claude-plugins`](https://dolifer.github.io/claude-plugins/) marketplace inside any Claude Code session:
+
+```text
+/plugin marketplace add dolifer/claude-plugins
+/plugin install ngql@dolifer
+```
+
+Then `/ngql:ngql build me a query for…` from any project. Two channels — `ngql` (stable) and `ngql-preview` (preview, latest features) — can coexist in the same session. See the [marketplace page](https://dolifer.github.io/claude-plugins/skills/ngql/) for full docs.
 
 ---
 

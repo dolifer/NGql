@@ -8,12 +8,10 @@ The companion Claude Code Skill is versioned independently — see [`.claude/ski
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-04
+
 ### Added
 - **Inline fragment support** via `FieldBuilder.OnType("TypeName", b => …)`. Renders as `... on TypeName { … }` after the field's plain children, sorted alphabetically by type name. Multiple `OnType` calls for the same type on the same parent merge into one combined fragment definition. Nested fragments (fragment-inside-fragment) work recursively. Solves union/interface narrowing for queries like GitHub's `search.nodes`. New `InlineFragmentDefinition` record exposes the data model. Public API additions: `FieldBuilder.OnType`, `FieldDefinition.InlineFragments`, `FieldDefinition.HasInlineFragments`, `Abstractions.InlineFragmentDefinition`. Named fragments (`fragment X on T { … }` + `...X` spreads) remain unsupported — tracked in [issue #20](https://github.com/dolifer/NGql/issues/20).
-
-## [2.1.0] - 2026-05-02
-
-### Added
 - `QueryBuilder.CreateMutationBuilder(name)` and `CreateMutationBuilder(name, MergingStrategy)` — the fluent builder now produces both queries and mutations from the same surface, removing the need to drop down to the classic `Mutation` type for new code.
 - `QueryBuilder.AddField` gains `(field, args, lambda)` and `(field, subFields, lambda)` shorthand overloads, eliminating the `metadata: null` boilerplate previously required for these shapes.
 - `FieldBuilder.AddField` gains args-first variants (`(field, args, subFields, …)`) so the parameter order matches `QueryBuilder.AddField` inside sub-field lambdas.
