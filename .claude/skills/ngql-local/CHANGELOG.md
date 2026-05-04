@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+### Added
+- **Named fragment generation** via `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)`. With NGql 2.2 shipping the underlying API, the Skill drops named fragments from the gap table and adds a worked example covering the canonical "DRY across multiple use sites" use case. EVAL prompt #16 (users + admins with shared selection) flips from "refuses to generate" to "generates clean snippet using `AddFragment` + `SpreadFragment`."
+
+### Changed
+- Feature-gaps table updated: directives now point at issue #23 (the focused `@include`/`@skip` issue, not a generic directives gap), and `Include` + fragments is added as an explicit gap with a clear workaround note since the library now throws `NotSupportedException` instead of silently dropping fragments during `Include`.
+
 ## [1.0.0] - 2026-05-04
 
 First stable release. Promotes the Skill from preview-only (`ngql-preview` channel) to stable (`ngql` channel) in the [`dolifer/claude-plugins`](https://github.com/dolifer/claude-plugins) marketplace. Both channels coexist — install whichever you prefer; preview tracks every push to `main`, stable lands on tagged `skill-v*` releases.

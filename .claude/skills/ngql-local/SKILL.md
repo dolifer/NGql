@@ -62,6 +62,12 @@ var idVar = new Variable("$id", "ID!");                               // $-prefi
 // Inline fragment for union/interface narrowing — renders `... on Type { … }`
 .AddField("nodes", n => n.OnType("Repository", r => r.AddField("name")))
 
+// Named fragment — declared once at op level, spread (`...Name`) at each use site
+QueryBuilder.CreateDefaultBuilder("GetUsers")
+    .AddFragment("UserCard", "User", f => f.AddField("id").AddField("name"))
+    .AddField("users", u => u.SpreadFragment("UserCard"))
+    .AddField("admins", a => a.SpreadFragment("UserCard"))
+
 // Metadata — via lambda + WithMetadata, NEVER as a positional dict
 .AddField("user", new Dictionary<string, object?> { ["id"] = idVar }, b => b
     .WithMetadata(new Dictionary<string, object> { ["cached"] = true })
@@ -156,9 +162,11 @@ QueryBuilder.CreateDefaultBuilder("Hello").AddField("world.name")
 | Construct | NGql |
 |---|---|
 | Inline fragments / union narrowing | ✅ `FieldBuilder.OnType("TypeName", b => …)` |
-| Named fragments (`fragment X on T`, `...X`) | ❌ — [#20](https://github.com/dolifer/NGql/issues/20). Inline at each use site for now. |
-| Directives (`@include`, `@skip`, custom) | ❌ |
-| Subscriptions | ❌ |
+| Named fragments (`fragment X on T`, `...X`) | ✅ `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)` |
+| `@include` / `@skip` directives | ❌ — [#23](https://github.com/dolifer/NGql/issues/23). Restructure conditional branches at the C# level. |
+| Custom directives | ❌ — file-separately if needed; uncommon in real APIs. |
+| Subscriptions | ❌ — out of scope (transport-layer concern). |
+| `Include` + any fragments | ❌ — throws `NotSupportedException`. Build the merged query without fragments, or apply `Include` *before* adding fragments. |
 
 When the user needs a ❌ construct: **stop before any C#**, name the gap in one sentence, offer concrete paths (inline equivalent, partial + hand-splice, different field). Wait for the user's pick. **Never** generate broken code "for reference" — code that looks right but renders to invalid GraphQL is the worst failure mode.
 
@@ -325,3 +333,17 @@ QueryBuilder.CreateDefaultBuilder("TopRepos")
 ```
 
 The `"Repository"` is a schema type name, not user-defined. Multiple `OnType` calls on the same parent merge; fragments can nest (`OnType("X", x => x.OnType("Y", …))`).
+
+### Named fragment (DRY across multiple use sites)
+
+> "Build a query that fetches both users and admins, each returning the same id+name+avatarUrl selection."
+
+```csharp
+QueryBuilder.CreateDefaultBuilder("GetUsersAndAdmins")
+    .AddFragment("UserCard", "User", f => f
+        .AddField("id").AddField("name").AddField("avatarUrl"))
+    .AddField("users", u => u.SpreadFragment("UserCard"))
+    .AddField("admins", a => a.SpreadFragment("UserCard"))
+```
+
+Renders the fragment once after the operation block, spread at each use site. Fragment names are case-sensitive; `AddFragment` with a duplicate name + different `onType` throws. NGql doesn't validate that every spread points at a declared fragment — undeclared spreads render verbatim and the server rejects them (NGql is schemaless).
