@@ -619,15 +619,41 @@ public sealed class FieldBuilder
         {
             _children = fragment.GetOrCreateFieldsStore(),
             _fragments = fragment._fragments,
+            _spreadFragments = fragment._spreadFragments,
         };
 
         var inner = new FieldBuilder(fragmentSurface);
         action(inner);
 
-        // The lambda may have created the nested-fragments map on the synthetic field; reflect
-        // that back onto the fragment so future OnType calls on the same fragment pick it up.
+        // Reflect any nested-fragment / spread-fragment maps the lambda created on the synthetic
+        // field back onto the inline fragment, so subsequent OnType calls on the same fragment
+        // pick them up. Maps that the lambda mutated in-place don't need this because both sides
+        // already reference the same underlying object.
         fragment._fragments = fragmentSurface._fragments;
+        fragment._spreadFragments = fragmentSurface._spreadFragments;
 
+        return this;
+    }
+
+    /// <summary>
+    /// Spreads a named fragment into this field's selection set. The renderer emits
+    /// <c>...Name</c> after plain fields and inline fragments. The fragment itself is declared
+    /// at the operation's top level via <c>QueryBuilder.AddFragment(name, onType, build)</c>;
+    /// this method only records the spread reference.
+    /// </summary>
+    /// <param name="name">The name of the fragment to spread. NGql does not validate that the
+    /// fragment is actually declared — an undeclared spread renders verbatim and the server
+    /// rejects it. NGql is schemaless.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
+    public FieldBuilder SpreadFragment(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Spread fragment name cannot be null or whitespace.", nameof(name));
+        }
+
+        _fieldDefinition.AddSpreadFragment(name);
         return this;
     }
 }

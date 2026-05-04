@@ -25,6 +25,7 @@ public sealed record NamedFragmentDefinition
 {
     internal FieldChildren? _fields;
     internal Dictionary<string, InlineFragmentDefinition>? _fragments;
+    internal List<string>? _spreadFragments;
 
     /// <summary>
     /// Creates a named fragment with the given <paramref name="name"/> on <paramref name="onType"/>
@@ -84,8 +85,17 @@ public sealed record NamedFragmentDefinition
     public IReadOnlyDictionary<string, InlineFragmentDefinition> InlineFragments
         => (IReadOnlyDictionary<string, InlineFragmentDefinition>?)_fragments ?? EmptyFragments;
 
+    /// <summary>
+    /// Names of other <see cref="NamedFragmentDefinition"/>s spread inside this fragment's
+    /// selection set. See <see cref="FieldDefinition.SpreadFragments"/> for the contract.
+    /// </summary>
+    [JsonPropertyName("spreadFragments")]
+    public IReadOnlyList<string> SpreadFragments
+        => (IReadOnlyList<string>?)_spreadFragments ?? EmptySpreadFragments;
+
     private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyFields = new Dictionary<string, FieldDefinition>();
     private static readonly IReadOnlyDictionary<string, InlineFragmentDefinition> EmptyFragments = new Dictionary<string, InlineFragmentDefinition>();
+    private static readonly IReadOnlyList<string> EmptySpreadFragments = Array.Empty<string>();
 
     public bool Equals(NamedFragmentDefinition? other)
     {
