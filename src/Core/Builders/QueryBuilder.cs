@@ -290,6 +290,64 @@ public sealed class QueryBuilder
         });
     }
 
+    /// <summary>
+    ///     Declares a named GraphQL fragment at the operation's top level. The fragment is
+    ///     referenced from one or more fields via <c>FieldBuilder.SpreadFragment(name)</c>;
+    ///     the renderer emits <c>fragment Name on TypeName { … }</c> after the operation block.
+    /// </summary>
+    /// <param name="name">Fragment identifier. Used at spread sites (<c>...Name</c>); must be
+    /// unique per operation. Calling <c>AddFragment</c> twice with the same name and type is
+    /// idempotent — the second call merges fields into the existing fragment, like
+    /// <see cref="FieldBuilder.OnType(string, Action{FieldBuilder})"/> does for inline fragments.</param>
+    /// <param name="onType">The GraphQL type the fragment is declared on.</param>
+    /// <param name="build">Action that populates the fragment's selection set. Receives a
+    /// <see cref="FieldBuilder"/> so the same <c>AddField</c> / <c>OnType</c> idioms work as
+    /// inside any other selection set.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> or
+    /// <paramref name="onType"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="build"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when a fragment with the same
+    /// <paramref name="name"/> already exists with a different <paramref name="onType"/>.</exception>
+    public QueryBuilder AddFragment(string name, string onType, Action<FieldBuilder> build)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Named fragment name cannot be null or whitespace.", nameof(name));
+        }
+        if (string.IsNullOrWhiteSpace(onType))
+        {
+            throw new ArgumentException("Named fragment type name cannot be null or whitespace.", nameof(onType));
+        }
+        ArgumentNullException.ThrowIfNull(build);
+
+        var fragment = _definition.GetOrAddNamedFragment(name, onType);
+
+        // Same synthetic-field trick OnType uses for inline fragments: build a temporary
+        // FieldDefinition whose `_children` aliases the fragment's field store, so the lambda's
+        // AddField calls write straight into the fragment without an extra copy step. The
+        // `_fragments` and `_spreadFragments` fields are aliased the same way for nested
+        // inline fragments and fragment-spread-inside-named-fragment cases.
+        var fragmentSurface = new FieldDefinition(
+            name: $"__named_fragment_{name}",
+            type: Constants.DefaultFieldType)
+        {
+            _children = fragment.GetOrCreateFieldsStore(),
+            _fragments = fragment._fragments,
+            _spreadFragments = fragment._spreadFragments,
+        };
+
+        var inner = FieldBuilder.Create(fragmentSurface);
+        build(inner);
+
+        // Reflect any newly-created nested-fragment / spread-fragment maps back onto the named
+        // fragment so subsequent AddFragment calls on the same name pick them up.
+        fragment._fragments = fragmentSurface._fragments;
+        fragment._spreadFragments = fragmentSurface._spreadFragments;
+
+        return this;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private QueryBuilder AddFieldFastPath(string field)
     {
