@@ -45,22 +45,3 @@ public static class Constants
     /// </summary>
     internal static ReadOnlySpan<char> NullableTypeMarkerSpan => NullableTypeMarker.AsSpan();
 }
-
-/// <summary>
-/// Contains buffer size constants used in path construction and field factory operations.
-/// These are facts extracted from production code for centralized testing.
-/// </summary>
-internal static class BufferConstants
-{
-    /// <summary>
-    /// The size of the character buffer used by SpanPathBuilder and FieldFactory for path construction.
-    /// This buffer is allocated on the stack for performance-critical path-building operations.
-    /// </summary>
-    public const int PathBufferSize = 512;
-
-    /// <summary>
-    /// The additional margin added to path length estimation to account for separators (dots) and other delimiters.
-    /// Used by FieldFactory when estimating whether a path fits within the PathBufferSize.
-    /// </summary>
-    public const int PathEstimationMargin = 10;
-}

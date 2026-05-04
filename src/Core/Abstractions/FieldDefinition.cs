@@ -207,13 +207,6 @@ public sealed record FieldDefinition
     public bool HasInlineFragments => _fragments is { Count: > 0 };
 
     /// <summary>
-    /// True when this field has any selection set content — children fields or inline fragments.
-    /// Drives the renderer's decision between <c>field{ … }</c> and bare <c>field</c>.
-    /// </summary>
-    [JsonIgnore]
-    internal bool HasSelectionSet => HasFields || HasInlineFragments;
-
-    /// <summary>
     /// Returns the existing inline fragment for <paramref name="typeName"/>, or appends a new
     /// one. Used by the builder to merge multiple <c>OnType("Repository", …)</c> calls on the
     /// same parent into a single fragment definition.
