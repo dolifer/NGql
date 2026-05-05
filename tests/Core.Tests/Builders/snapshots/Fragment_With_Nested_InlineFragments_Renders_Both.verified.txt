@@ -1,0 +1,14 @@
+﻿query Search{
+    nodes{
+        ...SearchResult
+    }
+}
+fragment SearchResult on Node{
+    __typename
+    ... on Issue{
+        title
+    }
+    ... on Repository{
+        stargazerCount
+    }
+}

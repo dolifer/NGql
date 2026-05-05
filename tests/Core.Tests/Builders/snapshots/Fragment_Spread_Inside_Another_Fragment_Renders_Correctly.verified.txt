@@ -1,0 +1,14 @@
+﻿query GetUser{
+    user{
+        ...UserCard
+    }
+}
+fragment AuditFields on User{
+    createdAt
+    updatedAt
+}
+fragment UserCard on User{
+    id
+    name
+    ...AuditFields
+}

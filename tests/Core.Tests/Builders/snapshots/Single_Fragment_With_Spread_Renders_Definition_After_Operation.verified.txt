@@ -1,0 +1,10 @@
+﻿query GetUser{
+    user{
+        ...UserSummary
+    }
+}
+fragment UserSummary on User{
+    avatarUrl
+    id
+    name
+}

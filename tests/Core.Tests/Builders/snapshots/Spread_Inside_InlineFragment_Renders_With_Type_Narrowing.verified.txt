@@ -1,0 +1,14 @@
+﻿query Search{
+    nodes{
+        ... on Issue{
+            title
+        }
+        ... on Repository{
+            ...RepoCard
+        }
+    }
+}
+fragment RepoCard on Repository{
+    name
+    stargazerCount
+}
