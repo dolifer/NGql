@@ -1,5 +1,8 @@
+using System;
+using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
+using NGql.Core.Tests.Extensions;
 using Xunit;
 
 namespace NGql.Core.Tests.Builders;
@@ -7,7 +10,7 @@ namespace NGql.Core.Tests.Builders;
 public class NamedFragmentRenderingTests
 {
     [Fact]
-    public void Single_Fragment_With_Spread_Renders_Definition_After_Operation()
+    public async Task Single_Fragment_With_Spread_Renders_Definition_After_Operation()
     {
         var qb = QueryBuilder.CreateDefaultBuilder("GetUser")
             .AddFragment("UserSummary", "User", f => f
@@ -16,17 +19,7 @@ public class NamedFragmentRenderingTests
                 .AddField("avatarUrl"))
             .AddField("user", u => u.SpreadFragment("UserSummary"));
 
-        qb.ToString().Should().Be(
-            "query GetUser{\n" +
-            "    user{\n" +
-            "        ...UserSummary\n" +
-            "    }\n" +
-            "}\n" +
-            "fragment UserSummary on User{\n" +
-            "    avatarUrl\n" +
-            "    id\n" +
-            "    name\n" +
-            "}\n");
+        await qb.Verify();
     }
 
     [Fact]
@@ -43,11 +36,11 @@ public class NamedFragmentRenderingTests
 
         var rendered = qb.ToString();
 
-        // Definitions sorted alphabetically — Alpha before Mid before Zebra
-        rendered.IndexOf("fragment AlphaFields", System.StringComparison.Ordinal)
-            .Should().BeLessThan(rendered.IndexOf("fragment MidFields", System.StringComparison.Ordinal));
-        rendered.IndexOf("fragment MidFields", System.StringComparison.Ordinal)
-            .Should().BeLessThan(rendered.IndexOf("fragment ZebraFields", System.StringComparison.Ordinal));
+        // Definitions sorted alphabetically — Alpha before Mid before Zebra.
+        rendered.IndexOf("fragment AlphaFields", StringComparison.Ordinal)
+            .Should().BeLessThan(rendered.IndexOf("fragment MidFields", StringComparison.Ordinal));
+        rendered.IndexOf("fragment MidFields", StringComparison.Ordinal)
+            .Should().BeLessThan(rendered.IndexOf("fragment ZebraFields", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -63,8 +56,8 @@ public class NamedFragmentRenderingTests
         var rendered = qb.ToString();
 
         // Spreads keep declaration order even though their definitions are sorted.
-        rendered.IndexOf("...UserSummary", System.StringComparison.Ordinal)
-            .Should().BeLessThan(rendered.IndexOf("...AuditFields", System.StringComparison.Ordinal));
+        rendered.IndexOf("...UserSummary", StringComparison.Ordinal)
+            .Should().BeLessThan(rendered.IndexOf("...AuditFields", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -81,12 +74,12 @@ public class NamedFragmentRenderingTests
         rendered.Should().Contain("__typename");
         rendered.Should().Contain("...UserSummary");
         // Plain fields come before spreads in the output (spreads render after fields and inline fragments).
-        rendered.IndexOf("__typename", System.StringComparison.Ordinal)
-            .Should().BeLessThan(rendered.IndexOf("...UserSummary", System.StringComparison.Ordinal));
+        rendered.IndexOf("__typename", StringComparison.Ordinal)
+            .Should().BeLessThan(rendered.IndexOf("...UserSummary", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void Spread_Inside_InlineFragment_Renders_With_Type_Narrowing()
+    public async Task Spread_Inside_InlineFragment_Renders_With_Type_Narrowing()
     {
         var qb = QueryBuilder.CreateDefaultBuilder("Search")
             .AddFragment("RepoCard", "Repository", f => f
@@ -96,25 +89,11 @@ public class NamedFragmentRenderingTests
                 .OnType("Repository", r => r.SpreadFragment("RepoCard"))
                 .OnType("Issue", i => i.AddField("title")));
 
-        qb.ToString().Should().Be(
-            "query Search{\n" +
-            "    nodes{\n" +
-            "        ... on Issue{\n" +
-            "            title\n" +
-            "        }\n" +
-            "        ... on Repository{\n" +
-            "            ...RepoCard\n" +
-            "        }\n" +
-            "    }\n" +
-            "}\n" +
-            "fragment RepoCard on Repository{\n" +
-            "    name\n" +
-            "    stargazerCount\n" +
-            "}\n");
+        await qb.Verify();
     }
 
     [Fact]
-    public void Fragment_Spread_Inside_Another_Fragment_Renders_Correctly()
+    public async Task Fragment_Spread_Inside_Another_Fragment_Renders_Correctly()
     {
         var qb = QueryBuilder.CreateDefaultBuilder("GetUser")
             .AddFragment("AuditFields", "User", f => f
@@ -126,25 +105,11 @@ public class NamedFragmentRenderingTests
                 .SpreadFragment("AuditFields"))
             .AddField("user", u => u.SpreadFragment("UserCard"));
 
-        qb.ToString().Should().Be(
-            "query GetUser{\n" +
-            "    user{\n" +
-            "        ...UserCard\n" +
-            "    }\n" +
-            "}\n" +
-            "fragment AuditFields on User{\n" +
-            "    createdAt\n" +
-            "    updatedAt\n" +
-            "}\n" +
-            "fragment UserCard on User{\n" +
-            "    id\n" +
-            "    name\n" +
-            "    ...AuditFields\n" +
-            "}\n");
+        await qb.Verify();
     }
 
     [Fact]
-    public void Fragment_With_Nested_InlineFragments_Renders_Both()
+    public async Task Fragment_With_Nested_InlineFragments_Renders_Both()
     {
         var qb = QueryBuilder.CreateDefaultBuilder("Search")
             .AddFragment("SearchResult", "Node", f => f
@@ -153,21 +118,7 @@ public class NamedFragmentRenderingTests
                 .OnType("Issue", i => i.AddField("title")))
             .AddField("nodes", n => n.SpreadFragment("SearchResult"));
 
-        qb.ToString().Should().Be(
-            "query Search{\n" +
-            "    nodes{\n" +
-            "        ...SearchResult\n" +
-            "    }\n" +
-            "}\n" +
-            "fragment SearchResult on Node{\n" +
-            "    __typename\n" +
-            "    ... on Issue{\n" +
-            "        title\n" +
-            "    }\n" +
-            "    ... on Repository{\n" +
-            "        stargazerCount\n" +
-            "    }\n" +
-            "}\n");
+        await qb.Verify();
     }
 
     [Fact]
@@ -233,7 +184,7 @@ public class NamedFragmentRenderingTests
     private static int CountOccurrences(string haystack, string needle)
     {
         int count = 0, idx = 0;
-        while ((idx = haystack.IndexOf(needle, idx, System.StringComparison.Ordinal)) >= 0)
+        while ((idx = haystack.IndexOf(needle, idx, StringComparison.Ordinal)) >= 0)
         {
             count++;
             idx += needle.Length;
