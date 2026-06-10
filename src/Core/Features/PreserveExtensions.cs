@@ -38,10 +38,88 @@ internal static class PreserveExtensions
             ExtractMatchingFields(query.Definition.Fields, newQuery.Definition.Fields, targetPath.AsSpan());
         }
 
+        // Carry over the named-fragment definitions the preserved tree still references —
+        // spreads without their definitions render as broken GraphQL the server rejects.
+        CopyReferencedNamedFragments(query.Definition, newQuery.Definition);
+
         // Extract variables from all preserved fields
         ExtractVariablesFromFields(newQuery.Definition.Fields, newQuery.Definition.Variables);
 
         return newQuery;
+    }
+
+    /// <summary>
+    /// Copies into <paramref name="targetDefinition"/> every named-fragment definition that the
+    /// preserved field tree references via spreads, following spreads transitively through the
+    /// copied fragments themselves. Unreferenced definitions are skipped — GraphQL rejects
+    /// operations with unused fragments. Undeclared spread names are left alone (NGql is
+    /// schemaless; they render verbatim and the server reports them).
+    /// </summary>
+    private static void CopyReferencedNamedFragments(QueryDefinition sourceDefinition, QueryDefinition targetDefinition)
+    {
+        var declared = sourceDefinition._namedFragments;
+        if (declared is not { Count: > 0 } || targetDefinition._fields is not { Count: > 0 }) return;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<string>();
+        foreach (var field in targetDefinition._fields.Values)
+        {
+            CollectSpreadNames(field, seen, pending);
+        }
+
+        while (pending.Count > 0)
+        {
+            var name = pending.Pop();
+            if (!declared.TryGetValue(name, out var fragment)) continue;
+
+            var clone = fragment.DeepClone();
+            targetDefinition._namedFragments ??= new Dictionary<string, NamedFragmentDefinition>(StringComparer.Ordinal);
+            targetDefinition._namedFragments[name] = clone;
+
+            if (clone._fields is { Count: > 0 })
+            {
+                ExtractVariablesFromFields(clone._fields, targetDefinition.Variables);
+            }
+            CollectFragmentBodySpreadNames(clone._fields, clone._fragments, clone._spreadFragments, seen, pending);
+        }
+    }
+
+    private static void CollectSpreadNames(FieldDefinition field, HashSet<string> seen, Stack<string> pending)
+        => CollectFragmentBodySpreadNames(field._children, field._fragments, field._spreadFragments, seen, pending);
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "HashSet.Add is the filter AND the side effect — a Where(seen.Add) would hide the mutation; plain loops also avoid enumerator allocations on the preserve path.")]
+    private static void CollectFragmentBodySpreadNames(
+        FieldChildren? fields,
+        Dictionary<string, InlineFragmentDefinition>? fragments,
+        List<string>? spreads,
+        HashSet<string> seen,
+        Stack<string> pending)
+    {
+        if (spreads is { Count: > 0 })
+        {
+            foreach (var name in spreads)
+            {
+                if (seen.Add(name)) pending.Push(name);
+            }
+        }
+
+        if (fragments is { Count: > 0 })
+        {
+            foreach (var fragment in fragments.Values)
+            {
+                CollectFragmentBodySpreadNames(fragment._fields, fragment._fragments, fragment._spreadFragments, seen, pending);
+            }
+        }
+
+        if (fields is { Count: > 0 })
+        {
+            foreach (var child in fields.AsSpan())
+            {
+                CollectSpreadNames(child, seen, pending);
+            }
+        }
     }
 
     private static void ExtractMatchingFields(Dictionary<string, FieldDefinition> sourceFields,
@@ -151,11 +229,14 @@ internal static class PreserveExtensions
     {
         // FieldDefinition._type is always set by every constructor; the null-coalesce was
         // a defensive guard for the rare `with { Type = null }` path and never fires here.
+        // Arguments are copied, not referenced — intermediate path nodes must be isolated
+        // from the source the same way leaf subtrees are (Where on a preserved intermediate
+        // would otherwise mutate the source's argument dictionary).
         var cloned = new FieldDefinition(
             source.Name,
             source._type!,
             source.Alias,
-            source._arguments)
+            source._arguments is null ? null : new SortedDictionary<string, object?>(source._arguments, StringComparer.OrdinalIgnoreCase))
         {
             Path = source.Path
         };
