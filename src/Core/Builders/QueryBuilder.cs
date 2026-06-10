@@ -176,10 +176,12 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, string[] subFields, Dictionary<string, object?>? metadata = null)
     {
+        // Signature declares subFields non-nullable — fail fast like the previous eager
+        // Select-based implementation did, instead of silently adding a bare leaf.
+        ArgumentNullException.ThrowIfNull(subFields);
         SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
             ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
             : null;
-        // Signature declares subFields non-nullable; the public API contract requires non-null.
         return AddFieldCore(field, sortedArgs, ToFieldDefinitions(subFields), metadata);
     }
 
@@ -322,28 +324,8 @@ public sealed class QueryBuilder
         ArgumentNullException.ThrowIfNull(build);
 
         var fragment = _definition.GetOrAddNamedFragment(name, onType);
-
-        // Same synthetic-field trick OnType uses for inline fragments: build a temporary
-        // FieldDefinition whose `_children` aliases the fragment's field store, so the lambda's
-        // AddField calls write straight into the fragment without an extra copy step. The
-        // `_fragments` and `_spreadFragments` fields are aliased the same way for nested
-        // inline fragments and fragment-spread-inside-named-fragment cases.
-        var fragmentSurface = new FieldDefinition(
-            name: $"__named_fragment_{name}",
-            type: Constants.DefaultFieldType)
-        {
-            _children = fragment.GetOrCreateFieldsStore(),
-            _fragments = fragment._fragments,
-            _spreadFragments = fragment._spreadFragments,
-        };
-
-        var inner = FieldBuilder.Create(fragmentSurface);
-        build(inner);
-
-        // Reflect any newly-created nested-fragment / spread-fragment maps back onto the named
-        // fragment so subsequent AddFragment calls on the same name pick them up.
-        fragment._fragments = fragmentSurface._fragments;
-        fragment._spreadFragments = fragmentSurface._spreadFragments;
+        FieldBuilder.PopulateFragmentSurface($"__named_fragment_{name}", fragment.GetOrCreateFieldsStore(),
+            ref fragment._fragments, ref fragment._spreadFragments, build);
 
         return this;
     }
@@ -518,8 +500,8 @@ public sealed class QueryBuilder
 
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Hot path on every Include call — a foreach with early return avoids the enumerator allocation that LINQ Any/Where would incur.")]
-    private static bool AnyFieldHasFragment(IEnumerable<FieldDefinition> fields)
+        Justification = "Runs on every Include call — the concrete ValueCollection keeps the struct enumerator (an IEnumerable-typed loop or LINQ would box it) and the early return skips the rest of the walk.")]
+    private static bool AnyFieldHasFragment(Dictionary<string, FieldDefinition>.ValueCollection fields)
     {
         foreach (var field in fields)
         {
