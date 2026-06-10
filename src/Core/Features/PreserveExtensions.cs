@@ -56,7 +56,11 @@ internal static class PreserveExtensions
 
         if (isLeafPath)
         {
-            targetFields[fieldKey] = fieldDef;
+            // Deep-clone the preserved subtree: storing the source reference would alias the
+            // two builders, letting later mutations of either leak into the other (the
+            // role-based filtering scenario hands the preserved query out while the source
+            // keeps evolving).
+            targetFields[fieldKey] = fieldDef.DeepClone();
             return;
         }
 
@@ -74,7 +78,9 @@ internal static class PreserveExtensions
 
         if (isLeafPath)
         {
-            targetFields.Set(fieldKey, fieldDef);
+            // Same isolation rule as the Dictionary variant above: the preserved tree must
+            // never share FieldDefinition instances with the source.
+            targetFields.Set(fieldKey, fieldDef.DeepClone());
             return;
         }
 
