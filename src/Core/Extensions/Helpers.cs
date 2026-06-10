@@ -263,7 +263,10 @@ internal static class Helpers
         var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var kvp in dict)
         {
-            sorted[kvp.Key] = SortArgumentValue(kvp.Value);
+            // Add (not the indexer): keys colliding under OrdinalIgnoreCase must throw, not
+            // silently last-win — otherwise the rendered query carries different data than
+            // the caller supplied.
+            sorted.Add(kvp.Key, SortArgumentValue(kvp.Value));
         }
         return sorted;
     }
@@ -291,7 +294,9 @@ internal static class Helpers
         var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var property in obj.GetType().GetProperties())
         {
-            sorted[property.Name] = SortArgumentValue(property.GetValue(obj));
+            // Add (not the indexer): property names colliding under OrdinalIgnoreCase must
+            // throw — reflection order is unspecified, so last-wins would be nondeterministic.
+            sorted.Add(property.Name, SortArgumentValue(property.GetValue(obj)));
         }
         return sorted;
     }
