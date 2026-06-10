@@ -106,9 +106,10 @@ internal static class FieldDefinitionExtensions
 
     /// <summary>
     /// Deep-clones <paramref name="source"/> producing a new <see cref="FieldDefinition"/> that
-    /// shares no mutable state with the original. Used by <see cref="QueryMerger"/> when adding an
-    /// incoming field reference into the target dictionary, so subsequent in-place merges into the
-    /// target do not leak back into the source builder.
+    /// shares no mutable state with the original. This is THE clone boundary — it must copy
+    /// every per-field store (children, arguments, metadata, inline fragments, spreads); any
+    /// store it misses aliases the clone to the source and silently drops state on isolation
+    /// paths (Preserve, Include). Used by <see cref="QueryMerger"/> and the preservation pipeline.
     /// </summary>
     internal static FieldDefinition DeepClone(this FieldDefinition source)
     {
@@ -134,7 +135,60 @@ internal static class FieldDefinitionExtensions
                 clone._children.Append(child.DeepClone());
         }
 
+        clone._fragments = DeepCloneFragments(source._fragments);
+        clone._spreadFragments = source._spreadFragments is { Count: > 0 }
+            ? new List<string>(source._spreadFragments)
+            : null;
+
         return clone;
+    }
+
+    internal static InlineFragmentDefinition DeepClone(this InlineFragmentDefinition source)
+    {
+        var clone = new InlineFragmentDefinition(source.TypeName);
+        CloneFragmentBody(source._fields, source._fragments, source._spreadFragments,
+            out clone._fields, out clone._fragments, out clone._spreadFragments);
+        return clone;
+    }
+
+    internal static NamedFragmentDefinition DeepClone(this NamedFragmentDefinition source)
+    {
+        var clone = new NamedFragmentDefinition(source.Name, source.OnType);
+        CloneFragmentBody(source._fields, source._fragments, source._spreadFragments,
+            out clone._fields, out clone._fragments, out clone._spreadFragments);
+        return clone;
+    }
+
+    internal static Dictionary<string, InlineFragmentDefinition>? DeepCloneFragments(Dictionary<string, InlineFragmentDefinition>? fragments)
+    {
+        if (fragments is not { Count: > 0 }) return null;
+
+        var clone = new Dictionary<string, InlineFragmentDefinition>(fragments.Count, StringComparer.Ordinal);
+        foreach (var (typeName, fragment) in fragments)
+        {
+            clone[typeName] = fragment.DeepClone();
+        }
+        return clone;
+    }
+
+    private static void CloneFragmentBody(
+        FieldChildren? sourceFields,
+        Dictionary<string, InlineFragmentDefinition>? sourceFragments,
+        List<string>? sourceSpreads,
+        out FieldChildren? fields,
+        out Dictionary<string, InlineFragmentDefinition>? fragments,
+        out List<string>? spreads)
+    {
+        fields = null;
+        if (sourceFields is { Count: > 0 })
+        {
+            fields = new FieldChildren(sourceFields.Count);
+            foreach (var child in sourceFields.AsSpan())
+                fields.Append(child.DeepClone());
+        }
+
+        fragments = DeepCloneFragments(sourceFragments);
+        spreads = sourceSpreads is { Count: > 0 } ? new List<string>(sourceSpreads) : null;
     }
 
     /// <summary>
