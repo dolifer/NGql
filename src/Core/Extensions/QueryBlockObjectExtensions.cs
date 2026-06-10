@@ -27,16 +27,31 @@ internal static class QueryBlockObjectExtensions
         }
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Render hot path — a plain foreach avoids the closure + enumerator allocations of Where on every block render.")]
     private static void AddMissingRootVariables(QueryBlock queryBlock, SortedDictionary<string, object> arguments)
     {
-        foreach (var variable in queryBlock.Variables.Where(v => !ContainsVariableNamed(arguments, v.Name)))
+        foreach (var variable in queryBlock.Variables)
         {
-            arguments[variable.Name] = variable;
+            if (!ContainsVariableNamed(arguments, variable.Name))
+            {
+                arguments[variable.Name] = variable;
+            }
         }
     }
 
     private static bool ContainsVariableNamed(SortedDictionary<string, object> arguments, string name)
-        => arguments.Values.Any(v => v is Variable existing && existing.Name == name);
+    {
+        foreach (var value in arguments.Values)
+        {
+            if (value is Variable existing && existing.Name == name)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.

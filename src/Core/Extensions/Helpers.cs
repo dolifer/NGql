@@ -253,16 +253,31 @@ internal static class Helpers
     private static object? SortNonPrimitive(object value) => value switch
     {
         IDictionary<string, object?> dict => SortDictionary(dict),
-        Array arr => arr.Cast<object>().Select(SortArgumentValue).ToArray(),
+        Array arr => SortArrayItems(arr),
         IEnumerable<object> list when !value.GetType().IsArray => SortListItems(list),
         _ => IsDecomposable(value) ? DecomposeToDictionary(value) : value,
     };
 
     private static SortedDictionary<string, object?> SortDictionary(IDictionary<string, object?> dict)
-        => new(dict.ToDictionary(kvp => kvp.Key,
-                                  elementSelector: kvp => SortArgumentValue(kvp.Value),
-                                  comparer: StringComparer.OrdinalIgnoreCase),
-               comparer: StringComparer.OrdinalIgnoreCase);
+    {
+        var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in dict)
+        {
+            sorted[kvp.Key] = SortArgumentValue(kvp.Value);
+        }
+        return sorted;
+    }
+
+    private static object?[] SortArrayItems(Array arr)
+    {
+        var result = new object?[arr.Length];
+        var i = 0;
+        foreach (var item in arr)
+        {
+            result[i++] = SortArgumentValue(item);
+        }
+        return result;
+    }
 
     /// <summary>True for arbitrary CLR objects whose properties should be reflected into a
     /// sorted dictionary. Excludes types we already format/serialize specially.</summary>
@@ -270,12 +285,16 @@ internal static class Helpers
         => obj is not string and not Variable and not QueryBlock and not IDictionary and not IList;
 
     private static SortedDictionary<string, object?> DecomposeToDictionary(object obj)
-        => new(obj.GetType().GetProperties()
-                  .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-                  .ToDictionary(p => p.Name,
-                                p => SortArgumentValue(p.GetValue(obj)),
-                                comparer: StringComparer.OrdinalIgnoreCase),
-               comparer: StringComparer.OrdinalIgnoreCase);
+    {
+        // SortedDictionary orders by its comparer on insert — pre-sorting the properties or
+        // staging them in an intermediate Dictionary is wasted work.
+        var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in obj.GetType().GetProperties())
+        {
+            sorted[property.Name] = SortArgumentValue(property.GetValue(obj));
+        }
+        return sorted;
+    }
 
     /// <summary>
     /// Efficiently sorts list items in a single pass without double allocations.

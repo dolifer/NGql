@@ -138,7 +138,7 @@ public sealed class QueryBuilder
     /// <returns>Instance of <see cref="QueryBuilder"/>.</returns>
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, string[]? subFields, Dictionary<string, object?>? metadata = null)
-        => AddFieldCore(field, null, subFields?.Select(subField => new FieldDefinition(subField)), metadata);
+        => AddFieldCore(field, null, ToFieldDefinitions(subFields), metadata);
 
     /// <summary>
     ///     Adds a field to the query.
@@ -180,7 +180,7 @@ public sealed class QueryBuilder
             ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
             : null;
         // Signature declares subFields non-nullable; the public API contract requires non-null.
-        return AddFieldCore(field, sortedArgs, subFields.Select(subField => new FieldDefinition(subField)), metadata);
+        return AddFieldCore(field, sortedArgs, ToFieldDefinitions(subFields), metadata);
     }
 
     /// <summary>
@@ -435,12 +435,12 @@ public sealed class QueryBuilder
     /// <param name="subFields">Optional array of sub-field definitions</param>
     /// <param name="metadata">Optional metadata dictionary</param>
     /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, IEnumerable<FieldDefinition>? subFields, Dictionary<string, object?>? metadata)
+    private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata)
     {
         if (string.IsNullOrWhiteSpace(field))
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
 
-        var hasSubFields = subFields?.Any() == true;
+        var hasSubFields = subFields is { Length: > 0 };
 
         if (arguments is { Count: > 0 })
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
@@ -463,6 +463,20 @@ public sealed class QueryBuilder
         // Phase 3: Invalidate caches after field addition
         InvalidateLookupCaches();
         return this;
+    }
+
+    /// <summary>
+    /// Materializes sub-field names into definitions once. A deferred Select here would be
+    /// enumerated twice by AddFieldCore (emptiness check + add loop), constructing every
+    /// <see cref="FieldDefinition"/> twice.
+    /// </summary>
+    private static FieldDefinition[]? ToFieldDefinitions(string[]? subFields)
+    {
+        if (subFields is null) return null;
+        var definitions = new FieldDefinition[subFields.Length];
+        for (var i = 0; i < subFields.Length; i++)
+            definitions[i] = new FieldDefinition(subFields[i]);
+        return definitions;
     }
 
     /// <summary>

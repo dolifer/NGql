@@ -74,6 +74,66 @@ public class QueryTests
 }");
     }
 
+    [Fact]
+    public void Select_StringsOutOfOrder_RendersSorted()
+    {
+        // arrange
+        var query = new Query("name");
+
+        // act — "id" arrives after "name" and must be inserted before it
+        query.Select("name");
+        query.Select("id");
+
+        // assert
+        string queryText = query;
+        queryText.Should().Be(@"query name{
+    id
+    name
+}");
+    }
+
+    [Fact]
+    public void Select_StringAfterSubQuery_SortsAmongStrings()
+    {
+        // arrange
+        var query = new Query("mixed");
+        query.Select(new Query("zeta").Select("id"));
+
+        // act
+        query.Select("alpha");
+
+        // assert
+        string queryText = query;
+        queryText.Should().Be(@"query mixed{
+    alpha
+    zeta{
+        id
+    }
+}");
+    }
+
+    [Fact]
+    public void Select_SubQueriesWithSameName_PreservesInsertionOrder()
+    {
+        // arrange
+        var query = new Query("dups");
+
+        // act
+        query.Select(new Query("user").Select("id"));
+        query.Select(new Query("user").Select("name"));
+
+        // assert
+        string queryText = query;
+        queryText.Should().Be(@"query dups{
+    user{
+        id
+    }
+    user{
+        name
+    }
+}");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]

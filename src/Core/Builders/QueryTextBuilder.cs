@@ -92,29 +92,7 @@ internal sealed class QueryTextBuilder
         // Clear only at the top-level call; recursive sub-query calls (indent > 0) accumulate.
         if (indent == 0) _stringBuilder.Clear();
 
-        var pad = GetPadding(indent);
-        var prevPad = pad;
-
-        if (!string.IsNullOrWhiteSpace(queryBlock.Alias) && indent != 0)
-        {
-            _stringBuilder.Append(pad);
-            _stringBuilder.Append(queryBlock.Alias);
-            _stringBuilder.Append(':');
-            pad = "";
-        }
-
-        _stringBuilder.Append(pad);
-        if (!string.IsNullOrWhiteSpace(prefix))
-        {
-            _stringBuilder.Append(prefix).Append(' ');
-        }
-
-        _stringBuilder.Append(queryBlock.Name);
-
-        AddArguments(queryBlock, indent == 0);
-        indent += IndentSize;
-
-        AddFields(queryBlock, prevPad, indent);
+        BuildBlock(queryBlock, indent, prefix);
         return _stringBuilder.ToString();
     }
 
@@ -158,6 +136,38 @@ internal sealed class QueryTextBuilder
         }
 
         return _stringBuilder.ToString();
+    }
+
+    /// <summary>
+    /// Appends one query block (and, via <see cref="AddFields"/>, its sub-blocks) to the shared
+    /// builder without materializing a string. Only the top-level <see cref="Build(QueryBlock, int, string?)"/>
+    /// call pays for ToString.
+    /// </summary>
+    private void BuildBlock(QueryBlock queryBlock, int indent, string? prefix = null)
+    {
+        var pad = GetPadding(indent);
+        var prevPad = pad;
+
+        if (!string.IsNullOrWhiteSpace(queryBlock.Alias) && indent != 0)
+        {
+            _stringBuilder.Append(pad);
+            _stringBuilder.Append(queryBlock.Alias);
+            _stringBuilder.Append(':');
+            pad = "";
+        }
+
+        _stringBuilder.Append(pad);
+        if (!string.IsNullOrWhiteSpace(prefix))
+        {
+            _stringBuilder.Append(prefix).Append(' ');
+        }
+
+        _stringBuilder.Append(queryBlock.Name);
+
+        AddArguments(queryBlock, indent == 0);
+        indent += IndentSize;
+
+        AddFields(queryBlock, prevPad, indent);
     }
 
     private void BuildFieldDefinitions(FieldChildren children, int indent)
@@ -475,6 +485,15 @@ internal sealed class QueryTextBuilder
         builder.Append('}');
     }
 
+    // Stable sort key for QueryBlock field lists: effective name first, original index as the
+    // tiebreaker so equal names keep insertion order (matching LINQ OrderBy's stability).
+    private static readonly Comparer<(string Key, int Index, object Item)> BlockFieldComparer =
+        Comparer<(string Key, int Index, object Item)>.Create(static (a, b) =>
+        {
+            var nameComparison = StringComparer.OrdinalIgnoreCase.Compare(a.Key, b.Key);
+            return nameComparison != 0 ? nameComparison : a.Index.CompareTo(b.Index);
+        });
+
     private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
     {
         if (queryBlock.IsEmpty)
@@ -485,26 +504,42 @@ internal sealed class QueryTextBuilder
         _stringBuilder.AppendLine("{");
         var padding = GetPadding(indent);
 
-        // Sort fields by their effective name. QueryBlock.HandleAddField rejects everything
-        // except string and QueryBlock at insert time, so a single ternary covers every
-        // reachable case without a switch default.
-        var orderedFields = queryBlock.FieldsList
-            .OrderBy(field => field is QueryBlock block ? (block.Alias ?? block.Name) : (string)field,
-                StringComparer.OrdinalIgnoreCase);
-
-        foreach (var field in orderedFields)
+        // Sort fields by their effective name into a pooled buffer. QueryBlock.HandleAddField
+        // rejects everything except string and QueryBlock at insert time, so a single ternary
+        // covers every reachable case without a switch default.
+        var fields = queryBlock.FieldsList;
+        var count = fields.Count;
+        var entries = ArrayPool<(string Key, int Index, object Item)>.Shared.Rent(count);
+        try
         {
-            switch (field)
+            for (int i = 0; i < count; i++)
             {
-                case string strValue:
-                    _stringBuilder.Append(padding);
-                    _stringBuilder.AppendLine(strValue);
-                    break;
-                case QueryBlock subQuery:
-                    this.Build(subQuery, indent); 
-                    _stringBuilder.AppendLine();
-                    break;
+                var field = fields[i];
+                var key = field is QueryBlock block ? (block.Alias ?? block.Name) : (string)field;
+                entries[i] = (key, i, field);
             }
+
+            Array.Sort(entries, 0, count, BlockFieldComparer);
+
+            for (int i = 0; i < count; i++)
+            {
+                switch (entries[i].Item)
+                {
+                    case string strValue:
+                        _stringBuilder.Append(padding);
+                        _stringBuilder.AppendLine(strValue);
+                        break;
+                    case QueryBlock subQuery:
+                        BuildBlock(subQuery, indent);
+                        _stringBuilder.AppendLine();
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            Array.Clear(entries, 0, count);
+            ArrayPool<(string Key, int Index, object Item)>.Shared.Return(entries, clearArray: false);
         }
 
         _stringBuilder.Append(prevPad);
@@ -513,12 +548,16 @@ internal sealed class QueryTextBuilder
 
     private void AddArguments(QueryBlock queryBlock, bool isRootElement)
     {
-        var arguments = queryBlock.GetArguments(isRootElement);
-
-        if (arguments.Count == 0)
+        // GetArguments allocates a fresh SortedDictionary; skip it entirely when nothing can
+        // render — no explicit arguments, and no root variables that would be injected.
+        // Whenever it IS called, the result is non-empty: explicit arguments are copied over,
+        // and root variables are injected for any names not already present.
+        if (queryBlock.Arguments.Count == 0 && (!isRootElement || queryBlock.Variables.Count == 0))
         {
             return;
         }
+
+        var arguments = queryBlock.GetArguments(isRootElement);
 
         _stringBuilder.Append('(');
 

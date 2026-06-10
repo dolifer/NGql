@@ -16,6 +16,19 @@ namespace NGql.Core.Tests.Builders;
 public class FieldFactoryPathHandlingTests
 {
     [Fact]
+    public void QueryBuilder_AddField_SegmentWithMultipleColons_TreatsWholeSegmentAsName()
+    {
+        // Arrange & Act — three colon-separated parts is not alias:name, so the whole
+        // segment is kept verbatim as the field name (NGql is schemaless).
+        var query = QueryBuilder.CreateDefaultBuilder("T").AddField("a:b:c");
+
+        // Assert
+        query.ToString().Should().Be(@"query T{
+    a:b:c
+}");
+    }
+
+    [Fact]
     public void FieldFactory_GetOrAddField_SimpleFieldPath_Works()
     {
         // Arrange
