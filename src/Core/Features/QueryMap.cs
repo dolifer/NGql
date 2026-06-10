@@ -114,6 +114,9 @@ internal sealed class QueryMap
         perRoot[nodePath] = computedPath;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Runs on every GetPathTo cache miss — a plain foreach over Dictionary.Values uses the struct enumerator and avoids the FirstOrDefault closure + interface enumerator allocations.")]
     private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)
     {
         if (queryDefinition.Fields.TryGetValue(rootPath, out var field))
@@ -121,9 +124,16 @@ internal sealed class QueryMap
             return field;
         }
 
-        return queryDefinition.Fields.Values.FirstOrDefault(f =>
-            string.Equals(f.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(f.Name, rootPath, StringComparison.OrdinalIgnoreCase));
+        foreach (var candidate in queryDefinition.Fields.Values)
+        {
+            if (string.Equals(candidate.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(candidate.Name, rootPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private static string[] BuildPathToNode(FieldDefinition rootField, string nodePath)
