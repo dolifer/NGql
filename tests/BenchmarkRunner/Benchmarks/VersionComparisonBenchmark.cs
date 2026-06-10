@@ -4,6 +4,7 @@ using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Jobs;
+using NGql.Core;
 using NGql.Core.Builders;
 
 namespace Benchmarks.Benchmarks;
@@ -163,6 +164,25 @@ public class VersionComparisonBenchmark
             .ToString();
     }
     
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(30)]
+    public string NestedClassicQuery(int depth)
+    {
+        // Classic (Query/QueryBlock) API with deep sub-query nesting — exercises the
+        // QueryTextBuilder.Build recursion and the string-field insert path.
+        var root = new Query("root");
+        var current = root;
+        for (int i = 0; i < depth; i++)
+        {
+            var child = new Query("level" + i);
+            child.Select("alpha", "beta", "gamma");
+            current.Select(child);
+            current = child;
+        }
+        return root.ToString();
+    }
+
     [Benchmark]
     [Arguments(100)]
     [Arguments(500)]
