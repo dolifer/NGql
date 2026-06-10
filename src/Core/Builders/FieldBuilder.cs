@@ -609,30 +609,45 @@ public sealed class FieldBuilder
         ArgumentNullException.ThrowIfNull(action);
 
         var fragment = _fieldDefinition.GetOrAddInlineFragment(typeName);
-
-        // Build a synthetic field whose `_children` aliases the fragment's field store, so the
-        // user's lambda body (which adds fields via the standard FieldBuilder.AddField overloads)
-        // writes straight into the fragment without an extra copy step.
-        var fragmentSurface = new FieldDefinition(
-            name: $"__inline_fragment_{typeName}",
-            type: Constants.DefaultFieldType)
-        {
-            _children = fragment.GetOrCreateFieldsStore(),
-            _fragments = fragment._fragments,
-            _spreadFragments = fragment._spreadFragments,
-        };
-
-        var inner = new FieldBuilder(fragmentSurface);
-        action(inner);
-
-        // Reflect any nested-fragment / spread-fragment maps the lambda created on the synthetic
-        // field back onto the inline fragment, so subsequent OnType calls on the same fragment
-        // pick them up. Maps that the lambda mutated in-place don't need this because both sides
-        // already reference the same underlying object.
-        fragment._fragments = fragmentSurface._fragments;
-        fragment._spreadFragments = fragmentSurface._spreadFragments;
+        PopulateFragmentSurface($"__inline_fragment_{typeName}", fragment.GetOrCreateFieldsStore(),
+            ref fragment._fragments, ref fragment._spreadFragments, action);
 
         return this;
+    }
+
+    /// <summary>
+    /// Runs a user selection-set lambda against a synthetic field whose stores alias
+    /// <paramref name="fieldsStore"/> and the given fragment maps, then writes the lambda's
+    /// final maps back through the ref parameters. Shared by <see cref="OnType"/> and
+    /// <see cref="QueryBuilder.AddFragment"/> so the aliasing rules live in one place.
+    /// </summary>
+    /// <remarks>
+    /// The final state is read from the builder's CURRENT field definition, not the original
+    /// surface: fluent calls like <see cref="Where"/>/<see cref="WithAlias"/>/<see cref="WithType"/>
+    /// replace the definition with a <c>with</c> record copy, so maps first created after such
+    /// a call exist only on the copy. The <c>_children</c> store needs no reflect-back — it is
+    /// created non-null up front and `with` copies carry the same reference.
+    /// </remarks>
+    internal static void PopulateFragmentSurface(
+        string surfaceName,
+        FieldChildren fieldsStore,
+        ref Dictionary<string, InlineFragmentDefinition>? fragments,
+        ref List<string>? spreadFragments,
+        Action<FieldBuilder> action)
+    {
+        var surface = new FieldDefinition(surfaceName, Constants.DefaultFieldType)
+        {
+            _children = fieldsStore,
+            _fragments = fragments,
+            _spreadFragments = spreadFragments,
+        };
+
+        var builder = new FieldBuilder(surface);
+        action(builder);
+
+        var final = builder._fieldDefinition;
+        fragments = final._fragments;
+        spreadFragments = final._spreadFragments;
     }
 
     /// <summary>
