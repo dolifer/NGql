@@ -93,7 +93,7 @@ public sealed record FieldDefinition
     private static FieldChildren? AsChildren(Dictionary<string, FieldDefinition>? fields)
     {
         if (fields is null || fields.Count == 0) return null;
-        var children = new FieldChildren();
+        var children = new FieldChildren(fields.Count);
         foreach (var kvp in fields) children.Append(kvp.Value);
         return children;
     }
@@ -189,7 +189,9 @@ public sealed record FieldDefinition
     internal void AddSpreadFragment(string name)
     {
         _spreadFragments ??= new List<string>();
-        if (!_spreadFragments.Contains(name, StringComparer.Ordinal))
+        // List<string>.Contains is ordinal by default; avoids the enumerator allocation of the
+        // LINQ Contains(value, comparer) overload.
+        if (!_spreadFragments.Contains(name))
         {
             _spreadFragments.Add(name);
         }
@@ -212,12 +214,26 @@ public sealed record FieldDefinition
     ///
     /// Not used during query text generation but can be useful for documentation or introspection purposes.
     /// </summary>
+    /// <remarks>
+    /// Reading this property materializes (and permanently attaches) an empty dictionary on
+    /// fields that have no metadata, so the returned instance is always safe to mutate. When
+    /// walking large trees just to test for metadata, check <see cref="HasMetadata"/> first —
+    /// it allocates nothing.
+    /// </remarks>
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?> Metadata
     {
         get => _metadata ??= [];
         set => _metadata = value;
     }
+
+    /// <summary>
+    /// Gets a value indicating whether this field carries any metadata. Unlike reading
+    /// <see cref="Metadata"/>, this check does not allocate or attach an empty dictionary
+    /// to metadata-less fields — prefer it as the guard when scanning field trees.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasMetadata => _metadata is { Count: > 0 };
 
     /// <summary>
     /// Gets a value indicating whether this field type is an array.
@@ -284,7 +300,17 @@ public sealed record FieldDefinition
     // The hash captures identity at evaluation time; callers do not stash hashes across mutations.
 #pragma warning disable S2328
     public override int GetHashCode()
-        => HashCode.Combine(Name, Path, _type?.ToLowerInvariant(), _alias?.ToLowerInvariant(), IsNeverMerge);
+    {
+        // Comparer-based hashing for the case-insensitive members — equal under
+        // OrdinalIgnoreCase implies equal hash, without the ToLowerInvariant string allocations.
+        var hash = new HashCode();
+        hash.Add(Name);
+        hash.Add(Path);
+        hash.Add(_type, StringComparer.OrdinalIgnoreCase);
+        hash.Add(_alias, StringComparer.OrdinalIgnoreCase);
+        hash.Add(IsNeverMerge);
+        return hash.ToHashCode();
+    }
 #pragma warning restore S2328
 
     public override string ToString()

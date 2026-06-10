@@ -25,6 +25,17 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     private const int InitialCapacity = 4;
     private const int IndexThreshold = 16;
 
+    internal FieldChildren()
+    {
+    }
+
+    /// <summary>
+    /// Creates the collection pre-sized for a known child count, avoiding the grow-and-copy
+    /// cycles of the default 4-slot start. Used by clone paths where the count is known upfront.
+    /// </summary>
+    internal FieldChildren(int capacity)
+        => _items = new FieldDefinition[Math.Max(capacity, InitialCapacity)];
+
     /// <summary>Backing storage. Written only under <see cref="_lock"/>; readers do a single volatile load.</summary>
     private FieldDefinition[]? _items;
     /// <summary>Number of valid entries in <see cref="_items"/>. Volatile-stored last on writes

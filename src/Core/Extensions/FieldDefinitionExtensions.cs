@@ -129,7 +129,7 @@ internal static class FieldDefinitionExtensions
 
         if (source._children is { Count: > 0 })
         {
-            clone._children = new FieldChildren();
+            clone._children = new FieldChildren(source._children.Count);
             foreach (var child in source._children.AsSpan())
                 clone._children.Append(child.DeepClone());
         }
