@@ -238,25 +238,14 @@ internal sealed class QueryTextBuilder
             // A field gets a `{ … }` block when it has child fields, inline fragments, or
             // named-fragment spreads. Plain leaf fields (none of the above) render as a bare
             // name + newline.
-            var hasChildren = field._children is { Count: > 0 };
-            var hasFragments = field._fragments is { Count: > 0 };
-            var hasSpreads = field._spreadFragments is { Count: > 0 };
+            var hasSelections = field._children is { Count: > 0 }
+                || field._fragments is { Count: > 0 }
+                || field._spreadFragments is { Count: > 0 };
 
-            if (hasChildren || hasFragments || hasSpreads)
+            if (hasSelections)
             {
                 _stringBuilder.AppendLine("{");
-                if (hasChildren)
-                {
-                    BuildFieldDefinitions(field._children!, indent + IndentSize);
-                }
-                if (hasFragments)
-                {
-                    BuildInlineFragments(field._fragments!, indent + IndentSize);
-                }
-                if (hasSpreads)
-                {
-                    BuildSpreadFragments(field._spreadFragments!, indent + IndentSize);
-                }
+                BuildSelectionSetBody(field._children, field._fragments, field._spreadFragments, indent + IndentSize);
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
             }
@@ -268,6 +257,32 @@ internal sealed class QueryTextBuilder
     }
 
     /// <summary>
+    /// Renders one selection-set body — plain fields, then inline fragments, then named-fragment
+    /// spreads. Single shared implementation for the three nesting contexts (regular fields,
+    /// inline fragments, named-fragment definitions) so the member order and Count guards live
+    /// in exactly one place.
+    /// </summary>
+    private void BuildSelectionSetBody(
+        FieldChildren? fields,
+        Dictionary<string, InlineFragmentDefinition>? fragments,
+        List<string>? spreadFragments,
+        int indent)
+    {
+        if (fields is { Count: > 0 })
+        {
+            BuildFieldDefinitions(fields, indent);
+        }
+        if (fragments is { Count: > 0 })
+        {
+            BuildInlineFragments(fragments, indent);
+        }
+        if (spreadFragments is { Count: > 0 })
+        {
+            BuildSpreadFragments(spreadFragments, indent);
+        }
+    }
+
+    /// <summary>
     /// Renders the inline fragments attached to a field. Each fragment is written as
     /// <c>... on TypeName { … }</c> with its own selection set rendered recursively.
     /// Fragments are sorted alphabetically by type name (case-sensitive — GraphQL type names
@@ -275,38 +290,33 @@ internal sealed class QueryTextBuilder
     /// </summary>
     private void BuildInlineFragments(Dictionary<string, InlineFragmentDefinition> fragments, int indent)
     {
-        if (fragments.Count == 0) return;
-
-        // Snapshot type names into a pooled buffer and sort, mirroring how fields are sorted
-        // before rendering — keeps the output stable regardless of insertion order.
-        var typeNames = ArrayPool<string>.Shared.Rent(fragments.Count);
+        // Snapshot keys AND values into paired pooled buffers and sort them together — keeps
+        // the output stable regardless of insertion order without re-looking each fragment up
+        // by key after the sort.
+        var count = fragments.Count;
+        var typeNames = ArrayPool<string>.Shared.Rent(count);
+        var definitions = ArrayPool<InlineFragmentDefinition>.Shared.Rent(count);
         try
         {
             int i = 0;
-            foreach (var key in fragments.Keys) typeNames[i++] = key;
-            Array.Sort(typeNames, 0, fragments.Count, StringComparer.Ordinal);
+            foreach (var (key, value) in fragments)
+            {
+                typeNames[i] = key;
+                definitions[i] = value;
+                i++;
+            }
+            Array.Sort(typeNames, definitions, 0, count, StringComparer.Ordinal);
 
             var padding = GetPadding(indent);
-            for (int j = 0; j < fragments.Count; j++)
+            for (int j = 0; j < count; j++)
             {
-                var fragment = fragments[typeNames[j]];
+                var fragment = definitions[j];
                 _stringBuilder.Append(padding);
                 _stringBuilder.Append("... on ");
                 _stringBuilder.Append(fragment.TypeName);
                 _stringBuilder.AppendLine("{");
 
-                if (fragment._fields is { Count: > 0 })
-                {
-                    BuildFieldDefinitions(fragment._fields, indent + IndentSize);
-                }
-                if (fragment._fragments is { Count: > 0 })
-                {
-                    BuildInlineFragments(fragment._fragments, indent + IndentSize);
-                }
-                if (fragment._spreadFragments is { Count: > 0 })
-                {
-                    BuildSpreadFragments(fragment._spreadFragments, indent + IndentSize);
-                }
+                BuildSelectionSetBody(fragment._fields, fragment._fragments, fragment._spreadFragments, indent + IndentSize);
 
                 _stringBuilder.Append(padding);
                 _stringBuilder.AppendLine("}");
@@ -314,8 +324,10 @@ internal sealed class QueryTextBuilder
         }
         finally
         {
-            Array.Clear(typeNames, 0, fragments.Count);
+            Array.Clear(typeNames, 0, count);
+            Array.Clear(definitions, 0, count);
             ArrayPool<string>.Shared.Return(typeNames, clearArray: false);
+            ArrayPool<InlineFragmentDefinition>.Shared.Return(definitions, clearArray: false);
         }
     }
 
@@ -344,18 +356,23 @@ internal sealed class QueryTextBuilder
     /// </summary>
     private void BuildNamedFragmentDefinitions(Dictionary<string, NamedFragmentDefinition> fragments)
     {
-        if (fragments.Count == 0) return;
-
-        var names = ArrayPool<string>.Shared.Rent(fragments.Count);
+        var count = fragments.Count;
+        var names = ArrayPool<string>.Shared.Rent(count);
+        var definitions = ArrayPool<NamedFragmentDefinition>.Shared.Rent(count);
         try
         {
             int i = 0;
-            foreach (var key in fragments.Keys) names[i++] = key;
-            Array.Sort(names, 0, fragments.Count, StringComparer.Ordinal);
-
-            for (int j = 0; j < fragments.Count; j++)
+            foreach (var (key, value) in fragments)
             {
-                var fragment = fragments[names[j]];
+                names[i] = key;
+                definitions[i] = value;
+                i++;
+            }
+            Array.Sort(names, definitions, 0, count, StringComparer.Ordinal);
+
+            for (int j = 0; j < count; j++)
+            {
+                var fragment = definitions[j];
                 // First fragment: operation ended with `}` (no trailing newline) — emit a
                 // newline to break onto its own line. Subsequent fragments: previous fragment
                 // already ended with `}\n`, so go straight to `fragment` with no extra blank line.
@@ -369,26 +386,17 @@ internal sealed class QueryTextBuilder
                 _stringBuilder.Append(fragment.OnType);
                 _stringBuilder.AppendLine("{");
 
-                if (fragment._fields is { Count: > 0 })
-                {
-                    BuildFieldDefinitions(fragment._fields, IndentSize);
-                }
-                if (fragment._fragments is { Count: > 0 })
-                {
-                    BuildInlineFragments(fragment._fragments, IndentSize);
-                }
-                if (fragment._spreadFragments is { Count: > 0 })
-                {
-                    BuildSpreadFragments(fragment._spreadFragments, IndentSize);
-                }
+                BuildSelectionSetBody(fragment._fields, fragment._fragments, fragment._spreadFragments, IndentSize);
 
                 _stringBuilder.AppendLine("}");
             }
         }
         finally
         {
-            Array.Clear(names, 0, fragments.Count);
+            Array.Clear(names, 0, count);
+            Array.Clear(definitions, 0, count);
             ArrayPool<string>.Shared.Return(names, clearArray: false);
+            ArrayPool<NamedFragmentDefinition>.Shared.Return(definitions, clearArray: false);
         }
     }
 
