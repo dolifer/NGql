@@ -648,22 +648,11 @@ internal static class FieldFactory
 
         // Parse and remove type information from the segment
         var cleanedPath = Helpers.ParseFieldTypeFromPath(trimmedPart, Constants.DefaultFieldType, out var parsedType);
-        
-        // Parse field name and alias from cleanedPath
-        // Match original behavior: split on ':' and only handle exactly 2 non-empty parts
-        var parts = cleanedPath.ToString().Split(':', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-        
-        ReadOnlySpan<char> name, alias;
-        if (parts.Length == 2)
-        {
-            alias = parts[0].AsSpan();
-            name = parts[1].AsSpan();
-        }
-        else
-        {
-            name = cleanedPath.Trim();
-            alias = ReadOnlySpan<char>.Empty;
-        }
+
+        // Parse field name and alias from cleanedPath: only exactly 2 non-empty trimmed
+        // colon-separated parts mean alias:name. Span-based equivalent of
+        // Split(':', TrimEntries | RemoveEmptyEntries) without the string/array allocations.
+        ParseAliasAndName(cleanedPath, out var name, out var alias);
         
         // Only include parsed type if it's not the default
         var typeToInclude = parsedType.SequenceEqual(Constants.DefaultFieldTypeSpan) ? ReadOnlySpan<char>.Empty : parsedType;
@@ -672,5 +661,49 @@ internal static class FieldFactory
         fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
 
         return segment;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="cleanedPath"/> on ':' into trimmed non-empty parts. Exactly two
+    /// parts mean <c>alias:name</c>; any other count (no colon, empty parts only, or three or
+    /// more parts) falls back to treating the whole segment as the name with no alias.
+    /// </summary>
+    private static void ParseAliasAndName(ReadOnlySpan<char> cleanedPath, out ReadOnlySpan<char> name, out ReadOnlySpan<char> alias)
+    {
+        if (cleanedPath.IndexOf(':') < 0)
+        {
+            name = cleanedPath.Trim();
+            alias = ReadOnlySpan<char>.Empty;
+            return;
+        }
+
+        ReadOnlySpan<char> first = default, second = default;
+        var partCount = 0;
+        var rest = cleanedPath;
+        while (true)
+        {
+            var colonIndex = rest.IndexOf(':');
+            var part = (colonIndex < 0 ? rest : rest[..colonIndex]).Trim();
+            if (!part.IsEmpty)
+            {
+                if (partCount == 0) first = part;
+                else if (partCount == 1) second = part;
+                partCount++;
+                if (partCount > 2) break;
+            }
+            if (colonIndex < 0) break;
+            rest = rest[(colonIndex + 1)..];
+        }
+
+        if (partCount == 2)
+        {
+            alias = first;
+            name = second;
+        }
+        else
+        {
+            name = cleanedPath.Trim();
+            alias = ReadOnlySpan<char>.Empty;
+        }
     }
 }

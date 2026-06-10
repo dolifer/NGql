@@ -164,9 +164,16 @@ public sealed class QueryBlock
     {
         if (string.IsNullOrWhiteSpace(field)) return;
 
-        var insertIndex = _fieldsList.OfType<string>()
-            .TakeWhile(existing => string.Compare(existing, field, StringComparison.OrdinalIgnoreCase) < 0)
-            .Count();
+        // Insert before the first string field that does not sort below `field`; non-string
+        // entries are skipped without advancing the index (same semantics as the previous
+        // OfType<string>().TakeWhile().Count() chain, without the LINQ allocations).
+        var insertIndex = 0;
+        foreach (var existing in _fieldsList)
+        {
+            if (existing is not string existingField) continue;
+            if (string.Compare(existingField, field, StringComparison.OrdinalIgnoreCase) >= 0) break;
+            insertIndex++;
+        }
         _fieldsList.Insert(insertIndex, field);
     }
 

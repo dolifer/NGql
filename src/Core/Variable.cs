@@ -77,7 +77,9 @@ public readonly struct Variable : IComparable, IComparable<Variable>, IEquatable
     public bool Equals(Variable other) => CompareTo(other) == 0;
 
     // Constructor rejects null/whitespace name/type, so neither field is null here.
+    // Comparer-based hashing matches the OrdinalIgnoreCase equality in CompareTo without
+    // allocating uppercase copies of both strings on every call.
     public override int GetHashCode() => HashCode.Combine(
-        Name.ToUpperInvariant(),
-        Type.ToUpperInvariant());
+        StringComparer.OrdinalIgnoreCase.GetHashCode(Name),
+        StringComparer.OrdinalIgnoreCase.GetHashCode(Type));
 }
