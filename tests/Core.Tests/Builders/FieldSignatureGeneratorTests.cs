@@ -9,6 +9,26 @@ namespace NGql.Core.Tests.Builders;
 public class FieldSignatureGeneratorTests
 {
     [Fact]
+    public void GenerateSignature_OversizedSignature_ResetsPooledBuilderAndStaysDeterministic()
+    {
+        // Arrange — enough long-named fields to push the signature text past the 64KB
+        // thread-local builder cap, so the builder is dropped and replaced after hashing
+        var fields = new Dictionary<string, FieldDefinition>();
+        for (var i = 0; i < 500; i++)
+        {
+            var name = $"field{i}_{new string('x', 200)}";
+            fields[name] = new FieldDefinition(name);
+        }
+
+        // Act — second call runs on the replacement builder
+        var first = FieldSignatureGenerator.GenerateSignature(fields);
+        var second = FieldSignatureGenerator.GenerateSignature(fields);
+
+        // Assert
+        second.Should().Be(first, "the signature must be deterministic across builder resets");
+    }
+
+    [Fact]
     public void GenerateSignature_EmptyFields_ShouldReturnZero()
     {
         // Arrange

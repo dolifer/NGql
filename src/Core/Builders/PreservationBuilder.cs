@@ -40,15 +40,26 @@ public sealed class PreservationBuilder
     /// </summary>
     /// <param name="fieldPaths">Dot-separated field paths to preserve. Null/whitespace entries are skipped.</param>
     /// <returns>This builder, for chaining.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach avoids the Where enumerator; the span-based prefix check below avoids one string concat per (path, existing) pair.")]
     public PreservationBuilder Preserve(params string[]? fieldPaths)
     {
         if (fieldPaths == null || fieldPaths.Length == 0) return this;
 
-        foreach (var path in fieldPaths.Where(p => !string.IsNullOrWhiteSpace(p)))
+        foreach (var path in fieldPaths)
         {
-            // Remove parent paths when adding more specific child
-            _pathsToPreserve.RemoveWhere(existing =>
-                path.StartsWith(existing + ".", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(path)) continue;
+
+            // Remove parent paths when adding more specific child. The check is equivalent to
+            // path.StartsWith(existing + ".") without allocating the concatenated prefix.
+            if (_pathsToPreserve.Count > 0)
+            {
+                _pathsToPreserve.RemoveWhere(existing =>
+                    path.Length > existing.Length
+                    && path[existing.Length] == '.'
+                    && path.AsSpan(0, existing.Length).Equals(existing, StringComparison.OrdinalIgnoreCase));
+            }
 
             _pathsToPreserve.Add(path);
         }

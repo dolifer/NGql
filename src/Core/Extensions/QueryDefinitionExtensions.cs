@@ -1,6 +1,8 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Features;
+using NGql.Core.Pooling;
 
 namespace NGql.Core.Extensions;
 
@@ -29,19 +31,24 @@ internal static class QueryDefinitionExtensions
         resolvedPath = null;
         if (fields is null || path.Length == 0) return null;
 
-        var pathSegments = new List<string>();
-        var currentField = WalkPath(fields, path, pathSegments);
+        // Build the resolved path into a pooled builder while walking — replaces the prior
+        // List<string> + string.Join + prepend-concat trio with a single final ToString.
+        using var pooled = LockFreeStringBuilderPool.Get();
+        var pathBuilder = pooled.StringBuilder;
+        if (prependPath is not null) pathBuilder.Append(prependPath).Append('.');
+
+        var currentField = WalkPath(fields, path, pathBuilder);
         if (currentField is null) return null;
 
-        var joinedPath = string.Join(".", pathSegments);
-        resolvedPath = prependPath is not null ? $"{prependPath}.{joinedPath}" : joinedPath;
+        resolvedPath = pathBuilder.ToString();
         return currentField;
     }
 
-    private static FieldDefinition? WalkPath(IReadOnlyDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> path, List<string> pathSegments)
+    private static FieldDefinition? WalkPath(IReadOnlyDictionary<string, FieldDefinition> fields, ReadOnlySpan<char> path, StringBuilder resolvedPath)
     {
         var currentFields = fields;
         FieldDefinition? currentField = null;
+        var firstSegment = true;
 
         while (path.Length > 0)
         {
@@ -52,7 +59,9 @@ internal static class QueryDefinitionExtensions
             if (!match.HasValue) return null;
 
             currentField = match.Value.Value;
-            pathSegments.Add(match.Value.Key);
+            if (!firstSegment) resolvedPath.Append('.');
+            firstSegment = false;
+            resolvedPath.Append(match.Value.Key);
 
             if (dotIndex < 0) break;
             if (currentField._children is null) return null;

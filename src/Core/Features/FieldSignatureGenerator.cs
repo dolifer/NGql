@@ -13,7 +13,12 @@ namespace NGql.Core.Features;
 public static class FieldSignatureGenerator
 {
     // Pre-allocated StringBuilder for signature generation to avoid repeated allocations
-    private static readonly ThreadLocal<StringBuilder> SignatureBuilder = new(() => new StringBuilder(256));
+    private static readonly ThreadLocal<StringBuilder> SignatureBuilder = new(() => new StringBuilder(InitialBuilderCapacity));
+
+    private const int InitialBuilderCapacity = 256;
+    // One oversized signature must not permanently bloat the thread-local builder — drop and
+    // replace it past this threshold (same discipline as QueryTextBuilder's pool).
+    private const int MaxBuilderCapacity = 64 * 1024;
 
     // Singleton comparer for sorting by Name for deterministic signature generation.
     private static readonly IComparer<FieldDefinition> FieldNameComparer =
@@ -42,16 +47,23 @@ public static class FieldSignatureGenerator
         // builder.Length is always > 0 here: the empty-fields case was handled above and
         // every field appends at least its name to the signature.
         // Hash directly over StringBuilder chunks — avoids allocating a temporary string.
+        int hash;
         unchecked
         {
-            int hash = 5381;
+            hash = 5381;
             foreach (var chunk in builder.GetChunks())
             {
                 foreach (var c in chunk.Span)
                     hash = (hash << 5) + hash + c; // djb2: hash*33 + c
             }
-            return hash;
         }
+
+        if (builder.Capacity > MaxBuilderCapacity)
+        {
+            SignatureBuilder.Value = new StringBuilder(InitialBuilderCapacity);
+        }
+
+        return hash;
     }
 
     /// <summary>
