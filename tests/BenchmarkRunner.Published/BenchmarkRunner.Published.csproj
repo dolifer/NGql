@@ -8,6 +8,10 @@
         <SuppressTfmSupportBuildWarnings>true</SuppressTfmSupportBuildWarnings>
         <TargetFramework>net9.0</TargetFramework>
         <NoWarn>$(NoWarn);AD0001</NoWarn>
+        <!-- NGql.Core package version under test. Set via environment variable so that
+             BenchmarkDotNet's generated child builds (which re-evaluate this project) resolve
+             the same version: NGqlCoreVersion=2.1.0 dotnet run -c Release ... -->
+        <NGqlCoreVersion Condition="'$(NGqlCoreVersion)' == ''">1.5.0</NGqlCoreVersion>
     </PropertyGroup>
 
     <!-- Link benchmark source from the Local runner — same code, different NGql.Core version -->
@@ -17,7 +21,7 @@
 
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" Version="0.15.7" />
-        <PackageReference Include="NGql.Core" Version="1.5.0" />
+        <PackageReference Include="NGql.Core" Version="$(NGqlCoreVersion)" />
     </ItemGroup>
 
 </Project>
