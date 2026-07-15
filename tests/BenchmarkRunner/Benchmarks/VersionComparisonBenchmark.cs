@@ -252,6 +252,51 @@ public class VersionComparisonBenchmark
         return result;
     }
 
+    private static QueryBuilder BuildModerateQuery()
+        => QueryBuilder
+            .CreateDefaultBuilder("RenderSink")
+            .AddField("user.profile.name")
+            .AddField("user.profile.email")
+            .AddField("user.profile.avatar")
+            .AddField("user.posts.title")
+            .AddField("user.posts.publishedAt")
+            .AddField("user.settings.privacy.notifications");
+
+    [Benchmark(Baseline = true)]
+    [Arguments(10)]
+    [Arguments(50)]
+    public int ToStringPerCall(int iterations)
+    {
+        // Baseline: each render allocates a fresh string via ToString().
+        var query = BuildModerateQuery();
+        int total = 0;
+        for (int i = 0; i < iterations; i++)
+        {
+            total += query.ToString().Length;
+        }
+        return total;
+    }
+
+#if !NGQL_PUBLISHED
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public int AppendToReusedBuilder(int iterations)
+    {
+        // Render into one reused StringBuilder — no per-call intermediate string allocation.
+        var query = BuildModerateQuery();
+        var sb = new System.Text.StringBuilder();
+        int total = 0;
+        for (int i = 0; i < iterations; i++)
+        {
+            sb.Clear();
+            query.AppendTo(sb);
+            total += sb.Length;
+        }
+        return total;
+    }
+#endif
+
     public sealed class BenchProfile
     {
         public string name { get; set; } = string.Empty;

@@ -12,6 +12,10 @@
              BenchmarkDotNet's generated child builds (which re-evaluate this project) resolve
              the same version: NGqlCoreVersion=2.1.0 dotnet run -c Release ... -->
         <NGqlCoreVersion Condition="'$(NGqlCoreVersion)' == ''">2.0.0</NGqlCoreVersion>
+        <!-- Marks the linked benchmark source as compiling against the shipped NuGet package,
+             which does not yet expose AppendTo/WriteTo. New sink benchmarks are guarded with
+             #if !NGQL_PUBLISHED so this project keeps compiling against the older Core. -->
+        <DefineConstants>$(DefineConstants);NGQL_PUBLISHED</DefineConstants>
     </PropertyGroup>
 
     <!-- Link benchmark source from the Local runner — same code, different NGql.Core version -->
