@@ -1,4 +1,5 @@
-﻿using NGql.Core.Abstractions;
+﻿using System.Text;
+using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
 namespace NGql.Core;
@@ -145,5 +146,12 @@ public sealed class Query
 
     /// <inheritdoc cref="QueryBlock.ToString()"/>
     public override string ToString() => Block.ToString();
+
+    /// <inheritdoc cref="QueryBlock.AppendTo(System.Text.StringBuilder)"/>
+    public void AppendTo(StringBuilder builder) => Block.AppendTo(builder);
+
+    /// <inheritdoc cref="QueryBlock.WriteTo(System.IO.TextWriter)"/>
+    public void WriteTo(TextWriter writer) => Block.WriteTo(writer);
+
     public static implicit operator string(Query query) => query.Block.ToString();
 }

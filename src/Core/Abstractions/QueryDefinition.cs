@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json.Serialization;
 using NGql.Core.Builders;
 
@@ -125,6 +126,48 @@ public sealed record QueryDefinition(string Name, string Description = "")
         finally
         {
             QueryTextBuilder.ReturnToPool(builder);
+        }
+    }
+
+    /// <summary>
+    /// Renders this definition's GraphQL and appends it to <paramref name="builder"/> without
+    /// materializing the intermediate string that <see cref="ToString()"/> allocates. The
+    /// appended text is byte-for-byte identical to <see cref="ToString()"/>.
+    /// </summary>
+    /// <param name="builder">The target <see cref="StringBuilder"/> to append to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="builder"/> is null.</exception>
+    public void AppendTo(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        var textBuilder = QueryTextBuilder.GetFromPool();
+        try
+        {
+            textBuilder.BuildInto(this, builder);
+        }
+        finally
+        {
+            QueryTextBuilder.ReturnToPool(textBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Renders this definition's GraphQL and writes it to <paramref name="writer"/> without
+    /// materializing the intermediate string that <see cref="ToString()"/> allocates. The
+    /// written text is byte-for-byte identical to <see cref="ToString()"/>.
+    /// </summary>
+    /// <param name="writer">The target <see cref="TextWriter"/> to write to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="writer"/> is null.</exception>
+    public void WriteTo(TextWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        var textBuilder = QueryTextBuilder.GetFromPool();
+        try
+        {
+            textBuilder.BuildInto(this, writer);
+        }
+        finally
+        {
+            QueryTextBuilder.ReturnToPool(textBuilder);
         }
     }
 

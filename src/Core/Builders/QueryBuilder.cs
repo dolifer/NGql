@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 using NGql.Core.Features;
@@ -572,6 +573,34 @@ public sealed class QueryBuilder
     {
         QueryMapInstance.UpdateRootMapping(_definition);
         return Definition.ToString();
+    }
+
+    /// <summary>
+    /// Renders this query's GraphQL and appends it to <paramref name="builder"/> without
+    /// materializing the intermediate string that <see cref="ToString()"/> allocates. The
+    /// appended text is byte-for-byte identical to <see cref="ToString()"/>.
+    /// </summary>
+    /// <param name="builder">The target <see cref="StringBuilder"/> to append to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="builder"/> is null.</exception>
+    public void AppendTo(StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        QueryMapInstance.UpdateRootMapping(_definition);
+        Definition.AppendTo(builder);
+    }
+
+    /// <summary>
+    /// Renders this query's GraphQL and writes it to <paramref name="writer"/> without
+    /// materializing the intermediate string that <see cref="ToString()"/> allocates. The
+    /// written text is byte-for-byte identical to <see cref="ToString()"/>.
+    /// </summary>
+    /// <param name="writer">The target <see cref="TextWriter"/> to write to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="writer"/> is null.</exception>
+    public void WriteTo(TextWriter writer)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        QueryMapInstance.UpdateRootMapping(_definition);
+        Definition.WriteTo(writer);
     }
 
     public static implicit operator string(QueryBuilder query) => query.ToString();
