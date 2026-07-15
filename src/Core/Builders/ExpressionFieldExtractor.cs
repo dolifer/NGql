@@ -143,9 +143,9 @@ public static class ExpressionFieldExtractor
                     Visit(methodCall);
                     // Continue from the collection the method was called on. For instance
                     // methods Object is non-null; for static/extension methods (LINQ) the
-                    // first argument is the source. Methods with neither don't appear in
-                    // valid lambdas.
-                    current = methodCall.Object ?? methodCall.Arguments[0];
+                    // first argument is the source. A parameterless static-like call has
+                    // neither, so there is nothing further to walk.
+                    current = MethodCallSourceExpression(methodCall);
                 }
                 else if (current is MemberExpression memberExpr)
                 {
@@ -444,7 +444,11 @@ public static class ExpressionFieldExtractor
                     return ChainStep.Continue(memberExpr.Expression);
 
                 case MethodCallExpression methodCall:
-                    return ChainStep.Continue(MethodCallSourceExpression(methodCall));
+                    var source = MethodCallSourceExpression(methodCall);
+                    // A parameterless static-like call (null Object, zero arguments) has no
+                    // source to walk toward the lambda parameter, so the chain cannot resolve
+                    // to a valid field path.
+                    return source is null ? ChainStep.Invalid() : ChainStep.Continue(source);
 
                 case BinaryExpression { NodeType: ExpressionType.Coalesce } binaryExpr:
                     return ChainStep.Continue(binaryExpr.Left);
@@ -460,11 +464,11 @@ public static class ExpressionFieldExtractor
             }
         }
 
-        // Either methodCall.Object is non-null (instance method) or Arguments has at least one
-        // entry (the source for an extension/static method); valid lambdas don't produce both
-        // null Object and zero arguments.
+        // The source a method call is chained onto: Object for an instance method, or the first
+        // argument for an extension/static method. A parameterless static-like call has neither,
+        // so this returns null and the caller treats the sub-expression as contributing no path.
         private static Expression? MethodCallSourceExpression(MethodCallExpression methodCall)
-            => methodCall.Object ?? methodCall.Arguments[0];
+            => methodCall.Object ?? (methodCall.Arguments.Count > 0 ? methodCall.Arguments[0] : null);
 
         /// <summary>
         /// Picks the branch of a null-conditional-style ternary that carries member access.
