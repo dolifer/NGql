@@ -23,9 +23,26 @@ internal sealed class QueryTextBuilder
 
     // Singleton comparer — Dictionary<string,FieldDefinition> is unordered, so we sort at render time.
     // Static readonly avoids any per-call allocation; the static lambda is stored as a cached delegate.
+    //
+    // Array.Sort with a comparer is an unstable introsort, so the primary key (effective name,
+    // case-insensitive) alone leaves fields that share an effective key — e.g. a plain `a` and a
+    // `b` aliased to `a` — in an order chosen arbitrarily by introsort internals, which can differ
+    // across runtimes and .NET versions and breaks the deterministic render guarantee. The Name and
+    // Alias tiebreakers (ordinal) turn the comparison into a total order derived purely from each
+    // field's own data, so equal effective keys resolve to one well-defined order with no extra
+    // allocation and no insertion-index threading. Primary key semantics are unchanged.
     private static readonly IComparer<FieldDefinition> FieldSortComparer =
         Comparer<FieldDefinition>.Create(static (a, b) =>
-            StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name));
+        {
+            var effectiveNameComparison =
+                StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name);
+            if (effectiveNameComparison != 0) return effectiveNameComparison;
+
+            var nameComparison = string.CompareOrdinal(a.Name, b.Name);
+            if (nameComparison != 0) return nameComparison;
+
+            return string.CompareOrdinal(a.Alias, b.Alias);
+        });
 
     // SHARED thread-local builder pool used by both QueryBlock and QueryDefinition
     // This consolidates the pooling strategy and prevents duplicate ThreadLocal instances
