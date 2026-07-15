@@ -172,11 +172,16 @@ internal sealed class QueryTextBuilder
 
     private void BuildFieldDefinitions(FieldChildren children, int indent)
     {
-        var count = children.Count;
+        // Take ONE snapshot of the concurrent collection. FieldChildren.Count and AsSpan() each do
+        // an independent volatile read; reading them separately can tear if a concurrent Append lands
+        // between the two, yielding a span longer than the rented count and silently dropping the tail
+        // field(s). Rent, copy, render, clear and return all key off this single snapshot's length.
+        var span = children.AsSpan();
+        var count = span.Length;
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
         try
         {
-            children.AsSpan().CopyTo(arr);
+            span.CopyTo(arr);
             RenderSortedFields(arr, count, indent);
         }
         finally
