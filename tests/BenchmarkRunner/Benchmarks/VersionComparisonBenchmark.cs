@@ -297,6 +297,44 @@ public class VersionComparisonBenchmark
     }
 #endif
 
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public int Utf8ViaToStringGetBytes(int iterations)
+    {
+        // Status-quo two-allocation path: ToString() allocates a string, then GetBytes allocates a
+        // byte[] per iteration. Baseline for the WriteUtf8 comparison.
+        var query = BuildModerateQuery();
+        int total = 0;
+        for (int i = 0; i < iterations; i++)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(query.ToString());
+            total += bytes.Length;
+        }
+        return total;
+    }
+
+#if !NGQL_PUBLISHED
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public int Utf8ViaWriteUtf8(int iterations)
+    {
+        // Transcode straight to UTF-8 into one reused ArrayBufferWriter — no per-call intermediate
+        // string and no per-call byte[] allocation.
+        var query = BuildModerateQuery();
+        var writer = new System.Buffers.ArrayBufferWriter<byte>();
+        int total = 0;
+        for (int i = 0; i < iterations; i++)
+        {
+            writer.Clear();
+            query.WriteUtf8(writer);
+            total += writer.WrittenCount;
+        }
+        return total;
+    }
+#endif
+
     public sealed class BenchProfile
     {
         public string name { get; set; } = string.Empty;
