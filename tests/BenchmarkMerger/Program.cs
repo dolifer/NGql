@@ -9,7 +9,7 @@
 //   dotnet run --project tests/BenchmarkMerger -- artifacts/benchmarks/local artifacts/benchmarks/published
 //
 // Both runner projects compile the same VersionComparisonBenchmark source linked from BenchmarkRunner/,
-// but reference different NGql.Core versions (ProjectRef vs NuGet 1.5.0) giving genuine A/B comparison.
+// but reference different NGql.Core versions (ProjectRef vs NuGet 2.0.0) giving genuine A/B comparison.
 
 using NGql.BenchmarkMerger;
 

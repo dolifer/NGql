@@ -11,7 +11,7 @@
         <!-- NGql.Core package version under test. Set via environment variable so that
              BenchmarkDotNet's generated child builds (which re-evaluate this project) resolve
              the same version: NGqlCoreVersion=2.1.0 dotnet run -c Release ... -->
-        <NGqlCoreVersion Condition="'$(NGqlCoreVersion)' == ''">1.5.0</NGqlCoreVersion>
+        <NGqlCoreVersion Condition="'$(NGqlCoreVersion)' == ''">2.0.0</NGqlCoreVersion>
     </PropertyGroup>
 
     <!-- Link benchmark source from the Local runner — same code, different NGql.Core version -->
