@@ -466,6 +466,17 @@ internal sealed class QueryTextBuilder
                     break;
                 }
 
+            // Arguments are normalized to SortedDictionary<string, object?> (see
+            // Helpers.SortArgumentValue), so the common case implements the generic interface.
+            // Enumerating it through the generic enumerator writes each key directly and recurses
+            // on the value with no boxed KeyValuePair and no reflected PropertyInfo.GetValue —
+            // exactly the same {k:v, …} output the non-generic IDictionary path below would emit.
+            case IDictionary<string, object?> typedDict:
+                {
+                    WriteTypedDictionary(builder, typedDict);
+                    break;
+                }
+
             case IDictionary dictValue:
                 {
                     Helpers.WriteCollection('{', '}', dictValue, builder, WriteObject);
@@ -478,6 +489,21 @@ internal sealed class QueryTextBuilder
                     break;
                 }
         }
+    }
+
+    private static void WriteTypedDictionary(StringBuilder builder, IDictionary<string, object?> dictionary)
+    {
+        builder.Append('{');
+        bool first = true;
+        foreach (var kvp in dictionary)
+        {
+            if (!first) builder.Append(", ");
+            first = false;
+            builder.Append(kvp.Key);
+            builder.Append(':');
+            WriteObject(builder, kvp.Value);
+        }
+        builder.Append('}');
     }
 
     private static bool ExtractKeyValuePairProperties(StringBuilder builder, object value, Type valueType)

@@ -143,6 +143,49 @@ public class QueryTextBuilderTests
     }
 
     [Fact]
+    public void WriteObject_TypedDictionary_WithNestedDictionary_RendersExactOutput()
+    {
+        // Normalized args are SortedDictionary<string, object?> (OrdinalIgnoreCase) — the
+        // strongly-typed path must render byte-identical output to the legacy non-generic path:
+        // sorted keys, `{k:v, ...}` shape, nested dictionaries recursed the same way.
+        var nested = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["status"] = "active",
+            ["limit"] = 25
+        };
+        var value = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["query"] = "v1",
+            ["filters"] = nested,
+            ["offset"] = 0
+        };
+
+        var result = BuildQueryParam(value);
+
+        result.Should().Be("{filters:{limit:25, status:\"active\"}, offset:0, query:\"v1\"}");
+    }
+
+    [Fact]
+    public void AddField_MultiEntryDictionaryArgument_WithNestedDictionary_RendersExactGraphQL()
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Search")
+            .AddField("search", new Dictionary<string, object?>
+            {
+                ["query"] = "test",
+                ["filters"] = new Dictionary<string, object?> { ["status"] = "active", ["kind"] = "user" },
+                ["limit"] = 25,
+                ["offset"] = 0
+            });
+
+        var result = query.ToString();
+
+        result.Should().Be(
+            "query Search{" + Environment.NewLine +
+            "    search(filters:{kind:\"user\", status:\"active\"}, limit:25, offset:0, query:\"test\")" + Environment.NewLine +
+            "}");
+    }
+
+    [Fact]
     public void AddFields_ThrowsUnsupportedException()
     {
         // act & assert
