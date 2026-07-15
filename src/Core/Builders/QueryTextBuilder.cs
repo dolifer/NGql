@@ -106,14 +106,79 @@ internal sealed class QueryTextBuilder
 
     public string Build(QueryBlock queryBlock, int indent = 0, string? prefix = null)
     {
-        // Clear only at the top-level call; recursive sub-query calls (indent > 0) accumulate.
-        if (indent == 0) _stringBuilder.Clear();
-
-        BuildBlock(queryBlock, indent, prefix);
+        BuildBlockCore(queryBlock, indent, prefix);
         return _stringBuilder.ToString();
     }
 
     public string Build(QueryDefinition queryDefinition)
+    {
+        BuildDefinitionCore(queryDefinition);
+        return _stringBuilder.ToString();
+    }
+
+    /// <summary>
+    /// Renders <paramref name="queryDefinition"/> into the pooled builder and appends the result
+    /// to the caller-supplied <paramref name="target"/> chunk-by-chunk, with no intermediate
+    /// string allocation. Shares the exact render machinery used by <see cref="Build(QueryDefinition)"/>.
+    /// </summary>
+    internal void BuildInto(QueryDefinition queryDefinition, StringBuilder target)
+    {
+        BuildDefinitionCore(queryDefinition);
+        target.Append(_stringBuilder);
+    }
+
+    /// <summary>
+    /// Renders <paramref name="queryDefinition"/> into the pooled builder and writes the result
+    /// to the caller-supplied <paramref name="writer"/> chunk-by-chunk, with no intermediate
+    /// string allocation. Shares the exact render machinery used by <see cref="Build(QueryDefinition)"/>.
+    /// </summary>
+    internal void BuildInto(QueryDefinition queryDefinition, TextWriter writer)
+    {
+        BuildDefinitionCore(queryDefinition);
+        WriteBuilderTo(writer);
+    }
+
+    /// <summary>
+    /// Renders <paramref name="queryBlock"/> into the pooled builder and appends the result to the
+    /// caller-supplied <paramref name="target"/> chunk-by-chunk, with no intermediate string
+    /// allocation. Shares the exact render machinery used by <see cref="Build(QueryBlock, int, string?)"/>.
+    /// </summary>
+    internal void BuildInto(QueryBlock queryBlock, StringBuilder target, string? prefix = null)
+    {
+        BuildBlockCore(queryBlock, 0, prefix);
+        target.Append(_stringBuilder);
+    }
+
+    /// <summary>
+    /// Renders <paramref name="queryBlock"/> into the pooled builder and writes the result to the
+    /// caller-supplied <paramref name="writer"/> chunk-by-chunk, with no intermediate string
+    /// allocation. Shares the exact render machinery used by <see cref="Build(QueryBlock, int, string?)"/>.
+    /// </summary>
+    internal void BuildInto(QueryBlock queryBlock, TextWriter writer, string? prefix = null)
+    {
+        BuildBlockCore(queryBlock, 0, prefix);
+        WriteBuilderTo(writer);
+    }
+
+    // Streams the pooled builder's backing chunks straight to the writer — TextWriter.Write(span)
+    // (net8+) copies each chunk with no intermediate .ToString() materialization.
+    private void WriteBuilderTo(TextWriter writer)
+    {
+        foreach (var chunk in _stringBuilder.GetChunks())
+        {
+            writer.Write(chunk.Span);
+        }
+    }
+
+    private void BuildBlockCore(QueryBlock queryBlock, int indent, string? prefix)
+    {
+        // Clear only at the top-level call; recursive sub-query calls (indent > 0) accumulate.
+        if (indent == 0) _stringBuilder.Clear();
+
+        BuildBlock(queryBlock, indent, prefix);
+    }
+
+    private void BuildDefinitionCore(QueryDefinition queryDefinition)
     {
         _stringBuilder.Clear();
         _stringBuilder.Append(queryDefinition.OperationType == OperationType.Mutation ? "mutation " : "query ");
@@ -151,8 +216,6 @@ internal sealed class QueryTextBuilder
         {
             BuildNamedFragmentDefinitions(queryDefinition._namedFragments);
         }
-
-        return _stringBuilder.ToString();
     }
 
     /// <summary>

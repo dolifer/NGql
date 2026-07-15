@@ -1,4 +1,5 @@
-﻿using NGql.Core.Abstractions;
+﻿using System.Text;
+using NGql.Core.Abstractions;
 
 namespace NGql.Core;
 
@@ -72,5 +73,12 @@ public sealed class Mutation(string name, params Variable[] variables)
     }
 
     public override string ToString() => _block.ToString();
+
+    /// <inheritdoc cref="QueryBlock.AppendTo(System.Text.StringBuilder)"/>
+    public void AppendTo(StringBuilder builder) => _block.AppendTo(builder);
+
+    /// <inheritdoc cref="QueryBlock.WriteTo(System.IO.TextWriter)"/>
+    public void WriteTo(TextWriter writer) => _block.WriteTo(writer);
+
     public static implicit operator string(Mutation mutation) => mutation._block.ToString();
 }
