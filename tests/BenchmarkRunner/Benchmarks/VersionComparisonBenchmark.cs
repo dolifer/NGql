@@ -195,4 +195,72 @@ public class VersionComparisonBenchmark
         }
         return builder.ToString();
     }
+
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public string DictionaryArgumentRendering(int iterations)
+    {
+        // Exercises the dictionary/nested-object argument render path (reflection + boxing
+        // removal). Each iteration renders a field whose argument is a multi-entry dictionary
+        // with a nested dictionary, then re-renders to hit the render path repeatedly.
+        string result = string.Empty;
+        for (int i = 0; i < iterations; i++)
+        {
+            var query = QueryBuilder
+                .CreateDefaultBuilder("DictArgs")
+                .AddField("users", new Dictionary<string, object?>
+                {
+                    ["filter"] = new Dictionary<string, object?>
+                    {
+                        ["status"] = "active",
+                        ["role"] = "admin",
+                        ["tier"] = "gold",
+                    },
+                    ["limit"] = 25,
+                    ["offset"] = 0,
+                    ["sort"] = "name",
+                });
+            result = query.ToString();
+        }
+        return result;
+    }
+
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public string PreserveFromExpressionRepeated(int iterations)
+    {
+        // Exercises PreserveFromExpression<T> repeatedly (per-request pattern): navigation-property
+        // reflection caching and the deferred parameter-type-map allocation. Each call re-walks the
+        // same type, so a per-type reflection cache turns N reflected lookups into one.
+        var full = QueryBuilder
+            .CreateDefaultBuilder("Profile")
+            .AddField("user.profile.name")
+            .AddField("user.profile.bio")
+            .AddField("user.profile.age");
+
+        string result = string.Empty;
+        for (int i = 0; i < iterations; i++)
+        {
+            var filtered = PreservationBuilder
+                .Create(full)
+                .PreserveFromExpression<BenchUser>(u => u.profile.name != null && u.profile.age > 18)
+                .Build();
+            result = filtered.ToString();
+        }
+        return result;
+    }
+
+    public sealed class BenchProfile
+    {
+        public string name { get; set; } = string.Empty;
+        public string bio { get; set; } = string.Empty;
+        public int age { get; set; }
+    }
+
+    public sealed class BenchUser
+    {
+        public BenchProfile profile { get; set; } = new();
+    }
 }
