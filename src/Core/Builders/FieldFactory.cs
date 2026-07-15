@@ -323,7 +323,7 @@ internal static class FieldFactory
     /// Mirrors the null/empty guard used at the public AddField boundary.
     /// </summary>
     private static ArgumentException EmptyDottedPath()
-        => new("Field cannot be null or empty", "fieldName");
+        => new("Field cannot be null or empty");
 
     /// <summary>
     /// Creates a field segment for dotted field processing.
