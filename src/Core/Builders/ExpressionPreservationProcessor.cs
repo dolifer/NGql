@@ -429,7 +429,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         AddFieldsToPreserve(extractedPaths, paramName, parameterType, fieldsToPreserve);
 
         var lastSegment = LastSegmentOf(nodePath);
-        foreach (var rootField in sourceQuery.Definition.Fields.Values)
+        foreach (var rootField in sourceQuery.Definition.FieldsInternal.Values)
         {
             PreserveFromRoot(rootField, nodePath, lastSegment, fieldsToPreserve);
         }

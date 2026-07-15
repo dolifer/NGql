@@ -38,10 +38,10 @@ internal sealed class QueryMap
                 return; // Keep the existing valid mapping
             }
 
-            // If we don't have a valid mapping, use the first field. Iterate via the struct
-            // enumerator (Dictionary.Enumerator is a struct on the concrete Dictionary type) instead
-            // of LINQ First() which allocates an interface enumerator.
-            using var enumerator = definition.Fields.GetEnumerator();
+            // If we don't have a valid mapping, use the first field. Iterate the concrete
+            // dictionary via its struct enumerator; going through the read-only interface would
+            // box the enumerator and allocate on every build.
+            using var enumerator = definition.FieldsInternal.GetEnumerator();
             if (enumerator.MoveNext())
             {
                 _mappings[definition.Name] = enumerator.Current.Value._effectiveName;
@@ -119,12 +119,12 @@ internal sealed class QueryMap
         Justification = "Runs on every GetPathTo cache miss — a plain foreach over Dictionary.Values uses the struct enumerator and avoids the FirstOrDefault closure + interface enumerator allocations.")]
     private static FieldDefinition? FindRootField(QueryDefinition queryDefinition, string rootPath)
     {
-        if (queryDefinition.Fields.TryGetValue(rootPath, out var field))
+        if (queryDefinition.FieldsInternal.TryGetValue(rootPath, out var field))
         {
             return field;
         }
 
-        foreach (var candidate in queryDefinition.Fields.Values)
+        foreach (var candidate in queryDefinition.FieldsInternal.Values)
         {
             if (string.Equals(candidate.Alias, rootPath, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(candidate.Name, rootPath, StringComparison.OrdinalIgnoreCase))

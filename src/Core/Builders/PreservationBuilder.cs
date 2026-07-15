@@ -81,7 +81,7 @@ public sealed class PreservationBuilder
         var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
         var fieldPathHasDot = fieldPath.Contains('.');
 
-        foreach (var rootField in _sourceQuery.Definition.Fields.Values)
+        foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
         {
             PreserveAtPathForRoot(rootField.Alias ?? rootField.Name, fieldPath, nodePath, lastSegment, fieldPathHasDot);
         }
