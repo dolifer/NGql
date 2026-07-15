@@ -208,7 +208,7 @@ internal sealed class QueryTextBuilder
 
         _stringBuilder.AppendLine("{");
 
-        BuildFieldDefinitions(queryDefinition.Fields, IndentSize);
+        BuildFieldDefinitions(queryDefinition.FieldsInternal, IndentSize);
 
         _stringBuilder.Append("}");
 

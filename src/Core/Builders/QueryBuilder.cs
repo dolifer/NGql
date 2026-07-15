@@ -346,7 +346,7 @@ public sealed class QueryBuilder
             // Bypass FieldBuilder.Create for maximum performance
             if (!Definition.Fields.ContainsKey(field))
             {
-                Definition.Fields[field] = new FieldDefinition(field, Constants.DefaultFieldType)
+                Definition.FieldsInternal[field] = new FieldDefinition(field, Constants.DefaultFieldType)
                 {
                     Path = field
                 };
@@ -355,7 +355,7 @@ public sealed class QueryBuilder
         else
         {
             // Fallback to standard processing for complex fields
-            FieldBuilder.Create(Definition.Fields, field, Constants.DefaultFieldType, null, null);
+            FieldBuilder.Create(Definition.FieldsInternal, field, Constants.DefaultFieldType, null, null);
         }
         
         // Phase 3: Invalidate caches after field addition
@@ -390,7 +390,7 @@ public sealed class QueryBuilder
         }
 
         // Use the provided field type
-        var builder = FieldBuilder.Create(Definition.Fields, field, fieldType, arguments, metadata);
+        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, fieldType, arguments, metadata);
         fieldBuilder(builder);
 
         QueryMapInstance.UpdateRootMapping(_definition);
@@ -429,7 +429,7 @@ public sealed class QueryBuilder
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
         var type = hasSubFields ? Constants.ObjectFieldType : Constants.DefaultFieldType;
-        var builder = FieldBuilder.Create(Definition.Fields, field, type, arguments, metadata);
+        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, type, arguments, metadata);
 
         if (!hasSubFields)
         {
@@ -548,7 +548,7 @@ public sealed class QueryBuilder
     public QueryBuilder WithMetadata(Dictionary<string, object> metadata)
     {
         var mergedMetadata = Helpers.MergeMetadata(_definition._metadata, metadata);
-        _definition.Metadata = mergedMetadata;
+        _definition._metadata = mergedMetadata;
 
         return this;
     }

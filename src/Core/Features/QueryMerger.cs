@@ -24,7 +24,7 @@ internal static class QueryMerger
         MergeVariables(targetDefinition, incomingQuery);
 
         var beforeCount = targetDefinition.Fields.Count;
-        ApplyFieldMerge(targetDefinition.Fields, incomingQuery, targetDefinition.MergingStrategy, queryMap);
+        ApplyFieldMerge(targetDefinition.FieldsInternal, incomingQuery, targetDefinition.MergingStrategy, queryMap);
 
         if (targetDefinition.Fields.Count != beforeCount)
         {

@@ -29,13 +29,13 @@ internal static class PreserveExtensions
         {
             foreach (var metadata in query.Definition.Metadata)
             {
-                newQuery.Definition.Metadata[metadata.Key] = metadata.Value;
+                newQuery.Definition.MetadataInternal[metadata.Key] = metadata.Value;
             }
         }
 
         foreach (var targetPath in fieldPaths)
         {
-            ExtractMatchingFields(query.Definition.Fields, newQuery.Definition.Fields, targetPath.AsSpan());
+            ExtractMatchingFields(query.Definition.FieldsInternal, newQuery.Definition.FieldsInternal, targetPath.AsSpan());
         }
 
         // Carry over the named-fragment definitions the preserved tree still references —
@@ -43,7 +43,7 @@ internal static class PreserveExtensions
         CopyReferencedNamedFragments(query.Definition, newQuery.Definition);
 
         // Extract variables from all preserved fields
-        ExtractVariablesFromFields(newQuery.Definition.Fields, newQuery.Definition.Variables);
+        ExtractVariablesFromFields(newQuery.Definition.FieldsInternal, newQuery.Definition.Variables);
 
         return newQuery;
     }
