@@ -62,7 +62,7 @@ internal static class QueryMerger
         var strategy = GetEffectiveMergingStrategy(rootStrategy, incomingQuery.MergingStrategy);
         var queryName = incomingQuery.Name;
 
-        foreach (var (originalFieldKey, incomingField) in incomingQuery.Fields)
+        foreach (var (originalFieldKey, incomingField) in incomingQuery.FieldsInternal)
         {
             switch (strategy)
             {
