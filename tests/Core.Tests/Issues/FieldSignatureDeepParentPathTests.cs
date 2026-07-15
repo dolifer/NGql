@@ -20,9 +20,9 @@ public class FieldSignatureDeepParentPathTests
     [Fact]
     public void GenerateSignature_IntermediateNodePathExceedsStackBuffer_DoesNotThrow()
     {
-        // Arrange — three ~201-char segments nested as parent.child.grandchild. Segment one
-        // fits the 256 buffer; segment two overflows it and produces a >=256-char heap path;
-        // that heap path is the parent path when recursing into segment three.
+        // Arrange — three ~201-char segments nested three levels deep. The first segment
+        // fits the 256 buffer; the second overflows it and produces a heap path of 256 chars
+        // or more; that heap path becomes the parent path when recursing into the third.
         var segment1 = new string('a', 201);
         var segment2 = new string('b', 201);
         var segment3 = new string('c', 201);
