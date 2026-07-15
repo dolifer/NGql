@@ -70,7 +70,7 @@ public static class ExpressionFieldExtractor
         public HashSet<string> FieldPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
         private readonly Stack<string> _lambdaContextPaths = new();
         private ParameterExpression? _rootParameter;
-        private readonly HashSet<Type> _rootParameterTypes = new();
+        private int _rootParameterCount;
 
         /// <summary>
         /// Visits member access expressions (e.g., user.profile.age).
@@ -287,11 +287,10 @@ public static class ExpressionFieldExtractor
             if (_rootParameter == null && _lambdaContextPaths.Count == 0 && node.Parameters.Count > 0)
             {
                 _rootParameter = node.Parameters[0];
-                // Track ALL parameter types for multi-parameter lambdas
-                foreach (var param in node.Parameters)
-                {
-                    _rootParameterTypes.Add(param.Type);
-                }
+                // Track the outermost lambda's parameter COUNT (not distinct types): two
+                // parameters of the same type must still be disambiguated by name, otherwise
+                // their fields leak across sibling nodes during downstream preservation.
+                _rootParameterCount = node.Parameters.Count;
             }
 
             // Visit the body to extract paths from nested predicates
@@ -408,8 +407,8 @@ public static class ExpressionFieldExtractor
                 currentExpr = step.Next;
             }
 
-            // For multi-parameter lambdas (more than 1 root parameter type), include parameter name
-            if (_rootParameterTypes.Count > 1 && parameterExpr != null && !string.IsNullOrEmpty(parameterExpr.Name))
+            // For multi-parameter lambdas (more than 1 root parameter), include parameter name
+            if (_rootParameterCount > 1 && parameterExpr != null && !string.IsNullOrEmpty(parameterExpr.Name))
             {
                 parts.Push(parameterExpr.Name);
             }
