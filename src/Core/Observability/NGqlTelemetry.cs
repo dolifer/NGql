@@ -259,64 +259,6 @@ internal static class NGqlTelemetry
         };
     }
 
-    /// <summary>
-    /// Creates a scoped measurement for timing operations
-    /// </summary>
-    internal static IDisposable CreateTimedScope(string operationName, TagList tags)
-    {
-        return new TimedScope(operationName, tags);
-    }
-
-    #endregion
-
-    #region Timed Scope Helper
-
-    /// <summary>
-    /// RAII helper for automatic timing measurements
-    /// </summary>
-    private readonly struct TimedScope : IDisposable
-    {
-        private readonly string _operationName;
-        private readonly TagList _tags;
-        private readonly long _startTicks;
-
-        public TimedScope(string operationName, TagList tags)
-        {
-            _operationName = operationName;
-            _tags = tags;
-            _startTicks = Stopwatch.GetTimestamp();
-        }
-
-        public void Dispose()
-        {
-            var elapsed = GetElapsedSeconds(_startTicks);
-            
-            // Record to appropriate histogram based on operation
-            if (_operationName.Contains("serialize"))
-            {
-                SerializationDuration.Record(elapsed, _tags);
-            }
-            else
-            {
-                QueryBuildDuration.Record(elapsed, _tags);
-            }
-
-
-            // <summary>
-            // Gets elapsed seconds since the given timestamp (cross-.NET version compatible)
-            // </summary>
-            static double GetElapsedSeconds(long startTimestamp)
-            {
-#if NET7_0_OR_GREATER
-        return Stopwatch.GetElapsedTime(startTimestamp).TotalSeconds;
-#else
-                var elapsed = Stopwatch.GetTimestamp() - startTimestamp;
-                return (double)elapsed / Stopwatch.Frequency;
-#endif
-            }
-        }
-    }
-
     #endregion
 
 }

@@ -4,7 +4,6 @@ using System.Diagnostics;
 using FluentAssertions;
 using NGql.Core.Builders;
 using NGql.Core.Observability;
-using NGql.Core.Pooling;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -84,72 +83,6 @@ public class ObservabilityDemo
         // Verify that tracing worked
         ((string)query).Should().NotBeNullOrEmpty();
         ((string)query).Should().Contain("ComprehensiveUserQuery");
-    }
-
-    [Fact]
-    public void Demo_Metrics_And_Performance_Monitoring()
-    {
-        _output.WriteLine("📊 Performance Monitoring Demo:");
-        
-        // Reset stats for clean demo
-        ThreadLocalMemoryManager.ResetThreadStats();
-        
-        _output.WriteLine("🔄 Performing operations to generate metrics...");
-        
-        // Simulate a workload that exercises pooling
-        for (int i = 0; i < 20; i++)
-        {
-            using var activity = NGqlActivity.StartQuery($"batch_operation_{i}")
-                .WithTag("operation.batch_id", i / 5) // Group into batches
-                .WithTag("operation.type", "batch_processing");
-
-            activity.WithObservability(() =>
-            {
-                // Create a query that uses multiple pool types
-                var query = QueryBuilder
-                    .CreateDefaultBuilder($"BatchQuery{i}")
-                    .AddField("data", new Dictionary<string, object?> 
-                    { 
-                        ["id"] = i,
-                        ["batch"] = i / 5,
-                        ["timestamp"] = DateTimeOffset.UtcNow.Ticks
-                    })
-                    .AddField("data.nested.deep.field")
-                    .AddField("data.collection.items.value");
-
-                // Trigger serialization (uses StringBuilder pooling)
-                _ = query.ToString();
-                
-                // Record metrics manually for demo
-                NGqlTelemetry.RecordQueryBuilt($"BatchQuery{i}", 3, 0.001 + (i * 0.0001));
-                NGqlTelemetry.RecordFieldAdded("data", true, false);
-
-            }, $"process_batch_item_{i}");
-        }
-
-        // Display pooling efficiency statistics
-        var stats = ThreadLocalMemoryManager.GetThreadStats();
-        
-        _output.WriteLine("\n📈 Pooling Performance Statistics:");
-        _output.WriteLine($"   🎯 Thread-Local Cache Hits: {stats.ThreadLocalHits}");
-        _output.WriteLine($"   🌐 Global Pool Hits: {stats.GlobalPoolHits}");
-        _output.WriteLine($"   🆕 New Allocations: {stats.Allocations}");
-        _output.WriteLine($"   ⚡ Cache Efficiency: {stats.ThreadLocalHitRatio:P2}");
-        
-        var totalOps = stats.ThreadLocalHits + stats.GlobalPoolHits + stats.Allocations;
-        if (totalOps > 0)
-        {
-            var cacheEffectiveness = (double)(stats.ThreadLocalHits + stats.GlobalPoolHits) / totalOps;
-            _output.WriteLine($"   🏆 Overall Cache Effectiveness: {cacheEffectiveness:P2}");
-        }
-
-        // Generate efficiency report
-        ThreadLocalMemoryManager.ReportPoolEfficiency("demo_pools");
-        
-        _output.WriteLine("\n✅ Metrics demo complete - data available for OpenTelemetry export!");
-        
-        // Add assertion to satisfy SonarAnalyzer
-        stats.Should().NotBeNull("Statistics should be available for monitoring");
     }
 
     [Fact]

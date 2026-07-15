@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace NGql.Core.Observability;
@@ -55,42 +54,4 @@ internal static class PoolingObservability
             .WithPoolingTags(poolType, Allocation, 0);
     }
 
-    /// <summary>
-    /// Records pool efficiency statistics for monitoring
-    /// </summary>
-    internal static void RecordPoolEfficiency(string poolType, PoolEfficiencyStats stats)
-    {
-        using var activity = NGqlActivity.StartPooling(poolType, "efficiency_report")
-            .WithTag("pool.thread_local_hit_rate", stats.ThreadLocalHitRate)
-            .WithTag("pool.global_pool_hit_rate", stats.GlobalPoolHitRate) 
-            .WithTag("pool.allocation_rate", stats.AllocationRate)
-            .WithTag("pool.total_operations", stats.TotalOperations);
-
-        // These could be exposed as gauges for monitoring dashboards
-        activity.AddEvent("efficiency_calculated", new ActivityTagsCollection
-        {
-            ["thread_local_efficiency"] = stats.ThreadLocalHitRate,
-            ["global_pool_efficiency"] = stats.GlobalPoolHitRate,
-            ["cache_effectiveness"] = stats.ThreadLocalHitRate + stats.GlobalPoolHitRate
-        });
-    }
-
-    /// <summary>
-    /// Pool efficiency statistics for detailed monitoring
-    /// </summary>
-    internal readonly struct PoolEfficiencyStats
-    {
-        public readonly double ThreadLocalHitRate;
-        public readonly double GlobalPoolHitRate;
-        public readonly double AllocationRate;
-        public readonly long TotalOperations;
-
-        public PoolEfficiencyStats(long threadLocalHits, long globalHits, long allocations)
-        {
-            TotalOperations = threadLocalHits + globalHits + allocations;
-            ThreadLocalHitRate = TotalOperations > 0 ? (double)threadLocalHits / TotalOperations : 0;
-            GlobalPoolHitRate = TotalOperations > 0 ? (double)globalHits / TotalOperations : 0;
-            AllocationRate = TotalOperations > 0 ? (double)allocations / TotalOperations : 0;
-        }
-    }
 }
