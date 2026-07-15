@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text;
 using System.Text.Json.Serialization;
 using NGql.Core.Builders;
@@ -176,6 +177,28 @@ public sealed record QueryDefinition(string Name, string Description = "")
         try
         {
             textBuilder.BuildInto(this, writer);
+        }
+        finally
+        {
+            QueryTextBuilder.ReturnToPool(textBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Renders this definition's GraphQL and transcodes it as UTF-8 directly into
+    /// <paramref name="bufferWriter"/>, with no intermediate <see cref="string"/> or <c>byte[]</c>
+    /// allocation. The written bytes are identical to
+    /// <c>System.Text.Encoding.UTF8.GetBytes(</c><see cref="ToString()"/><c>)</c>.
+    /// </summary>
+    /// <param name="bufferWriter">The target <see cref="IBufferWriter{Byte}"/> to write UTF-8 bytes to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bufferWriter"/> is null.</exception>
+    public void WriteUtf8(IBufferWriter<byte> bufferWriter)
+    {
+        ArgumentNullException.ThrowIfNull(bufferWriter);
+        var textBuilder = QueryTextBuilder.GetFromPool();
+        try
+        {
+            textBuilder.BuildInto(this, bufferWriter);
         }
         finally
         {

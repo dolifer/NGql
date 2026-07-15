@@ -160,6 +160,30 @@ internal sealed class QueryTextBuilder
         WriteBuilderTo(writer);
     }
 
+    /// <summary>
+    /// Renders <paramref name="queryDefinition"/> into the pooled builder and transcodes the result
+    /// to UTF-8 directly into the caller-supplied <paramref name="bufferWriter"/>, with no
+    /// intermediate <see cref="string"/> or <c>byte[]</c> allocation. Shares the exact render
+    /// machinery used by <see cref="Build(QueryDefinition)"/>.
+    /// </summary>
+    internal void BuildInto(QueryDefinition queryDefinition, IBufferWriter<byte> bufferWriter)
+    {
+        BuildDefinitionCore(queryDefinition);
+        WriteBuilderToUtf8(bufferWriter);
+    }
+
+    /// <summary>
+    /// Renders <paramref name="queryBlock"/> into the pooled builder and transcodes the result to
+    /// UTF-8 directly into the caller-supplied <paramref name="bufferWriter"/>, with no intermediate
+    /// <see cref="string"/> or <c>byte[]</c> allocation. Shares the exact render machinery used by
+    /// <see cref="Build(QueryBlock, int, string?)"/>.
+    /// </summary>
+    internal void BuildInto(QueryBlock queryBlock, IBufferWriter<byte> bufferWriter, string? prefix = null)
+    {
+        BuildBlockCore(queryBlock, 0, prefix);
+        WriteBuilderToUtf8(bufferWriter);
+    }
+
     // Streams the pooled builder's backing chunks straight to the writer — TextWriter.Write(span)
     // (net8+) copies each chunk with no intermediate .ToString() materialization.
     private void WriteBuilderTo(TextWriter writer)
@@ -167,6 +191,49 @@ internal sealed class QueryTextBuilder
         foreach (var chunk in _stringBuilder.GetChunks())
         {
             writer.Write(chunk.Span);
+        }
+    }
+
+    // Transcodes the pooled builder's backing chunks to UTF-8 straight into the buffer writer with
+    // no intermediate string or byte[]. A single Encoder carries encoder state across chunks: a
+    // surrogate PAIR (astral codepoint / emoji) can be split across two GetChunks() boundaries, and
+    // a per-chunk stateless Encoding.GetBytes would mis-encode each half as U+FFFD. Convert with the
+    // stateful encoder — flushing only on the final chunk — reassembles the pair correctly.
+    private void WriteBuilderToUtf8(IBufferWriter<byte> bufferWriter)
+    {
+        var encoder = Encoding.UTF8.GetEncoder();
+
+        // GetChunks exposes no count, so track the last chunk by comparing against the total length
+        // consumed. Flush must happen exactly once, on the final Convert call, so any trailing
+        // high-surrogate left dangling by malformed input is emitted rather than silently swallowed.
+        var remaining = _stringBuilder.Length;
+        foreach (var chunk in _stringBuilder.GetChunks())
+        {
+            var chars = chunk.Span;
+            remaining -= chars.Length;
+            var isLast = remaining == 0;
+            EncodeChunk(encoder, chars, isLast, bufferWriter);
+        }
+    }
+
+    private static void EncodeChunk(Encoder encoder, ReadOnlySpan<char> chars, bool flush, IBufferWriter<byte> bufferWriter)
+    {
+        while (true)
+        {
+            // Size the destination for the whole remaining slice; GetMaxByteCount(0) is still a
+            // positive minimum so an empty final flush chunk gets a valid span.
+            var span = bufferWriter.GetSpan(Encoding.UTF8.GetMaxByteCount(chars.Length));
+            encoder.Convert(chars, span, flush, out var charsUsed, out var bytesUsed, out var completed);
+            bufferWriter.Advance(bytesUsed);
+            chars = chars[charsUsed..];
+
+            // completed=false means the destination span filled before the source drained — loop to
+            // rent more. Otherwise the chunk is done (a pending surrogate is retained in encoder
+            // state for the next chunk when flush=false).
+            if (completed && chars.IsEmpty)
+            {
+                break;
+            }
         }
     }
 
