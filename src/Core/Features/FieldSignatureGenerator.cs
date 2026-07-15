@@ -76,6 +76,24 @@ public static class FieldSignatureGenerator
     {
         // Build the current path efficiently using Span operations
         Span<char> currentPathBuffer = stackalloc char[256]; // Stack allocation for path building
+
+        var fieldNameSpan = field.Name.AsSpan();
+        // Separator ('.') is only added when a parent path is present. Compute the exact length
+        // the combined path needs and bail to the heap fallback BEFORE any CopyTo when it won't
+        // fit — a parent path already produced on the heap can itself be >= the buffer size, so
+        // guarding the field-name copy alone is not enough to keep the parent copy in bounds.
+        int separatorLength = parentPath.IsEmpty ? 0 : 1;
+        int requiredLength = parentPath.Length + separatorLength + fieldNameSpan.Length;
+
+        if (requiredLength >= currentPathBuffer.Length)
+        {
+            // Fallback to string concatenation for very long paths.
+            var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath.ToString()}.{field.Name}";
+            builder.Append(currentPath);
+            AppendFieldSignatureRemainder(builder, field, currentPath.AsSpan());
+            return;
+        }
+
         int pathLength = 0;
 
         if (!parentPath.IsEmpty)
@@ -85,20 +103,8 @@ public static class FieldSignatureGenerator
             currentPathBuffer[pathLength++] = '.';
         }
 
-        var fieldNameSpan = field.Name.AsSpan();
-        if (pathLength + fieldNameSpan.Length < currentPathBuffer.Length)
-        {
-            fieldNameSpan.CopyTo(currentPathBuffer[pathLength..]);
-            pathLength += fieldNameSpan.Length;
-        }
-        else
-        {
-            // Fallback to string concatenation for very long paths.
-            var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath.ToString()}.{field.Name}";
-            builder.Append(currentPath);
-            AppendFieldSignatureRemainder(builder, field, currentPath.AsSpan());
-            return;
-        }
+        fieldNameSpan.CopyTo(currentPathBuffer[pathLength..]);
+        pathLength += fieldNameSpan.Length;
 
         var currentPathSpan = currentPathBuffer[..pathLength];
 
