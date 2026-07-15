@@ -14,7 +14,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("SimpleQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -42,7 +42,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("ComplexQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -88,7 +88,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("MultipleTopLevelQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     { "field1", new FieldDefinition("field1") },
                     { "field2", new FieldDefinition("field2") }
@@ -108,7 +108,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("MixedQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     { "field1", new FieldDefinition("field1") },
                     {
@@ -138,7 +138,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("DeepQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     {
                         "level1", new FieldDefinition("level1")
@@ -183,7 +183,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("SiblingsQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     {
                         "parent", new FieldDefinition("parent")
@@ -215,7 +215,7 @@ public class QueryDefinitionQueryTests
         // Arrange
         var query = new QueryDefinition("ComplexCombinationQuery")
         {
-            Fields =
+            FieldsInternal =
                 {
                     { "field1", new FieldDefinition("field1") },
                     {
@@ -262,25 +262,16 @@ public class QueryDefinitionQueryTests
     }
 
     [Fact]
-    public void Fields_Property_Internal_Setter_Via_Reflection()
+    public void FieldsInternal_MutableAccessor_BacksPublicReadOnlyFields()
     {
         // Arrange
         var query = new QueryDefinition("TestQuery");
-        var newFields = new Dictionary<string, FieldDefinition>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "field1", new FieldDefinition("field1") }
-        };
-        
-        // Act - Use reflection to invoke the internal setter
-        var fieldsProperty = query.GetType().GetProperty("Fields");
-        var setMethod = fieldsProperty?.GetSetMethod(true);
-        
-        // Assert
-        if (setMethod != null)
-        {
-            setMethod.Invoke(query, [newFields]);
-            query.Fields.Should().HaveCount(1);
-            query.Fields.Should().ContainKey("field1");
-        }
+
+        // Act - internal code mutates through FieldsInternal; the public getter reflects it
+        query.FieldsInternal["field1"] = new FieldDefinition("field1");
+
+        // Assert - the public read-only getter surfaces the same entries
+        query.Fields.Should().HaveCount(1);
+        query.Fields.Should().ContainKey("field1");
     }
 }

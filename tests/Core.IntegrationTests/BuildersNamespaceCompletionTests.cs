@@ -22,9 +22,10 @@ public class BuildersNamespaceCompletionTests
     [Fact]
     public void QueryBuilder_CreateFromDefinition_CreatesBuilderFromExistingDefinition()
     {
-        var definition = new QueryDefinition("GetUser");
-        definition.Fields.TryAdd("id", new FieldDefinition("id"));
-        definition.Fields.TryAdd("name", new FieldDefinition("name"));
+        var definition = QueryBuilder.CreateDefaultBuilder("GetUser")
+            .AddField("id")
+            .AddField("name")
+            .Definition;
 
         var builder = QueryBuilder.CreateFromDefinition(definition);
         var result = builder.ToString();

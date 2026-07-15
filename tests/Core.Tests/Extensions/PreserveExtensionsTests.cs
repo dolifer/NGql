@@ -382,8 +382,8 @@ public class PreserveExtensionsTests
     {
         // Arrange
         var query = QueryBuilder.CreateDefaultBuilder("TestQuery");
-        query.Definition.Metadata["version"] = "1.0";
-        query.Definition.Metadata["public"] = true;
+        query.Definition.MetadataInternal["version"] = "1.0";
+        query.Definition.MetadataInternal["public"] = true;
         query.AddField("TestQuery:data.id")
              .AddField("data.name");
 
@@ -404,8 +404,8 @@ public class PreserveExtensionsTests
     {
         // Arrange
         var query = QueryBuilder.CreateDefaultBuilder("Query");
-        query.Definition.Metadata["role"] = "admin";
-        query.Definition.Metadata["level"] = 5;
+        query.Definition.MetadataInternal["role"] = "admin";
+        query.Definition.MetadataInternal["level"] = 5;
         query.AddField("Query:profile.name")
              .AddField("profile.bio");
 
@@ -425,7 +425,7 @@ public class PreserveExtensionsTests
     {
         // Arrange
         var query = QueryBuilder.CreateDefaultBuilder("Q");
-        query.Definition.Metadata["depth"] = "complex";
+        query.Definition.MetadataInternal["depth"] = "complex";
         query.AddField("Q:a.b.c.d.e")
              .AddField("a.b.x");
 
@@ -444,7 +444,7 @@ public class PreserveExtensionsTests
     {
         // Arrange
         var query = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
-        query.Definition.Metadata["strategy"] = "field-path";
+        query.Definition.MetadataInternal["strategy"] = "field-path";
         query.AddField("Q:a")
              .AddField("b")
              .AddField("c");

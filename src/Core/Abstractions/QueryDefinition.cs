@@ -28,13 +28,20 @@ public sealed record QueryDefinition(string Name, string Description = "")
 
     /// <summary>
     ///     The collection of fields related to <see cref="QueryDefinition"/>.
+    ///     Exposed read-only: mutating the field set from outside the assembly would desync
+    ///     the builder's path index and query map. Fields are added through the
+    ///     <see cref="QueryBuilder"/> API; internal code mutates via <see cref="FieldsInternal"/>.
     /// </summary>
     [JsonPropertyName("fields")]
-    public Dictionary<string, FieldDefinition> Fields
-    {
-        get => _fields ??= new(StringComparer.OrdinalIgnoreCase);
-        internal set => _fields = value;
-    }
+    public IReadOnlyDictionary<string, FieldDefinition> Fields
+        => _fields ??= new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    ///     Mutable view of <see cref="Fields"/> for internal builder and merge code. Lazily
+    ///     initialized with the same case-insensitive comparer as the public getter.
+    /// </summary>
+    internal Dictionary<string, FieldDefinition> FieldsInternal
+        => _fields ??= new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     ///     The collection of variables related to fields or arguments.
@@ -51,13 +58,18 @@ public sealed record QueryDefinition(string Name, string Description = "")
     /// This can include additional information such as descriptions, tags, or any other relevant data.
     ///
     /// Not used during query text generation but can be useful for documentation or introspection purposes.
+    ///
+    /// Exposed read-only: replacing or mutating the bag from outside the assembly is not
+    /// supported. Metadata is attached through <see cref="QueryBuilder.WithMetadata"/>;
+    /// internal code mutates via <see cref="MetadataInternal"/>.
     /// </summary>
     [JsonPropertyName("metadata")]
-    public Dictionary<string, object?> Metadata
-    {
-        get => _metadata ??= [];
-        set => _metadata = value;
-    }
+    public IReadOnlyDictionary<string, object?> Metadata => _metadata ??= [];
+
+    /// <summary>
+    ///     Mutable view of <see cref="Metadata"/> for internal builder and preservation code.
+    /// </summary>
+    internal Dictionary<string, object?> MetadataInternal => _metadata ??= [];
 
     /// <summary>
     ///     Named fragments declared at this operation's top level, keyed by fragment name

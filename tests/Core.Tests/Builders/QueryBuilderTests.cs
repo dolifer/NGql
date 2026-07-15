@@ -403,8 +403,8 @@ public class QueryBuilderTests
     public void QueryBuilder_CreateFromDefinition_Should_Wrap_Existing_Definition()
     {
         var definition = new QueryDefinition("ExistingQuery");
-        definition.Fields["user"] = new FieldDefinition("user", "User");
-        
+        definition.FieldsInternal["user"] = new FieldDefinition("user", "User");
+
         var queryBuilder = QueryBuilder.CreateFromDefinition(definition);
         
         queryBuilder.Definition.Should().Be(definition);
