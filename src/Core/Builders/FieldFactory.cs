@@ -112,13 +112,20 @@ internal static class FieldFactory
         while (pathStart < fieldPath.Length)
         {
             ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
+            if (spanSegment.Name.IsWhiteSpace())
+            {
+                pathStart = nextStart;
+                continue;
+            }
             parentField = parentField is null
                 ? GetOrCreateRootSegment(rootFields, spanSegment, fieldPath, pathStart, fieldType)
                 : GetOrCreateChildSegment(parentField, spanSegment, fieldPath, pathStart, fieldType);
             pathStart = nextStart;
         }
 
-        return parentField!;
+        // A dotted path made up entirely of empty/whitespace segments (e.g. "." or "..") yields
+        // no field. Reject it rather than dereferencing a null result.
+        return parentField ?? throw EmptyDottedPath();
     }
 
     /// <summary>
@@ -133,6 +140,11 @@ internal static class FieldFactory
         while (pathStart < fieldPath.Length)
         {
             ExtractDottedSegment(fieldPath, pathStart, out var spanSegment, out var nextStart);
+            if (spanSegment.Name.IsWhiteSpace())
+            {
+                pathStart = nextStart;
+                continue;
+            }
             currentParent = GetOrCreateChildSegment(currentParent, spanSegment, fieldPath, pathStart, fieldType);
             pathStart = nextStart;
         }
@@ -249,6 +261,12 @@ internal static class FieldFactory
         {
             ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
 
+            if (spanSegment.Name.IsWhiteSpace())
+            {
+                fieldPath = remainingPath;
+                continue;
+            }
+
             pathBuilder.Append(spanSegment.Name);
 
             if (parentField == null)
@@ -267,7 +285,7 @@ internal static class FieldFactory
             fieldPath = remainingPath;
         }
 
-        return result!;
+        return result ?? throw EmptyDottedPath();
     }
 
     /// <summary>
@@ -282,6 +300,12 @@ internal static class FieldFactory
         {
             ExtractDottedSegmentWithPath(fieldPath, out var spanSegment, out var remainingPath);
 
+            if (spanSegment.Name.IsWhiteSpace())
+            {
+                fieldPath = remainingPath;
+                continue;
+            }
+
             pathBuilder.Append(spanSegment.Name);
             var children = currentParent._children ??= new FieldChildren();
             result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
@@ -289,8 +313,17 @@ internal static class FieldFactory
             fieldPath = remainingPath;
         }
 
-        return result!;
+        // Matches the per-node fast-path variant: an all-empty dotted path leaves the parent
+        // unchanged rather than throwing.
+        return result ?? rootParent;
     }
+
+    /// <summary>
+    /// Creates an exception for a dotted path that contains no non-empty segments.
+    /// Mirrors the null/empty guard used at the public AddField boundary.
+    /// </summary>
+    private static ArgumentException EmptyDottedPath()
+        => new("Field cannot be null or empty", "fieldName");
 
     /// <summary>
     /// Creates a field segment for dotted field processing.

@@ -430,6 +430,11 @@ public sealed class FieldBuilder
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, IDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
     {
+        // Empty/whitespace dotted segments are collapsed by FieldFactory.GetOrAddField below, the
+        // same shared routine the instance AddField overloads use — so this factory no longer
+        // bypasses that handling. Full per-segment identifier validation is intentionally NOT done
+        // here: Create legitimately receives complex paths (type prefixes, alias:name, array
+        // indices like results[0]) that the complex-path parser resolves.
         // FAIL-FAST: Use empty arguments if null or empty
         var argumentsToUse = arguments is { Count: > 0 } ? arguments : null;
 
@@ -502,12 +507,14 @@ public sealed class FieldBuilder
         if (fieldName.IsEmpty)
             throw new ArgumentException("Field name cannot be empty.", nameof(fieldName));
 
-        // Validate each dot-separated segment individually
+        // Validate each dot-separated segment individually. Empty/whitespace segments (e.g. from
+        // "user..name" or "user. .name") are skipped — they are collapsed by FieldFactory rather
+        // than rejected, so validation must agree with that skip contract.
         while (!fieldName.IsEmpty)
         {
             var dotIndex = fieldName.IndexOf('.');
             var segment = dotIndex >= 0 ? fieldName[..dotIndex] : fieldName;
-            if (!segment.IsEmpty)
+            if (!segment.IsWhiteSpace())
                 Helpers.ValidateFieldName(segment);
             fieldName = dotIndex >= 0 ? fieldName[(dotIndex + 1)..] : ReadOnlySpan<char>.Empty;
         }
