@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using System.Text;
 using NGql.Core.Abstractions;
@@ -601,6 +602,22 @@ public sealed class QueryBuilder
         ArgumentNullException.ThrowIfNull(writer);
         QueryMapInstance.UpdateRootMapping(_definition);
         Definition.WriteTo(writer);
+    }
+
+    /// <summary>
+    /// Renders this query's GraphQL and transcodes it as UTF-8 directly into
+    /// <paramref name="bufferWriter"/>, with no intermediate <see cref="string"/> or <c>byte[]</c>
+    /// allocation. This lets consumers write a query straight into a <c>PipeWriter</c>,
+    /// <c>ArrayBufferWriter&lt;byte&gt;</c>, or response-body buffer. The written bytes are identical
+    /// to <c>System.Text.Encoding.UTF8.GetBytes(</c><see cref="ToString()"/><c>)</c>.
+    /// </summary>
+    /// <param name="bufferWriter">The target <see cref="IBufferWriter{Byte}"/> to write UTF-8 bytes to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bufferWriter"/> is null.</exception>
+    public void WriteUtf8(IBufferWriter<byte> bufferWriter)
+    {
+        ArgumentNullException.ThrowIfNull(bufferWriter);
+        QueryMapInstance.UpdateRootMapping(_definition);
+        Definition.WriteUtf8(bufferWriter);
     }
 
     public static implicit operator string(QueryBuilder query) => query.ToString();

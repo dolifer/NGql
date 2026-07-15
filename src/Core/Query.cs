@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Buffers;
+using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
 
@@ -152,6 +153,9 @@ public sealed class Query
 
     /// <inheritdoc cref="QueryBlock.WriteTo(System.IO.TextWriter)"/>
     public void WriteTo(TextWriter writer) => Block.WriteTo(writer);
+
+    /// <inheritdoc cref="QueryBlock.WriteUtf8(System.Buffers.IBufferWriter{System.Byte})"/>
+    public void WriteUtf8(IBufferWriter<byte> bufferWriter) => Block.WriteUtf8(bufferWriter);
 
     public static implicit operator string(Query query) => query.Block.ToString();
 }

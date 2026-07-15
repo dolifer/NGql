@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System.Buffers;
+using System.Collections;
 using System.Text;
 using NGql.Core.Builders;
 using NGql.Core.Extensions;
@@ -169,6 +170,28 @@ public sealed class QueryBlock
         try
         {
             textBuilder.BuildInto(this, writer, _prefix);
+        }
+        finally
+        {
+            QueryTextBuilder.ReturnToPool(textBuilder);
+        }
+    }
+
+    /// <summary>
+    /// Renders this block's GraphQL and transcodes it as UTF-8 directly into
+    /// <paramref name="bufferWriter"/>, with no intermediate <see cref="string"/> or <c>byte[]</c>
+    /// allocation. The written bytes are identical to
+    /// <c>System.Text.Encoding.UTF8.GetBytes(</c><see cref="ToString()"/><c>)</c>.
+    /// </summary>
+    /// <param name="bufferWriter">The target <see cref="IBufferWriter{Byte}"/> to write UTF-8 bytes to.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="bufferWriter"/> is null.</exception>
+    public void WriteUtf8(IBufferWriter<byte> bufferWriter)
+    {
+        ArgumentNullException.ThrowIfNull(bufferWriter);
+        var textBuilder = QueryTextBuilder.GetFromPool();
+        try
+        {
+            textBuilder.BuildInto(this, bufferWriter, _prefix);
         }
         finally
         {
