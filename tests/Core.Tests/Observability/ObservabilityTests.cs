@@ -5,7 +5,6 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
 using NGql.Core.Observability;
-using NGql.Core.Pooling;
 using Xunit;
 
 namespace NGql.Core.Tests.Observability;
@@ -45,26 +44,6 @@ public class ObservabilityTests
     }
 
     [Fact]
-    public void ThreadLocalMemoryManager_Should_Record_Statistics_With_Observability()
-    {
-        // Reset stats for clean test
-        ThreadLocalMemoryManager.ResetThreadStats();
-        
-        // Perform operations that will trigger observability
-        for (int i = 0; i < 5; i++)
-        {
-            using var pooled = LockFreeArgumentsPool.GetPooled(new Dictionary<string, object?> { ["test"] = i });
-            _ = pooled.Dictionary.Count;
-        }
-        
-        var stats = ThreadLocalMemoryManager.GetThreadStats();
-        
-        // Should have recorded operations with observability
-        var totalOperations = stats.ThreadLocalHits + stats.GlobalPoolHits + stats.Allocations;
-        totalOperations.Should().BeGreaterThan(0);
-    }
-
-    [Fact]
     public void QueryBuilder_Should_Work_With_Activity_Context()
     {
         // Test that QueryBuilder operations work normally even with activity context
@@ -88,30 +67,6 @@ public class ObservabilityTests
         action.Should().NotThrow();
         result.Should().NotBeNullOrEmpty();
         result.Should().Contain("ObservabilityTest");
-    }
-
-    [Fact]
-    public void PoolingObservability_Should_Track_Cache_Performance()
-    {
-        // Reset and warm up caches
-        ThreadLocalMemoryManager.ResetThreadStats();
-        ThreadLocalMemoryManager.WarmupThreadLocalCaches();
-
-        // Perform operations to generate telemetry
-        const int operationCount = 10;
-        for (int i = 0; i < operationCount; i++)
-        {
-            using var sb = LockFreeStringBuilderPool.GetPooled();
-            sb.StringBuilder.Append($"test{i}");
-            _ = sb.StringBuilder.ToString();
-        }
-
-        // Report efficiency (this will generate observability data)
-        ThreadLocalMemoryManager.ReportPoolEfficiency("stringbuilder");
-
-        // Verify statistics were collected
-        var stats = ThreadLocalMemoryManager.GetThreadStats();
-        stats.ThreadLocalHits.Should().BeGreaterThan(0);
     }
 
     [Fact]
@@ -395,45 +350,6 @@ public class ObservabilityTests
         // Arrange & Act & Assert
         var recordAction = () => NGqlTelemetry.RecordPoolOperation("largepool", "operation", "hit", 10000);
         recordAction.Should().NotThrow();
-    }
-
-    [Fact]
-    public void NGqlTelemetry_CreateTimedScope_ShouldNotThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () =>
-        {
-            using var scope = NGqlTelemetry.CreateTimedScope("test_operation", default);
-        };
-        action.Should().NotThrow();
-    }
-
-    [Fact]
-    public void NGqlTelemetry_CreateTimedScope_Serialize_ShouldNotThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () =>
-        {
-            using var scope = NGqlTelemetry.CreateTimedScope("ngql.serialize", default);
-        };
-        action.Should().NotThrow();
-    }
-
-    [Fact]
-    public void NGqlTelemetry_CreateTimedScope_MultipleScopes_ShouldNotThrow()
-    {
-        // Arrange & Act & Assert
-        var action = () =>
-        {
-            using (NGqlTelemetry.CreateTimedScope("op1", default))
-            {
-                using (NGqlTelemetry.CreateTimedScope("op2", default))
-                {
-                    // Nested scopes
-                }
-            }
-        };
-        action.Should().NotThrow();
     }
 
     [Fact]

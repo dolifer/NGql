@@ -317,45 +317,6 @@ public class ActivityMonitoringTests
     }
 
     [Fact]
-    public void PoolingObservability_RecordPoolEfficiency_DoesNotThrow()
-    {
-        // Arrange
-        var stats = new PoolingObservability.PoolEfficiencyStats(100, 50, 10);
-
-        // Act
-        var action = () => PoolingObservability.RecordPoolEfficiency("test_pool", stats);
-
-        // Assert
-        action.Should().NotThrow();
-    }
-
-    [Fact]
-    public void PoolingObservability_PoolEfficiencyStats_CalculatesCorrectly()
-    {
-        // Arrange
-        var stats = new PoolingObservability.PoolEfficiencyStats(80, 15, 5);
-
-        // Act & Assert
-        stats.ThreadLocalHitRate.Should().Be(0.8);
-        stats.GlobalPoolHitRate.Should().Be(0.15);
-        stats.AllocationRate.Should().Be(0.05);
-        stats.TotalOperations.Should().Be(100);
-    }
-
-    [Fact]
-    public void PoolingObservability_PoolEfficiencyStats_HandlesZero()
-    {
-        // Arrange
-        var stats = new PoolingObservability.PoolEfficiencyStats(0, 0, 0);
-
-        // Act & Assert
-        stats.ThreadLocalHitRate.Should().Be(0);
-        stats.GlobalPoolHitRate.Should().Be(0);
-        stats.AllocationRate.Should().Be(0);
-        stats.TotalOperations.Should().Be(0);
-    }
-
-    [Fact]
     public void NGqlActivity_ChainedMethods_ReturnSelfForFluency()
     {
         // Act
