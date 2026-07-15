@@ -1,4 +1,5 @@
 using System.Reflection;
+using NGql.Core.Caching;
 
 namespace NGql.Core.Builders;
 
@@ -28,8 +29,8 @@ internal static class NavigationPropertyExpander
             // Handle nested paths - only check the first segment for navigation properties
             var (firstSegment, remainingPath) = SplitPath(fieldName);
 
-            // Get the property from the type (only first segment)
-            var property = parameterType.GetProperty(firstSegment, BindingFlags.Public | BindingFlags.Instance);
+            // Get the property from the type (only first segment) via cached metadata
+            var property = TypeMetadataCache.GetNavigationProperties(parameterType).GetProperty(firstSegment);
             if (property == null)
             {
                 result.Add(fieldName);
@@ -80,7 +81,7 @@ internal static class NavigationPropertyExpander
     private static void ExpandNavigationPropertyFields(Type parameterType, string? remainingPath, HashSet<string> result)
     {
         // This is a navigation property - get all SETTABLE properties
-        foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        foreach (var prop in TypeMetadataCache.GetNavigationProperties(parameterType).Properties)
         {
             // Skip navigation properties themselves (getter-only)
             if (prop.SetMethod != null)

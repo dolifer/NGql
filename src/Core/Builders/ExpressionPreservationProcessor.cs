@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
+using NGql.Core.Caching;
 using NGql.Core.Extensions;
 using NGql.Core.Features;
 
@@ -35,13 +35,14 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
             return;
         }
 
-        // Get parameter info once
+        // Get parameter names once; parameter types are only needed by the local-map strategy,
+        // so their (allocating) map is deferred into that branch.
         var parameterNames = GetParameterNames(expression);
-        var parameterTypes = GetParameterTypes(expression);
 
         // Choose strategy based on localMap availability
         if (localMap != null && parameterNames != null)
         {
+            var parameterTypes = GetParameterTypes(expression);
             PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterTypes, alwaysPreserveFields);
         }
         else
@@ -345,7 +346,7 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     private static void AddAllPropertiesAsFallback(Type parameterType, HashSet<string> result)
     {
-        foreach (var prop in parameterType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        foreach (var prop in TypeMetadataCache.GetNavigationProperties(parameterType).Properties)
         {
             result.Add(prop.Name);
         }
