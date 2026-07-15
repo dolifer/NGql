@@ -87,9 +87,11 @@ public static class FieldSignatureGenerator
 
         if (requiredLength >= currentPathBuffer.Length)
         {
-            // Fallback to string concatenation for very long paths.
+            // Fallback to string concatenation for very long paths. The path is still appended
+            // through AppendCaseInsensitive so this heap path yields the same case-folded
+            // signature as the stackalloc path above — the two must never disagree on case.
             var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath.ToString()}.{field.Name}";
-            builder.Append(currentPath);
+            AppendCaseInsensitive(builder, currentPath.AsSpan());
             AppendFieldSignatureRemainder(builder, field, currentPath.AsSpan());
             return;
         }
@@ -108,8 +110,9 @@ public static class FieldSignatureGenerator
 
         var currentPathSpan = currentPathBuffer[..pathLength];
 
-        // Append the path to the signature
-        builder.Append(currentPathSpan);
+        // Append the path to the signature, case-folded so {User} and {user} hash equal —
+        // matching the OrdinalIgnoreCase merge/sort semantics used elsewhere.
+        AppendCaseInsensitive(builder, currentPathSpan);
 
         AppendFieldSignatureRemainder(builder, field, currentPathSpan);
     }
@@ -129,7 +132,9 @@ public static class FieldSignatureGenerator
             // _arguments is SortedDictionary — already ordered by key, no OrderBy needed.
             foreach (var arg in field._arguments)
             {
-                builder.Append(arg.Key);
+                // Argument KEYS are case-insensitive (the arg dictionaries use
+                // StringComparer.OrdinalIgnoreCase); VALUES stay case-sensitive.
+                AppendCaseInsensitive(builder, arg.Key.AsSpan());
                 builder.Append(':');
                 AppendArgumentValue(builder, arg.Value);
                 builder.Append(';');
@@ -159,6 +164,19 @@ public static class FieldSignatureGenerator
         }
     }
 
+
+    /// <summary>
+    /// Appends a field name / path / argument key to the signature, folding each char with
+    /// <see cref="char.ToUpperInvariant(char)"/> so casing does not affect the hash — the rest
+    /// of the library merges and sorts these under OrdinalIgnoreCase. Folds char-by-char to stay
+    /// allocation-free; no upper-cased copy of the string is materialised. Value text is NOT
+    /// routed here — GraphQL argument values are case-sensitive.
+    /// </summary>
+    private static void AppendCaseInsensitive(StringBuilder builder, ReadOnlySpan<char> text)
+    {
+        foreach (var c in text)
+            builder.Append(char.ToUpperInvariant(c));
+    }
 
     /// <summary>
     /// Appends argument value to the signature with optimized handling for common types.
@@ -203,7 +221,10 @@ public static class FieldSignatureGenerator
         Helpers.WriteCollection('{', '}', dict, builder, (sb, item) =>
         {
             var kvp = (KeyValuePair<string, object?>)item!;
-            sb.Append(kvp.Key).Append(':');
+            // Nested-dictionary KEYS are case-insensitive (SortArgumentValue rebuilds every
+            // nested dict with StringComparer.OrdinalIgnoreCase); VALUES stay case-sensitive.
+            AppendCaseInsensitive(sb, kvp.Key.AsSpan());
+            sb.Append(':');
             AppendArgumentValue(sb, kvp.Value);
         });
     }
