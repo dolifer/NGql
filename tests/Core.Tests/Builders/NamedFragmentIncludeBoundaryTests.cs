@@ -1,4 +1,3 @@
-using System;
 using FluentAssertions;
 using NGql.Core.Builders;
 using Xunit;
@@ -6,18 +5,15 @@ using Xunit;
 namespace NGql.Core.Tests.Builders;
 
 /// <summary>
-/// Documents NGql's current behavior when <see cref="QueryBuilder.Include"/> meets fragments
-/// (named, inline, or spreads). Today the merger does not touch fragment collections — both
-/// definitions and spreads are silently dropped from the incoming query. These tests pin that
-/// behavior so it cannot regress accidentally.
-///
-/// A future change to support fragments through <c>Include</c> should rewrite these tests
-/// (rather than delete them) — they document the boundary, not a permanent contract.
+/// Documents NGql's behavior when <see cref="QueryBuilder.Include"/> meets fragments (named,
+/// inline, or spreads). Historically the merger rejected fragment-bearing queries with a
+/// <c>NotSupportedException</c> — these tests once pinned that limitation. Include now merges
+/// fragments correctly (the #20 follow-up), so each case asserts the merged output instead.
 /// </summary>
 public class NamedFragmentIncludeBoundaryTests
 {
     [Fact]
-    public void Include_Drops_NamedFragments_From_Incoming_Query()
+    public void Include_Merges_NamedFragments_From_Incoming_Query()
     {
         var fragmentSource = QueryBuilder.CreateDefaultBuilder("FragmentSource")
             .AddFragment("UserSummary", "User", f => f.AddField("id").AddField("name"))
@@ -26,17 +22,15 @@ public class NamedFragmentIncludeBoundaryTests
         var target = QueryBuilder.CreateDefaultBuilder("Target")
             .AddField("admins", a => a.AddField("id"));
 
-        var act = () => target.Include(fragmentSource);
+        target.Include(fragmentSource);
 
-        // Currently: silently drops named fragments AND spreads from the incoming definition.
-        // Pinning this so it doesn't quietly start producing broken GraphQL when someone
-        // refactors the merger.
-        act.Should().Throw<NotSupportedException>()
-           .WithMessage("*Include*fragments*");
+        var rendered = target.ToString();
+        rendered.Should().Contain("...UserSummary", "the spread survives the merge");
+        rendered.Should().Contain("fragment UserSummary on User", "the definition carries over");
     }
 
     [Fact]
-    public void Include_Drops_InlineFragments_From_Incoming_Query()
+    public void Include_Merges_InlineFragments_From_Incoming_Query()
     {
         var inlineSource = QueryBuilder.CreateDefaultBuilder("InlineSource")
             .AddField("nodes", n => n
@@ -45,35 +39,33 @@ public class NamedFragmentIncludeBoundaryTests
         var target = QueryBuilder.CreateDefaultBuilder("Target")
             .AddField("admins", a => a.AddField("id"));
 
-        var act = () => target.Include(inlineSource);
+        target.Include(inlineSource);
 
-        act.Should().Throw<NotSupportedException>()
-           .WithMessage("*Include*fragments*");
+        target.ToString().Should().Contain("... on Repository",
+            "the incoming field's inline fragment survives the merge");
     }
 
     [Fact]
-    public void Include_Drops_SpreadFragments_From_Incoming_Query()
+    public void Include_Merges_SpreadFragments_From_Incoming_Query()
     {
-        // Spreads alone (no fragment definition source-side) — still rejected because the
-        // spread reference is a fragment-related construct.
+        // Spreads alone (no fragment definition source-side) — the spread reference carries over
+        // even though no matching definition exists (NGql is schemaless).
         var spreadSource = QueryBuilder.CreateDefaultBuilder("SpreadSource")
             .AddField("user", u => u.SpreadFragment("UserSummary"));
 
         var target = QueryBuilder.CreateDefaultBuilder("Target")
             .AddField("admins", a => a.AddField("id"));
 
-        var act = () => target.Include(spreadSource);
+        target.Include(spreadSource);
 
-        act.Should().Throw<NotSupportedException>()
-           .WithMessage("*Include*fragments*");
+        target.ToString().Should().Contain("...UserSummary");
     }
 
     [Fact]
-    public void Include_Detects_Fragments_Nested_Inside_Child_Fields()
+    public void Include_Carries_Fragments_Nested_Inside_Child_Fields()
     {
-        // The guard recurses through child fields — a fragment buried under a parent without
-        // its own fragments must still be caught. Exercises the recursive branch in
-        // FieldHasAnyFragment that the top-level fragment cases don't reach.
+        // A fragment buried under a parent without its own fragments must still carry over —
+        // exercises the recursive merge branch, not just top-level fields.
         var deepSource = QueryBuilder.CreateDefaultBuilder("DeepSource")
             .AddField("organization", o => o
                 .AddField("departments", d => d
@@ -83,10 +75,10 @@ public class NamedFragmentIncludeBoundaryTests
         var target = QueryBuilder.CreateDefaultBuilder("Target")
             .AddField("admins", a => a.AddField("id"));
 
-        var act = () => target.Include(deepSource);
+        target.Include(deepSource);
 
-        act.Should().Throw<NotSupportedException>()
-           .WithMessage("*Include*fragments*");
+        target.ToString().Should().Contain("... on EngineeringTeam",
+            "deeply-nested inline fragments merge through the field tree");
     }
 
     [Fact]

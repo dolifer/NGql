@@ -469,6 +469,11 @@ public sealed class FieldBuilder
     {
         var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition);
 
+        // Carry over the incoming field's inline fragments, spreads, and directives (deep-cloned)
+        // — CreateOrMergeField only copies name/type/alias/arguments/metadata, so without this the
+        // merged field would render without its fragment state.
+        FieldDefinitionExtensions.MergeFragmentState(parentField, fieldDefinition);
+
         // Recursively process all child fields using direct span iteration (zero-alloc)
         if (fieldDefinition._children != null)
         {
@@ -486,6 +491,8 @@ public sealed class FieldBuilder
     {
         var parentField = FieldFactory.CreateOrMergeField(children, fieldDefinition);
 
+        FieldDefinitionExtensions.MergeFragmentState(parentField, fieldDefinition);
+
         // Recursively process all child fields using direct span iteration (zero-alloc)
         if (fieldDefinition._children != null)
         {
@@ -501,6 +508,9 @@ public sealed class FieldBuilder
 
     internal static void Include(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
         => RecursiveCreateField(fields, fieldDefinition);
+
+    internal static void Include(FieldChildren children, FieldDefinition fieldDefinition)
+        => RecursiveCreateField(children, fieldDefinition);
 
     private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
     {

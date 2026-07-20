@@ -436,9 +436,18 @@ public sealed class QueryBuilder
     /// fields and auto-aliases on argument conflict, and
     /// <see cref="NGql.Core.MergingStrategy.NeverMerge"/> always aliases the included fields
     /// as <c>name_1</c>, <c>name_2</c>, …
+    /// <para>
+    /// Fragment-bearing queries merge correctly: named-fragment definitions carry over (same
+    /// name and type are deduped/merged, a same name with a conflicting type throws
+    /// <see cref="InvalidOperationException"/>), and a merged field keeps its inline fragments,
+    /// fragment spreads (insertion order preserved), and directives. All fragment state is
+    /// deep-cloned, so mutating the source after <c>Include</c> never affects the merged result.
+    /// </para>
     /// </summary>
     /// <param name="queryBuilder">Builder whose fields will be merged into this one.</param>
     /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the incoming query declares a named
+    /// fragment whose name matches one already declared on this builder but on a different type.</exception>
     public QueryBuilder Include(QueryBuilder queryBuilder) => IncludeImpl(queryBuilder.Definition);
 
     /// <summary>
@@ -500,63 +509,12 @@ public sealed class QueryBuilder
     /// <returns>Current QueryBuilder instance for method chaining</returns>
     private QueryBuilder IncludeImpl(in QueryDefinition queryDefinition)
     {
-        // Fragments (named, inline, and spreads) are not yet handled by the merger — silently
-        // dropping them would emit GraphQL with broken references, so we reject upfront. When
-        // fragment merge semantics are designed (issue #20 follow-up), this guard goes away.
-        ThrowIfIncomingHasFragments(queryDefinition);
-
         QueryMerger.MergeQuery(_definition, QueryMapInstance, this, in queryDefinition);
 
         // Phase 3: Invalidate lookup caches after merge since fields changed
         InvalidateLookupCaches();
 
         return this;
-    }
-
-    private static void ThrowIfIncomingHasFragments(in QueryDefinition queryDefinition)
-    {
-        if (queryDefinition._namedFragments is { Count: > 0 })
-        {
-            throw new NotSupportedException(
-                "Include does not yet support queries that declare named fragments. " +
-                "Inline the fragment's fields manually, or build the merged query without fragments.");
-        }
-
-        if (queryDefinition._fields is { Count: > 0 } && AnyFieldHasFragment(queryDefinition._fields.Values))
-        {
-            throw new NotSupportedException(
-                "Include does not yet support queries that contain inline fragments or fragment spreads. " +
-                "Build the merged query without fragments, or apply Include before adding fragments.");
-        }
-    }
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Runs on every Include call — the concrete ValueCollection keeps the struct enumerator (an IEnumerable-typed loop or LINQ would box it) and the early return skips the rest of the walk.")]
-    private static bool AnyFieldHasFragment(Dictionary<string, FieldDefinition>.ValueCollection fields)
-    {
-        foreach (var field in fields)
-        {
-            if (FieldHasAnyFragment(field)) return true;
-        }
-        return false;
-    }
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Recursive walk over a Span<FieldDefinition>; LINQ does not span-iterate.")]
-    private static bool FieldHasAnyFragment(FieldDefinition field)
-    {
-        if (field._fragments is { Count: > 0 }) return true;
-        if (field._spreadFragments is { Count: > 0 }) return true;
-        if (field._children is { Count: > 0 })
-        {
-            foreach (var child in field._children.AsSpan())
-            {
-                if (FieldHasAnyFragment(child)) return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>
