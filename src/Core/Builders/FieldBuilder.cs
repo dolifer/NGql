@@ -678,4 +678,68 @@ public sealed class FieldBuilder
         _fieldDefinition.AddSpreadFragment(name);
         return this;
     }
+
+    /// <summary>
+    /// Attaches an <c>@include(if:$var)</c> directive to the current field. The field is kept in
+    /// the response only when the runtime value of <paramref name="ifVariable"/> is <c>true</c>.
+    /// </summary>
+    /// <param name="ifVariable">The variable name, with or without the leading <c>$</c> — both
+    /// <c>"$show"</c> and <c>"show"</c> render as <c>if:$show</c>.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="ifVariable"/> is null or whitespace.</exception>
+    public FieldBuilder Include(string ifVariable)
+        => AddIfDirective("include", ifVariable);
+
+    /// <summary>
+    /// Attaches a <c>@skip(if:$var)</c> directive to the current field. The field is omitted from
+    /// the response when the runtime value of <paramref name="ifVariable"/> is <c>true</c>.
+    /// </summary>
+    /// <param name="ifVariable">The variable name, with or without the leading <c>$</c> — both
+    /// <c>"$hide"</c> and <c>"hide"</c> render as <c>if:$hide</c>.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="ifVariable"/> is null or whitespace.</exception>
+    public FieldBuilder Skip(string ifVariable)
+        => AddIfDirective("skip", ifVariable);
+
+    /// <summary>
+    /// Attaches an arbitrary directive to the current field, rendered as <c>@name</c> optionally
+    /// followed by <c>(argName:value, …)</c>. Use for custom or server-defined directives such as
+    /// <c>@deprecated</c> or <c>@format(as:"ISO8601")</c>.
+    /// </summary>
+    /// <param name="name">The directive name, with or without the leading <c>@</c> — both
+    /// <c>"@format"</c> and <c>"format"</c> render as <c>@format</c>.</param>
+    /// <param name="arguments">Optional directive arguments; <c>null</c> or empty for a
+    /// no-argument directive like <c>@deprecated</c>.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
+    public FieldBuilder Directive(string name, Dictionary<string, object?>? arguments = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Directive name cannot be null or whitespace.", nameof(name));
+        }
+
+        var normalizedName = name[0] == '@' ? name[1..] : name;
+        _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
+        return this;
+    }
+
+    // Shared helper for @include / @skip — both take a single `if:$var` argument. The variable is
+    // normalized so callers may pass the name with or without the leading `$`; it is always
+    // rendered with a single `$`.
+    private FieldBuilder AddIfDirective(string directiveName, string ifVariable)
+    {
+        if (string.IsNullOrWhiteSpace(ifVariable))
+        {
+            throw new ArgumentException("Directive variable cannot be null or whitespace.", nameof(ifVariable));
+        }
+
+        var name = ifVariable[0] == '$' ? ifVariable : "$" + ifVariable;
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["if"] = new Variable(name, "Boolean!"),
+        };
+        _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+        return this;
+    }
 }
