@@ -569,7 +569,10 @@ internal sealed class QueryTextBuilder
     /// Renders a field's directives in insertion order: <c> @Name</c>, followed by
     /// <c>(argName:value, …)</c> when the directive has arguments. Argument values reuse the exact
     /// formatter used for field arguments, so <c>if:$x</c> and complex values render identically.
-    /// Order is never sorted — it is user-visible, exactly like fragment-spread order.
+    /// The directive LIST order is never sorted — it is user-visible, exactly like fragment-spread
+    /// order. Individual directive ARGUMENTS, however, are stored in a case-insensitive sorted
+    /// dictionary (normalized at <see cref="FieldDirective"/> construction, like field arguments),
+    /// so their key order here is deterministic rather than caller-insertion order.
     /// </summary>
     private void BuildFieldDirectives(List<FieldDirective> directives)
     {

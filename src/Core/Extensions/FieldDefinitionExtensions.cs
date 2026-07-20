@@ -217,7 +217,9 @@ internal static class FieldDefinitionExtensions
     /// via <see cref="DeepClone(InlineFragmentDefinition)"/>) so the merged field never aliases the
     /// source's fragment state. Spread insertion order is preserved and duplicate spread names are
     /// skipped, matching <see cref="FieldDefinition.AddSpreadFragment"/>. Directives are appended in
-    /// order (duplicates are permitted). Shared by every field-level Include path.
+    /// order, skipping any that are structurally identical to one already present (so merging the
+    /// same directive on a same-path field does not duplicate it). Shared by every field-level
+    /// Include path.
     /// </summary>
     internal static void MergeFragmentState(FieldDefinition existing, FieldDefinition incoming)
     {
@@ -334,14 +336,42 @@ internal static class FieldDefinitionExtensions
     }
 
     // Appends incoming directives in order. FieldDirective is an immutable record, so the shared
-    // reference is safe — no clone needed. Duplicates are permitted (the same directive may appear
-    // more than once), matching FieldDefinition.AddDirective.
+    // reference is safe — no clone needed. A structurally-identical directive already present is
+    // skipped: merging two queries that each place the SAME directive on a same-path field must not
+    // emit it twice (e.g. `@include(if:$x) @include(if:$x)`), which non-repeatable directives like
+    // @include/@skip make spec-invalid. Dedup is STRUCTURAL — record equality compares Arguments by
+    // reference, so two independent `@include(if:$x)` instances are never record-equal. Directives
+    // that differ (different name, or different args) are all kept.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "ContainsStructurallyEqual is the filter AND List.Add the side effect; a Where(!Contains) would hide the mutation and allocate an enumerator on the merge path.")]
     private static void MergeDirectivesInPlace(FieldDefinition existing, List<FieldDirective>? incomingDirectives)
     {
         if (incomingDirectives is not { Count: > 0 }) return;
 
         existing._directives ??= new List<FieldDirective>();
-        existing._directives.AddRange(incomingDirectives);
+        foreach (var incoming in incomingDirectives)
+        {
+            if (!ContainsStructurallyEqual(existing._directives, incoming))
+            {
+                existing._directives.Add(incoming);
+            }
+        }
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "A Where(IsStructurallyEqualTo).Any() would allocate an enumerator on the merge hot path; the plain loop short-circuits without allocation.")]
+    private static bool ContainsStructurallyEqual(List<FieldDirective> directives, FieldDirective candidate)
+    {
+        foreach (var existing in directives)
+        {
+            if (existing.IsStructurallyEqualTo(candidate))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void ThrowIfTypesConflict(FieldDefinition existing, FieldDefinition incoming)

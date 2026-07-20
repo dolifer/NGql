@@ -729,7 +729,13 @@ public sealed class FieldBuilder
             throw new ArgumentException("Directive name cannot be null or whitespace.", nameof(name));
         }
 
-        var normalizedName = name[0] == '@' ? name[1..] : name;
+        // Strip ALL leading '@' (not just one) so pathological input like "@@foo" still yields a
+        // single-'@' directive on render. A name that is only '@' characters leaves nothing behind.
+        var normalizedName = name.TrimStart('@');
+        if (normalizedName.Length == 0)
+        {
+            throw new ArgumentException("Directive name cannot consist only of '@' characters.", nameof(name));
+        }
         _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
         return this;
     }
@@ -744,7 +750,14 @@ public sealed class FieldBuilder
             throw new ArgumentException("Directive variable cannot be null or whitespace.", nameof(ifVariable));
         }
 
-        var name = ifVariable[0] == '$' ? ifVariable : "$" + ifVariable;
+        // Collapse ANY number of leading '$' to exactly one so input like "$$show" renders a
+        // single-'$' variable. A value that is only '$' characters carries no variable name.
+        var bareName = ifVariable.TrimStart('$');
+        if (bareName.Length == 0)
+        {
+            throw new ArgumentException("Directive variable must contain a name after the '$'.", nameof(ifVariable));
+        }
+        var name = "$" + bareName;
         var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["if"] = new Variable(name, "Boolean!"),

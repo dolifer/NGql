@@ -225,12 +225,26 @@ public sealed record FieldDefinition
     public bool HasDirectives => _directives is { Count: > 0 };
 
     /// <summary>
-    /// Append a directive to this field's directive list. Order is preserved; duplicates are
-    /// permitted (the same directive may legitimately appear more than once).
+    /// Append a directive to this field's directive list. Order is preserved. A directive that is
+    /// structurally identical to one already present is skipped, so calling e.g.
+    /// <c>.Include("$x").Include("$x")</c> on one field renders <c>@include(if:$x)</c> once rather
+    /// than emitting the spec-invalid <c>@include(if:$x) @include(if:$x)</c>. This mirrors the
+    /// structural dedup on the Include/merge path. Directives that differ (name or arguments) are
+    /// all kept.
     /// </summary>
+    [SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "The plain loop short-circuits without allocating an enumerator on the builder hot path.")]
     internal void AddDirective(FieldDirective directive)
     {
         _directives ??= new List<FieldDirective>();
+        foreach (var existing in _directives)
+        {
+            if (existing.IsStructurallyEqualTo(directive))
+            {
+                return;
+            }
+        }
         _directives.Add(directive);
     }
 
