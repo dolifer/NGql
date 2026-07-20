@@ -16,14 +16,15 @@ public readonly struct EnumValue : IComparable, IComparable<EnumValue>, IEquatab
     /// </summary>
     /// <param name="value">A non-empty string or an <see cref="Enum"/> instance.</param>
     /// <exception cref="ArgumentNullException"><paramref name="value"/> is null.</exception>
-    /// <exception cref="ArgumentException"><paramref name="value"/> is an empty/whitespace string or an unsupported type.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value"/> is an empty/whitespace string, an
+    /// undefined or unnamed-<c>[Flags]</c> enum value, or an unsupported type.</exception>
     public EnumValue(object value)
     {
         ArgumentNullException.ThrowIfNull(value);
         Value = value switch
         {
             string str when !string.IsNullOrWhiteSpace(str) => str,
-            Enum enumValue => enumValue.ToString(),
+            Enum enumValue => ValueFormatter.FormatEnumName(enumValue),
             string => throw new ArgumentException("Enum value cannot be null or whitespace.", nameof(value)),
             _ => throw new ArgumentException($"Invalid enum value type: {value.GetType().Name}. Expected a non-empty string or Enum.", nameof(value))
         };
