@@ -19,9 +19,13 @@ internal static class QueryMerger
         QueryBuilder? queryBuilder,
         in QueryDefinition incomingQuery)
     {
-        if (incomingQuery._fields == null || incomingQuery._fields.Count == 0) return;
-
+        // Named fragments are operation-scoped, not field-scoped: merge them even when the incoming
+        // query declares nothing but fragments (an unusual but valid shape — the renderer emits
+        // declared-but-unused fragment definitions).
+        MergeNamedFragments(targetDefinition, incomingQuery);
         MergeVariables(targetDefinition, incomingQuery);
+
+        if (incomingQuery._fields == null || incomingQuery._fields.Count == 0) return;
 
         var beforeCount = targetDefinition.Fields.Count;
         ApplyFieldMerge(targetDefinition.FieldsInternal, incomingQuery, targetDefinition.MergingStrategy, queryMap);
@@ -30,6 +34,43 @@ internal static class QueryMerger
         {
             queryMap.UpdateRootMapping(targetDefinition);
         }
+    }
+
+    /// <summary>
+    /// Merges every named fragment the incoming query declares into <paramref name="targetDefinition"/>
+    /// using the target's <see cref="QueryDefinition.GetOrAddNamedFragment"/> collision semantics:
+    /// same name + same <c>onType</c> reuses the existing fragment (and merges its body); same name +
+    /// a DIFFERENT <c>onType</c> throws <see cref="InvalidOperationException"/>. Each fragment's body
+    /// (fields, nested inline fragments, and spreads) is deep-cloned before entering the target so the
+    /// merged operation never aliases the source's fragment definitions.
+    /// </summary>
+    private static void MergeNamedFragments(QueryDefinition targetDefinition, in QueryDefinition incomingQuery)
+    {
+        var incomingFragments = incomingQuery._namedFragments;
+        if (incomingFragments is not { Count: > 0 }) return;
+
+        foreach (var incoming in incomingFragments.Values)
+        {
+            // Throws InvalidOperationException on a name collision with a conflicting onType —
+            // reuses the existing declaration semantics rather than inventing new merge rules.
+            var target = targetDefinition.GetOrAddNamedFragment(incoming.Name, incoming.OnType);
+            MergeNamedFragmentBody(target, incoming);
+        }
+    }
+
+    private static void MergeNamedFragmentBody(NamedFragmentDefinition target, NamedFragmentDefinition incoming)
+    {
+        if (incoming._fields is { Count: > 0 })
+        {
+            var targetFields = target.GetOrCreateFieldsStore();
+            foreach (var child in incoming._fields.AsSpan())
+            {
+                FieldBuilder.Include(targetFields, child);
+            }
+        }
+
+        FieldDefinitionExtensions.MergeInlineFragmentsInto(ref target._fragments, incoming._fragments);
+        FieldDefinitionExtensions.MergeSpreadNamesInto(ref target._spreadFragments, incoming._spreadFragments);
     }
 
     private static void MergeVariables(QueryDefinition targetDefinition, in QueryDefinition incomingQuery)

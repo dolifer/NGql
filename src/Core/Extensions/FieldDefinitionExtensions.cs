@@ -139,6 +139,9 @@ internal static class FieldDefinitionExtensions
         clone._spreadFragments = source._spreadFragments is { Count: > 0 }
             ? new List<string>(source._spreadFragments)
             : null;
+        clone._directives = source._directives is { Count: > 0 }
+            ? new List<FieldDirective>(source._directives)
+            : null;
 
         return clone;
     }
@@ -203,7 +206,142 @@ internal static class FieldDefinitionExtensions
         ThrowIfTypesConflict(existing, incoming);
         MergeIncomingChildrenInPlace(existing, incoming._children);
         MergeIncomingArgumentsInPlace(existing, incoming._arguments);
+        MergeFragmentState(existing, incoming);
         return existing;
+    }
+
+    /// <summary>
+    /// Merges <paramref name="incoming"/>'s inline fragments, fragment spreads, and directives INTO
+    /// <paramref name="existing"/>, mutating its collections in place. Everything carried over is
+    /// deep-cloned (spreads and directives are copied into fresh lists; inline fragments are cloned
+    /// via <see cref="DeepClone(InlineFragmentDefinition)"/>) so the merged field never aliases the
+    /// source's fragment state. Spread insertion order is preserved and duplicate spread names are
+    /// skipped, matching <see cref="FieldDefinition.AddSpreadFragment"/>. Directives are appended in
+    /// order (duplicates are permitted). Shared by every field-level Include path.
+    /// </summary>
+    internal static void MergeFragmentState(FieldDefinition existing, FieldDefinition incoming)
+    {
+        MergeInlineFragmentsInPlace(existing, incoming._fragments);
+        MergeSpreadsInPlace(existing, incoming._spreadFragments);
+        MergeDirectivesInPlace(existing, incoming._directives);
+    }
+
+    private static void MergeInlineFragmentsInPlace(FieldDefinition existing, Dictionary<string, InlineFragmentDefinition>? incomingFragments)
+    {
+        if (incomingFragments is not { Count: > 0 }) return;
+
+        existing._fragments ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+        foreach (var (typeName, incomingFragment) in incomingFragments)
+        {
+            if (existing._fragments.TryGetValue(typeName, out var existingFragment))
+            {
+                MergeInlineFragmentBodyInPlace(existingFragment, incomingFragment);
+            }
+            else
+            {
+                existing._fragments[typeName] = incomingFragment.DeepClone();
+            }
+        }
+    }
+
+    // Merges two inline fragments of the same type: their field bodies, nested inline fragments,
+    // and spreads. Each incoming child/fragment is deep-cloned before entering the target so the
+    // merged fragment owns its subtree exclusively.
+    private static void MergeInlineFragmentBodyInPlace(InlineFragmentDefinition existing, InlineFragmentDefinition incoming)
+    {
+        if (incoming._fields is { Count: > 0 })
+        {
+            var targetFields = existing._fields ??= new FieldChildren();
+            foreach (var child in incoming._fields.AsSpan())
+            {
+                MergeChildInPlace(targetFields, child);
+            }
+        }
+
+        if (incoming._fragments is { Count: > 0 })
+        {
+            existing._fragments ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+            foreach (var (typeName, nested) in incoming._fragments)
+            {
+                if (existing._fragments.TryGetValue(typeName, out var existingNested))
+                {
+                    MergeInlineFragmentBodyInPlace(existingNested, nested);
+                }
+                else
+                {
+                    existing._fragments[typeName] = nested.DeepClone();
+                }
+            }
+        }
+
+        MergeSpreadListInPlace(ref existing._spreadFragments, incoming._spreadFragments);
+    }
+
+    private static void MergeSpreadsInPlace(FieldDefinition existing, List<string>? incomingSpreads)
+        => MergeSpreadListInPlace(ref existing._spreadFragments, incomingSpreads);
+
+    /// <summary>
+    /// Merges <paramref name="incoming"/> inline fragments into <paramref name="target"/> (a fragment
+    /// body's inline-fragment map), deep-cloning new entries and recursively merging matching type
+    /// names. Used for named-fragment bodies, whose store is not a <see cref="FieldDefinition"/>.
+    /// </summary>
+    internal static void MergeInlineFragmentsInto(
+        ref Dictionary<string, InlineFragmentDefinition>? target,
+        Dictionary<string, InlineFragmentDefinition>? incoming)
+    {
+        if (incoming is not { Count: > 0 }) return;
+
+        target ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+        foreach (var (typeName, incomingFragment) in incoming)
+        {
+            if (target.TryGetValue(typeName, out var existingFragment))
+            {
+                MergeInlineFragmentBodyInPlace(existingFragment, incomingFragment);
+            }
+            else
+            {
+                target[typeName] = incomingFragment.DeepClone();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Merges <paramref name="incoming"/> spread names into <paramref name="target"/>, preserving
+    /// insertion order and skipping duplicates. Public wrapper over the in-place list merge for the
+    /// named-fragment body path.
+    /// </summary>
+    internal static void MergeSpreadNamesInto(ref List<string>? target, List<string>? incoming)
+        => MergeSpreadListInPlace(ref target, incoming);
+
+    // Appends incoming spread names not already present, preserving insertion order — mirrors the
+    // dedup contract of FieldDefinition.AddSpreadFragment. Order is user-visible (directives can
+    // differ per spread site) so it is never sorted.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "List.Contains is the filter AND List.Add the side effect; a Where(Contains) would hide the mutation and allocate an enumerator on the merge path.")]
+    private static void MergeSpreadListInPlace(ref List<string>? existingSpreads, List<string>? incomingSpreads)
+    {
+        if (incomingSpreads is not { Count: > 0 }) return;
+
+        existingSpreads ??= new List<string>();
+        foreach (var name in incomingSpreads)
+        {
+            if (!existingSpreads.Contains(name))
+            {
+                existingSpreads.Add(name);
+            }
+        }
+    }
+
+    // Appends incoming directives in order. FieldDirective is an immutable record, so the shared
+    // reference is safe — no clone needed. Duplicates are permitted (the same directive may appear
+    // more than once), matching FieldDefinition.AddDirective.
+    private static void MergeDirectivesInPlace(FieldDefinition existing, List<FieldDirective>? incomingDirectives)
+    {
+        if (incomingDirectives is not { Count: > 0 }) return;
+
+        existing._directives ??= new List<FieldDirective>();
+        existing._directives.AddRange(incomingDirectives);
     }
 
     private static void ThrowIfTypesConflict(FieldDefinition existing, FieldDefinition incoming)
