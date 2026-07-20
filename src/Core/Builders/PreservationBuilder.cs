@@ -81,11 +81,43 @@ public sealed class PreservationBuilder
         var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
         var fieldPathHasDot = fieldPath.Contains('.');
 
+        // A dotted nodePath whose first segment names one of the query's roots (e.g. "a.node")
+        // is treated as ROOTED: it identifies a node under that specific root only. A nodePath
+        // whose first segment is NOT a root name (e.g. "edges.node") is RELATIVE and applies to
+        // every root that actually contains the resolved node.field. Without this scoping a
+        // rooted request such as PreserveAtPath("id", "a.node") would leak into a sibling root's
+        // same-named node ("b.node"), narrowing fields the caller never referenced.
+        var firstSegment = lastIndex == -1 ? null : nodePath.AsSpan(0, nodePath.IndexOf('.'));
+        var scopedRoot = firstSegment is { Length: > 0 } fs ? ResolveScopedRoot(fs) : null;
+
         foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
         {
-            PreserveAtPathForRoot(rootField.Alias ?? rootField.Name, fieldPath, nodePath, lastSegment, fieldPathHasDot);
+            var rootName = rootField.Alias ?? rootField.Name;
+            if (scopedRoot is not null && !string.Equals(rootName, scopedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            PreserveAtPathForRoot(rootName, fieldPath, nodePath, lastSegment, fieldPathHasDot);
         }
         return this;
+    }
+
+    /// <summary>
+    /// Returns the root name that <paramref name="firstSegment"/> identifies, or null when no
+    /// root matches — in which case the nodePath is relative and every root is searched.
+    /// </summary>
+    private string? ResolveScopedRoot(ReadOnlySpan<char> firstSegment)
+    {
+        foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
+        {
+            var rootName = rootField.Alias ?? rootField.Name;
+            if (firstSegment.Equals(rootName.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return rootName;
+            }
+        }
+        return null;
     }
 
     private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
