@@ -122,7 +122,7 @@ public sealed record QueryDefinition(string Name, string Description = "")
     public MergingStrategy MergingStrategy { get; set; } = MergingStrategy.MergeByDefault;
 
     /// <summary>
-    /// The kind of root operation rendered by this definition (query or mutation).
+    /// The kind of root operation rendered by this definition (query, mutation, or subscription).
     /// Selected by the factory on <see cref="QueryBuilder"/>; consumers do not set this directly.
     /// </summary>
     [JsonIgnore]
