@@ -416,40 +416,23 @@ internal static class FieldFactory
     private static FieldDefinition GetOrAddComplexField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
 #pragma warning restore S1172
     {
-        Span<char> pathBuffer = stackalloc char[512];
-        var pathBuilder = new SpanPathBuilder(pathBuffer);
+        // Type/alias parsing only ever shrinks the accumulated path, so fieldPath length plus slack
+        // for separators is a safe upper bound. Mirror the dotted path: stackalloc for the common
+        // short case, pooled fallback for long paths so we never overflow SpanPathBuilder.
+        var estimatedPathLength = fieldPath.Length + 10;
 
-        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
-
-        FieldDefinition? parentField = null;
-        FieldDefinition? result = null;
-
-        while (fieldPath.Length > 0)
+        if (estimatedPathLength <= 512)
         {
-            var segment = ExtractNextSegment(ref fieldPath);
-
-            if (segment.Name.IsWhiteSpace())
-                continue;
-
-            pathBuilder.Append(segment.Name);
-            var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
-
-            if (parentField == null)
-            {
-                // Root level
-                result = ProcessFieldSegment(fieldDefinitions, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
-            }
-            else
-            {
-                // Nested level
-                var children = parentField._children ??= new FieldChildren();
-                result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
-            }
-
-            parentField = result;
+            Span<char> pathBuffer = stackalloc char[512];
+            var pathBuilder = new SpanPathBuilder(pathBuffer);
+            return ProcessComplexFieldSegments(fieldDefinitions, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
         }
-
-        return result!;
+        else
+        {
+            using var pooledArray = CharArrayPool.GetPooled(estimatedPathLength);
+            var pathBuilder = new SpanPathBuilder(pooledArray.AsSpan());
+            return ProcessComplexFieldSegments(fieldDefinitions, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+        }
     }
 
     /// <summary>
@@ -458,11 +441,67 @@ internal static class FieldFactory
     private static FieldDefinition GetOrAddComplexField(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var parentPathSpan = parentPath.AsSpan();
-        Span<char> pathBuffer = stackalloc char[512];
-        var pathBuilder = new SpanPathBuilder(pathBuffer);
 
-        if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+        // Type/alias parsing only shrinks the segment path, so parent + fieldPath + slack is a safe
+        // upper bound. Mirror the dotted path: stackalloc for short paths, pooled fallback for long
+        // ones so we never overflow SpanPathBuilder.
+        var estimatedPathLength = parentPathSpan.Length + fieldPath.Length + 10;
 
+        if (estimatedPathLength <= 512)
+        {
+            Span<char> pathBuffer = stackalloc char[512];
+            var pathBuilder = new SpanPathBuilder(pathBuffer);
+            if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+            return ProcessComplexFieldSegments(rootParent, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+        }
+        else
+        {
+            using var pooledArray = CharArrayPool.GetPooled(estimatedPathLength);
+            var pathBuilder = new SpanPathBuilder(pooledArray.AsSpan());
+            if (!parentPathSpan.IsEmpty) pathBuilder.Append(parentPathSpan);
+            return ProcessComplexFieldSegments(rootParent, fieldPath, fieldType, arguments, metadata, ref pathBuilder);
+        }
+    }
+
+    private static FieldDefinition ProcessComplexFieldSegments(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    {
+        fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
+
+        FieldDefinition? parentField = null;
+        FieldDefinition? result = null;
+
+        while (fieldPath.Length > 0)
+        {
+            ExtractNextSegment(fieldPath, out var segment, out var remaining);
+
+            if (!segment.Name.IsWhiteSpace())
+            {
+                pathBuilder.Append(segment.Name);
+                var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
+
+                if (parentField == null)
+                {
+                    // Root level
+                    result = ProcessFieldSegment(fieldDefinitions, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+                }
+                else
+                {
+                    // Nested level
+                    var children = parentField._children ??= new FieldChildren();
+                    result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+                }
+
+                parentField = result;
+            }
+
+            fieldPath = remaining;
+        }
+
+        return result!;
+    }
+
+    private static FieldDefinition ProcessComplexFieldSegments(FieldDefinition rootParent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ref SpanPathBuilder pathBuilder)
+    {
         fieldPath = Helpers.ParseFieldTypeFromPath(fieldPath, fieldType, out var parsedFieldType);
 
         var currentParent = rootParent;
@@ -470,16 +509,18 @@ internal static class FieldFactory
 
         while (fieldPath.Length > 0)
         {
-            var segment = ExtractNextSegment(ref fieldPath);
+            ExtractNextSegment(fieldPath, out var segment, out var remaining);
 
-            if (segment.Name.IsWhiteSpace())
-                continue;
+            if (!segment.Name.IsWhiteSpace())
+            {
+                pathBuilder.Append(segment.Name);
+                var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
+                var children = currentParent._children ??= new FieldChildren();
+                result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
+                currentParent = result;
+            }
 
-            pathBuilder.Append(segment.Name);
-            var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
-            var children = currentParent._children ??= new FieldChildren();
-            result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
-            currentParent = result;
+            fieldPath = remaining;
         }
 
         return result!;
@@ -672,7 +713,7 @@ internal static class FieldFactory
         segment = new SpanSegment(segmentSpan, ReadOnlySpan<char>.Empty, isLastSegment, ReadOnlySpan<char>.Empty);
     }
 
-    private static SpanSegment ExtractNextSegment(ref ReadOnlySpan<char> fieldPath)
+    private static void ExtractNextSegment(ReadOnlySpan<char> fieldPath, out SpanSegment segment, out ReadOnlySpan<char> remaining)
     {
         var nextDot = fieldPath.IndexOf('.');
         var isLastFragment = nextDot == -1;
@@ -685,24 +726,38 @@ internal static class FieldFactory
         // Parse field name and alias from cleanedPath: only exactly 2 non-empty trimmed
         // colon-separated parts mean alias:name. Span-based equivalent of
         // Split(':', TrimEntries | RemoveEmptyEntries) without the string/array allocations.
-        ParseAliasAndName(cleanedPath, out var name, out var alias);
-        
+        ParseAliasAndName(cleanedPath, out var name, out var alias, out var malformed);
+
         // Only include parsed type if it's not the default
         var typeToInclude = parsedType.SequenceEqual(Constants.DefaultFieldTypeSpan) ? ReadOnlySpan<char>.Empty : parsedType;
-        var segment = new SpanSegment(name, alias, isLastFragment, typeToInclude);
-        
-        fieldPath = nextDot == -1 ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
 
-        return segment;
+        // Reject a colon that produced an empty alias/name part (e.g. "a : b" → ": b", or
+        // "alias:"): folding the stray colon back into the field name emits invalid GraphQL such
+        // as a field literally named ": b". Throw a clear error instead.
+        if (malformed)
+        {
+            throw MalformedComplexSegment(trimmedPart);
+        }
+
+        segment = new SpanSegment(name, alias, isLastFragment, typeToInclude);
+        remaining = isLastFragment ? ReadOnlySpan<char>.Empty : fieldPath[(nextDot + 1)..];
     }
+
+    private static ArgumentException MalformedComplexSegment(ReadOnlySpan<char> segment)
+        => new($"Malformed field segment '{segment.ToString()}'. Use 'alias:name' (no spaces around ':') and put any type before a single space, e.g. 'Type alias:name'.");
 
     /// <summary>
     /// Splits <paramref name="cleanedPath"/> on ':' into trimmed non-empty parts. Exactly two
-    /// parts mean <c>alias:name</c>; any other count (no colon, empty parts only, or three or
-    /// more parts) falls back to treating the whole segment as the name with no alias.
+    /// parts mean <c>alias:name</c>; a colon-free segment is the name with no alias. A colon that
+    /// yields an empty alias or name part (e.g. <c>": name"</c> or <c>"alias:"</c>) sets
+    /// <paramref name="malformed"/> so the caller can reject it rather than folding the stray
+    /// colon back into a field name and emitting invalid GraphQL. Three or more parts still fall
+    /// back to treating the whole segment as the name (unchanged from prior behavior).
     /// </summary>
-    private static void ParseAliasAndName(ReadOnlySpan<char> cleanedPath, out ReadOnlySpan<char> name, out ReadOnlySpan<char> alias)
+    private static void ParseAliasAndName(ReadOnlySpan<char> cleanedPath, out ReadOnlySpan<char> name, out ReadOnlySpan<char> alias, out bool malformed)
     {
+        malformed = false;
+
         if (cleanedPath.IndexOf(':') < 0)
         {
             name = cleanedPath.Trim();
@@ -712,12 +767,17 @@ internal static class FieldFactory
 
         ReadOnlySpan<char> first = default, second = default;
         var partCount = 0;
+        var emptyPartSeen = false;
         var rest = cleanedPath;
         while (true)
         {
             var colonIndex = rest.IndexOf(':');
             var part = (colonIndex < 0 ? rest : rest[..colonIndex]).Trim();
-            if (!part.IsEmpty)
+            if (part.IsEmpty)
+            {
+                emptyPartSeen = true;
+            }
+            else
             {
                 if (partCount == 0) first = part;
                 else if (partCount == 1) second = part;
@@ -732,11 +792,14 @@ internal static class FieldFactory
         {
             alias = first;
             name = second;
+            return;
         }
-        else
-        {
-            name = cleanedPath.Trim();
-            alias = ReadOnlySpan<char>.Empty;
-        }
+
+        // A colon that produced an empty alias/name part (e.g. ": name") is malformed: surface it
+        // instead of folding the stray colon back into the name. Other shapes (three or more
+        // parts) keep the historical whole-segment-as-name fallback.
+        name = cleanedPath.Trim();
+        alias = ReadOnlySpan<char>.Empty;
+        malformed = emptyPartSeen && partCount < 2;
     }
 }
