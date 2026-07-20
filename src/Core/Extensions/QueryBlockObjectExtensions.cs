@@ -110,9 +110,7 @@ internal static class QueryBlockObjectExtensions
     /// <returns>Query</returns>
     public static void Include<T>(this QueryBlock block, string name, string? alias = null)
     {
-        var properties = typeof(T).GetProperties()
-            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var properties = GetSelectableProperties(typeof(T));
 
         var subQuery = new QueryBlock(name, alias: alias);
 
@@ -130,11 +128,61 @@ internal static class QueryBlockObjectExtensions
     public static void Include(this QueryBlock block, object obj)
     {
         var type = obj.GetType();
-        var properties = type.GetProperties()
-            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var properties = GetSelectableProperties(type);
 
         HandleProperties(block, obj, properties);
+    }
+
+    /// <summary>
+    /// Returns the properties of <paramref name="type"/> that map to GraphQL selection fields:
+    /// indexer properties are excluded (they are not addressable as fields and would throw when
+    /// read without index arguments), and <c>new</c>-shadowed properties are collapsed to their
+    /// most-derived declaration so a response name is never emitted twice. Ordering matches the
+    /// original alphabetical (case-insensitive) sort so normal types render unchanged.
+    /// </summary>
+    private static PropertyInfo[] GetSelectableProperties(Type type)
+    {
+        // A name may appear more than once when a derived type re-declares a base property with
+        // `new`; GetProperties() returns every declaration and does not guarantee derived-first
+        // ordering, so keep the declaration whose DeclaringType is furthest down the hierarchy.
+        var byName = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
+
+        foreach (var property in type.GetProperties())
+        {
+            if (property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
+            if (!byName.TryGetValue(property.Name, out var existing) || IsMoreDerivedThan(property, existing))
+            {
+                byName[property.Name] = property;
+            }
+        }
+
+        return byName.Values
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsMoreDerivedThan(PropertyInfo candidate, PropertyInfo current)
+    {
+        var candidateType = candidate.DeclaringType;
+        var currentType = current.DeclaringType;
+        if (candidateType is null || currentType is null || candidateType == currentType)
+        {
+            return false;
+        }
+
+        // candidate is more derived when currentType sits somewhere up its base chain.
+        for (var baseType = candidateType.BaseType; baseType is not null; baseType = baseType.BaseType)
+        {
+            if (baseType == currentType)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void HandleProperties(QueryBlock block, object? obj, PropertyInfo[] properties)
