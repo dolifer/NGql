@@ -14,6 +14,7 @@ public sealed record FieldDefinition
     internal FieldChildren? _children;
     internal Dictionary<string, InlineFragmentDefinition>? _fragments;
     internal List<string>? _spreadFragments;
+    internal List<FieldDirective>? _directives;
     internal string? _type;
     internal string? _alias;
     internal string _effectiveName;
@@ -195,6 +196,42 @@ public sealed record FieldDefinition
         {
             _spreadFragments.Add(name);
         }
+    }
+
+    private static readonly IReadOnlyList<FieldDirective> EmptyReadOnlyDirectives = Array.Empty<FieldDirective>();
+
+    /// <summary>
+    /// Directives attached to this field, in the order they were added. Rendered after the field's
+    /// name and arguments and before its selection set, e.g. <c>@include(if:$a) @skip(if:$b)</c>.
+    /// Returns an empty list (never null) when the field has no directives.
+    /// </summary>
+    /// <remarks>
+    /// Order is user-visible and preserved verbatim — directives are never sorted. See
+    /// <see cref="NGql.Core.Builders.FieldBuilder.Include(string)"/>,
+    /// <see cref="NGql.Core.Builders.FieldBuilder.Skip(string)"/>, and
+    /// <see cref="NGql.Core.Builders.FieldBuilder.Directive(string, System.Collections.Generic.Dictionary{string, object?})"/>
+    /// for the builder-side API.
+    /// </remarks>
+    [JsonPropertyName("directives")]
+    public IReadOnlyList<FieldDirective> Directives
+        => (IReadOnlyList<FieldDirective>?)_directives ?? EmptyReadOnlyDirectives;
+
+    /// <summary>
+    /// Gets a value indicating whether this field carries any directives. Unlike reading
+    /// <see cref="Directives"/>, this check allocates nothing on directive-less fields — prefer it
+    /// as the guard when scanning field trees.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasDirectives => _directives is { Count: > 0 };
+
+    /// <summary>
+    /// Append a directive to this field's directive list. Order is preserved; duplicates are
+    /// permitted (the same directive may legitimately appear more than once).
+    /// </summary>
+    internal void AddDirective(FieldDirective directive)
+    {
+        _directives ??= new List<FieldDirective>();
+        _directives.Add(directive);
     }
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments

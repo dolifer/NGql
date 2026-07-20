@@ -392,6 +392,14 @@ internal sealed class QueryTextBuilder
                 BuildFieldArguments(field._arguments);
             }
 
+            // Directives render after the name+arguments and before the selection set (or the
+            // bare-leaf newline), space-separated, in insertion order — order is user-visible so
+            // it is never sorted.
+            if (field._directives is { Count: > 0 })
+            {
+                BuildFieldDirectives(field._directives);
+            }
+
             // A field gets a `{ … }` block when it has child fields, inline fragments, or
             // named-fragment spreads. Plain leaf fields (none of the above) render as a bare
             // name + newline.
@@ -554,6 +562,43 @@ internal sealed class QueryTextBuilder
             Array.Clear(definitions, 0, count);
             ArrayPool<string>.Shared.Return(names, clearArray: false);
             ArrayPool<NamedFragmentDefinition>.Shared.Return(definitions, clearArray: false);
+        }
+    }
+
+    /// <summary>
+    /// Renders a field's directives in insertion order: <c> @Name</c>, followed by
+    /// <c>(argName:value, …)</c> when the directive has arguments. Argument values reuse the exact
+    /// formatter used for field arguments, so <c>if:$x</c> and complex values render identically.
+    /// Order is never sorted — it is user-visible, exactly like fragment-spread order.
+    /// </summary>
+    private void BuildFieldDirectives(List<FieldDirective> directives)
+    {
+        for (int i = 0; i < directives.Count; i++)
+        {
+            var directive = directives[i];
+            _stringBuilder.Append(" @");
+            _stringBuilder.Append(directive.Name);
+
+            var arguments = directive.Arguments;
+            if (arguments is { Count: > 0 })
+            {
+                _stringBuilder.Append('(');
+                bool first = true;
+                foreach (var (key, value) in arguments)
+                {
+                    if (!first)
+                    {
+                        _stringBuilder.Append(", ");
+                    }
+
+                    first = false;
+                    _stringBuilder.Append(key);
+                    _stringBuilder.Append(':');
+                    WriteObject(_stringBuilder, value);
+                }
+
+                _stringBuilder.Append(')');
+            }
         }
     }
 
