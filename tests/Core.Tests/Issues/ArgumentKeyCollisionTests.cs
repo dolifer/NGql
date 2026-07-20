@@ -54,6 +54,45 @@ public class ArgumentKeyCollisionTests
         query.ToString().Should().Contain("filter:{a:1, b:2}");
     }
 
+    [Fact]
+    public void Where_TopLevelCaseCollidingKeys_Throws()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+
+        // Act
+        var act = () => query.Where("id", 1).Where("Id", 2);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Where_TopLevelDistinctKeys_BothRendered()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+
+        // Act
+        query.Where("first", 1).Where("second", 2);
+
+        // Assert
+        query.ToString().Should().Contain("first:1").And.Contain("second:2");
+    }
+
+    [Fact]
+    public void Where_TopLevelSameExactKeyReset_OverwritesWithoutThrowing()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+
+        // Act - re-setting the exact same key (same casing) updates the value, no throw
+        query.Where("id", 1).Where("id", 2);
+
+        // Assert
+        query.ToString().Should().Contain("id:2").And.NotContain("id:1");
+    }
+
     private sealed class CollidingArgs
     {
         public int Value { get; set; } = 1;

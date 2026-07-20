@@ -270,6 +270,41 @@ public sealed class QueryBlock
         Helpers.ExtractVariablesFromValue(value, _variables);
         var sortedValue = Helpers.SortArgumentValue(value);
 
+        // Mirror the case-collision policy enforced for nested dictionary/object argument values
+        // (which build via Dictionary.Add and throw on an OrdinalIgnoreCase collision): a key that
+        // differs only by case from an existing one is a distinct GraphQL argument at the wire level,
+        // so silently overwriting it via the indexer would lose data. Re-setting the exact same key
+        // is still allowed; only a case-differing collision throws.
+        if (TryGetExistingKey(key, out var existingKey) && !string.Equals(existingKey, key, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"An argument with the same key (differing only by case) has already been added. Colliding key: '{key}'.",
+                nameof(key));
+        }
+
         _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
+    }
+
+    /// <summary>
+    /// Finds the stored argument key that matches <paramref name="key"/> under the arguments'
+    /// case-insensitive comparer, exposing its original casing so a case-only difference can be
+    /// detected. Returns false when no matching key is present.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach over SortedDictionary.Keys uses the struct enumerator and short-circuits on first match; the Where LINQ form would allocate an enumerator and a closure on every argument add.")]
+    private bool TryGetExistingKey(string key, out string existingKey)
+    {
+        foreach (var storedKey in _arguments.Keys)
+        {
+            if (string.Equals(storedKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                existingKey = storedKey;
+                return true;
+            }
+        }
+
+        existingKey = string.Empty;
+        return false;
     }
 }
