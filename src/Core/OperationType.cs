@@ -20,4 +20,9 @@ internal enum OperationType
     ///     Renders as <c>mutation Name { ... }</c>.
     /// </summary>
     Mutation,
+
+    /// <summary>
+    ///     Renders as <c>subscription Name { ... }</c>.
+    /// </summary>
+    Subscription,
 }

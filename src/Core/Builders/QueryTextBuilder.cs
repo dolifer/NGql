@@ -248,7 +248,12 @@ internal sealed class QueryTextBuilder
     private void BuildDefinitionCore(QueryDefinition queryDefinition)
     {
         _stringBuilder.Clear();
-        _stringBuilder.Append(queryDefinition.OperationType == OperationType.Mutation ? "mutation " : "query ");
+        _stringBuilder.Append(queryDefinition.OperationType switch
+        {
+            OperationType.Subscription => "subscription ",
+            OperationType.Mutation => "mutation ",
+            _ => "query ",
+        });
 
         if (!string.IsNullOrEmpty(queryDefinition.Name))
         {

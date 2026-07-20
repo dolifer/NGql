@@ -90,6 +90,36 @@ public sealed class QueryBuilder
     }
 
     /// <summary>
+    ///     Creates a new <see cref="QueryBuilder"/> that renders as a GraphQL <c>subscription</c>.
+    ///     The fluent surface (<c>AddField</c>, <c>Include</c>, etc.) is identical to the
+    ///     query path; only the operation prefix differs at render time.
+    /// </summary>
+    /// <param name="name">The name of the subscription.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/> in subscription mode.</returns>
+    public static QueryBuilder CreateSubscriptionBuilder(string name)
+    {
+        var definition = new QueryDefinition(name) { OperationType = OperationType.Subscription };
+        return new(definition);
+    }
+
+    /// <summary>
+    ///     Creates a new <see cref="QueryBuilder"/> that renders as a GraphQL <c>subscription</c>,
+    ///     with a specific merging strategy.
+    /// </summary>
+    /// <param name="name">The name of the subscription.</param>
+    /// <param name="mergingStrategy">The merging strategy to use.</param>
+    /// <returns>Instance of <see cref="QueryBuilder"/> in subscription mode.</returns>
+    public static QueryBuilder CreateSubscriptionBuilder(string name, MergingStrategy mergingStrategy)
+    {
+        var definition = new QueryDefinition(name)
+        {
+            OperationType = OperationType.Subscription,
+            MergingStrategy = mergingStrategy,
+        };
+        return new(definition);
+    }
+
+    /// <summary>
     ///     Sets the merging strategy for this query builder.
     /// </summary>
     /// <param name="strategy">The merging strategy to use.</param>
