@@ -57,11 +57,30 @@ internal static class ValueFormatter
     {
         switch (value)
         {
-            case Enum e: builder.Append(e.ToString()); return true;
+            case Enum e: builder.Append(FormatEnumName(e)); return true;
             case EnumValue ev: builder.Append(ev.Value); return true;
             case Variable variable: builder.Append(variable.Name); return true;
             default: return false;
         }
+    }
+
+    /// <summary>
+    /// Renders an enum as its single GraphQL <c>Name</c>. Per spec § 3.9 an EnumValue must be a
+    /// Name, so undefined numeric values and unnamed <c>[Flags]</c> combinations (whose
+    /// <c>ToString()</c> yields <c>"999"</c> or <c>"Read, Write"</c>) are rejected rather than
+    /// emitted as invalid output.
+    /// </summary>
+    internal static string FormatEnumName(Enum value)
+    {
+        if (!Enum.IsDefined(value.GetType(), value))
+        {
+            throw new ArgumentException(
+                $"GraphQL enum arguments must be a single defined enum member. " +
+                $"The value '{value}' of type '{value.GetType().Name}' is not a defined member " +
+                $"(undefined numeric values and unnamed [Flags] combinations are not valid GraphQL enum names).",
+                nameof(value));
+        }
+        return value.ToString();
     }
 
     private static void AppendString(StringBuilder builder, string s)
@@ -158,11 +177,28 @@ internal static class ValueFormatter
     {
         switch (value)
         {
-            case float v: AppendFormattable(builder, v); return true;
-            case double v: AppendFormattable(builder, v); return true;
+            case float v: GuardFiniteFloat(v); AppendFormattable(builder, v); return true;
+            case double v: GuardFiniteDouble(v); AppendFormattable(builder, v); return true;
             case decimal v: AppendFormattable(builder, v); return true;
             default: return false;
         }
+    }
+
+    /// <summary>
+    /// GraphQL FloatValue (spec § 3.5.2) has no representation for NaN or Infinity. The BCL would
+    /// otherwise emit the bare tokens <c>NaN</c> / <c>Infinity</c> / <c>-Infinity</c>, which a
+    /// conforming server rejects, so such values are refused at build time instead.
+    /// </summary>
+    private static void GuardFiniteDouble(double v)
+    {
+        if (double.IsNaN(v) || double.IsInfinity(v))
+            throw new FormatException($"GraphQL does not support NaN/Infinity float values (got '{v.ToString(CultureInfo.InvariantCulture)}').");
+    }
+
+    private static void GuardFiniteFloat(float v)
+    {
+        if (float.IsNaN(v) || float.IsInfinity(v))
+            throw new FormatException($"GraphQL does not support NaN/Infinity float values (got '{v.ToString(CultureInfo.InvariantCulture)}').");
     }
 
     /// <summary>Formats <paramref name="value"/> with invariant culture. Used for
