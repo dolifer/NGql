@@ -335,6 +335,31 @@ public class VersionComparisonBenchmark
     }
 #endif
 
+#if !NGQL_PUBLISHED
+    [Benchmark]
+    [Arguments(10)]
+    [Arguments(50)]
+    public string DirectivesRendering(int iterations)
+    {
+        // Exercises the new directive render path: @include/@skip on an object field plus a
+        // generic @format on a leaf. Guarded for NGQL_PUBLISHED because Include/Skip/Directive
+        // do not exist in NGql.Core 2.0.0 (the published-runner reference).
+        string result = string.Empty;
+        for (int i = 0; i < iterations; i++)
+        {
+            var query = QueryBuilder
+                .CreateDefaultBuilder("Directives")
+                .AddField("user", u => u
+                    .Include("$show")
+                    .Skip("$hide")
+                    .AddField("name", n => n.Directive("format", new Dictionary<string, object?> { ["as"] = "ISO8601" }))
+                    .AddField("email"));
+            result = query.ToString();
+        }
+        return result;
+    }
+#endif
+
     public sealed class BenchProfile
     {
         public string name { get; set; } = string.Empty;
