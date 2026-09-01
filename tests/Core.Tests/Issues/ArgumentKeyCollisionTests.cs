@@ -126,22 +126,74 @@ public class ArgumentKeyCollisionTests
 
     [Theory]
     [InlineData("TopLevel")]
-    [InlineData("NestedDictionary")]
     [InlineData("DictionaryOverload")]
-    public void CollisionPaths_AllThrow_SameExceptionType(string scenario)
+    public void CollisionPaths_AllThrow_UnifiedMessage(string scenario)
     {
         // Arrange
         var query = new Query("q").Select("id");
         Action act = scenario switch
         {
             "TopLevel" => () => query.Where("id", 1).Where("Id", 2),
-            "NestedDictionary" => () => query.Where("filter", new Dictionary<string, object?> { ["id"] = 1, ["ID"] = 2 }),
             "DictionaryOverload" => () => query.Where(new Dictionary<string, object> { ["id"] = 1, ["ID"] = 2 }),
             _ => throw new InvalidOperationException($"Unknown scenario: {scenario}"),
         };
 
         // Act & Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("An item with the same key has already been added. Colliding key: '*'.*");
+    }
+
+    [Fact]
+    public void CollisionPaths_NestedDictionary_ThrowsArgumentException()
+    {
+        // Arrange: nested collisions are surfaced by SortedDictionary.Add inside Helpers.SortArgumentValue,
+        // a BCL implementation detail whose message this codebase does not control or unify.
+        var query = new Query("q").Select("id");
+
+        // Act
+        var act = () => query.Where("filter", new Dictionary<string, object?> { ["id"] = 1, ["ID"] = 2 });
+
+        // Assert
         act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Where_DictionaryOverloadNestedCollisionThrows_LeavesBlockAsIfCallNeverHappened()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+        var conflicting = new Dictionary<string, object>
+        {
+            ["aaa"] = 1,
+            ["bbb"] = new Dictionary<string, object?> { ["x"] = 1, ["X"] = 2 },
+        };
+
+        // Act
+        var act = () => query.Where(conflicting);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+        var rendered = query.ToString();
+        rendered.Should().NotContain("aaa").And.NotContain("bbb");
+    }
+
+    [Fact]
+    public void Where_DictionaryOverloadNestedCollisionThrows_DoesNotLeaveOrphanVariableDeclared()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+        var conflicting = new Dictionary<string, object>
+        {
+            ["aaa"] = new Variable("$leaked", "Int!"),
+            ["bbb"] = new Dictionary<string, object?> { ["x"] = 1, ["X"] = 2 },
+        };
+
+        // Act
+        var act = () => query.Where(conflicting);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+        query.ToString().Should().NotContain("$leaked");
     }
 
     private sealed class CollidingArgs

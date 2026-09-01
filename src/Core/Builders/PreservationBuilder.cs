@@ -72,8 +72,17 @@ public sealed class PreservationBuilder
     /// Useful when the same field name appears multiple times in the tree and you want to
     /// scope the preservation to one specific parent.
     /// </summary>
+    /// <remarks>
+    /// <paramref name="nodePath"/> is resolved relative to every root in the source query — it
+    /// is attempted under each root in turn, and the preservation applies wherever it resolves.
+    /// A dotted <paramref name="nodePath"/> is not interpreted as "first segment = root name";
+    /// it is simply a relative path searched under each root independently. Callers who need to
+    /// scope preservation to exactly one named root — and get a clean no-op instead of touching
+    /// any other root when it doesn't resolve there — should use
+    /// <see cref="PreserveAtPathInRoot(string, string, string)"/> instead.
+    /// </remarks>
     /// <param name="fieldPath">Field name (or dotted relative path) inside the node.</param>
-    /// <param name="nodePath">Dotted path identifying which parent node to scope to.</param>
+    /// <param name="nodePath">Dotted path identifying which parent node to scope to, resolved under every root.</param>
     /// <returns>This builder, for chaining.</returns>
     public PreservationBuilder PreserveAtPath(string fieldPath, string nodePath)
     {
@@ -81,71 +90,66 @@ public sealed class PreservationBuilder
         var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
         var fieldPathHasDot = fieldPath.Contains('.');
 
-        // A dotted nodePath whose first segment names one of the query's roots (e.g. "a.node")
-        // is a ROOTED candidate: it might identify a node under that specific root only. We only
-        // trust that reading once the candidate root actually resolves the full nodePath — via
-        // the same cached GetPathTo/NavigatePath machinery used below — because the rest of the
-        // pipeline resolves nodePath by its LAST segment, not its first. A first segment that
-        // merely collides with an unrelated root's name (e.g. "edges.node" where an unrelated
-        // "edges" root exists) must NOT scope away every other root; it must fall back to the
-        // RELATIVE behavior of searching every root that actually contains the resolved node.
-        var firstSegment = lastIndex == -1 ? null : nodePath.AsSpan(0, nodePath.IndexOf('.'));
-        var candidateRoot = firstSegment is { Length: > 0 } fs ? ResolveScopedRoot(fs) : null;
-
-        if (candidateRoot is not null &&
-            PreserveAtPathForRoot(candidateRoot, fieldPath, nodePath, lastSegment, fieldPathHasDot))
-        {
-            // The candidate root genuinely resolved nodePath — scope to it exclusively.
-            return this;
-        }
-
         foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
         {
-            var rootName = rootField.Alias ?? rootField.Name;
-            if (string.Equals(rootName, candidateRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                // Already attempted above and did not resolve; avoid a redundant lookup.
-                continue;
-            }
-
-            PreserveAtPathForRoot(rootName, fieldPath, nodePath, lastSegment, fieldPathHasDot);
+            PreserveAtPathForRoot(rootField.Alias ?? rootField.Name, fieldPath, nodePath, lastSegment, fieldPathHasDot);
         }
         return this;
     }
 
     /// <summary>
-    /// Returns the root name that <paramref name="firstSegment"/> identifies, or null when no
-    /// root matches — in which case the nodePath is relative and every root is searched.
+    /// Preserves <paramref name="fieldPath"/> within the subtree at <paramref name="nodePath"/>,
+    /// scoped exclusively to the query root named <paramref name="root"/>.
     /// </summary>
-    private string? ResolveScopedRoot(ReadOnlySpan<char> firstSegment)
+    /// <remarks>
+    /// Unlike <see cref="PreserveAtPath(string, string)"/>, this never falls back to searching
+    /// other roots. <paramref name="root"/> is matched against each root's alias-or-name using
+    /// ordinal case-insensitive comparison. If <paramref name="root"/> does not name an existing
+    /// root, or <paramref name="nodePath"/> does not resolve under it, the call is a no-op —
+    /// no other root is touched and nothing is retargeted.
+    /// </remarks>
+    /// <param name="fieldPath">Field name (or dotted relative path) inside the node.</param>
+    /// <param name="nodePath">Dotted path identifying which parent node to scope to, resolved under <paramref name="root"/> only.</param>
+    /// <param name="root">Alias-or-name of the single query root to scope preservation to.</param>
+    /// <returns>This builder, for chaining.</returns>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach over Dictionary.Values avoids the Where enumerator allocation on this lookup.")]
+    public PreservationBuilder PreserveAtPathInRoot(string fieldPath, string nodePath, string root)
     {
+        if (string.IsNullOrWhiteSpace(fieldPath) || string.IsNullOrWhiteSpace(nodePath) || string.IsNullOrWhiteSpace(root))
+        {
+            return this;
+        }
+
+        var lastIndex = nodePath.LastIndexOf('.');
+        var lastSegment = lastIndex == -1 ? nodePath : nodePath.Substring(lastIndex + 1);
+        var fieldPathHasDot = fieldPath.Contains('.');
+
         foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
         {
             var rootName = rootField.Alias ?? rootField.Name;
-            if (firstSegment.Equals(rootName.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(rootName, root, StringComparison.OrdinalIgnoreCase))
             {
-                return rootName;
+                continue;
             }
+
+            PreserveAtPathForRoot(rootName, fieldPath, nodePath, lastSegment, fieldPathHasDot);
+            break;
         }
-        return null;
+
+        return this;
     }
 
-    /// <summary>
-    /// Attempts to preserve <paramref name="fieldPath"/> under <paramref name="nodePath"/>
-    /// scoped to <paramref name="rootName"/>. Returns whether nodePath actually resolved to a
-    /// field with children under that root — the caller uses this to decide whether the root was
-    /// a genuine match (scope exclusively to it) or a false-positive name collision (fall back to
-    /// searching every root).
-    /// </summary>
-    private bool PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
+    private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
     {
         var pathToNode = _sourceQuery.GetPathTo(rootName, nodePath);
-        if (pathToNode.Length == 0) return false;
+        if (pathToNode.Length == 0) return;
 
         var fullNodePath = JoinPath(pathToNode, lastSegment);
         var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
-        if (nodeField is null) return false;
-        if (!nodeField.HasFields) return false;
+        if (nodeField is null) return;
+        if (!nodeField.HasFields) return;
 
         if (fieldPathHasDot)
         {
@@ -155,8 +159,6 @@ public sealed class PreservationBuilder
         {
             PreserveDirectMatch(nodeField.Fields, fieldPath, fullNodePath);
         }
-
-        return true;
     }
 
     private void PreserveResolvedNestedPath(IReadOnlyDictionary<string, Abstractions.FieldDefinition> nodeFields, string fieldPath, string fullNodePath)

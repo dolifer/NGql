@@ -6,11 +6,4 @@
             }
         }
     }
-    dataB{
-        edges{
-            node{
-                id
-            }
-        }
-    }
 }

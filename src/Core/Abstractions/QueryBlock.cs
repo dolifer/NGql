@@ -102,16 +102,44 @@ public sealed class QueryBlock
     /// <param name="dict">An existing Dictionary that takes &lt;string, object&gt;</param>
     /// <returns>Query</returns>
     /// <exception cref="ArgumentException">
-    /// Thrown when two keys in <paramref name="dict"/> collide under case-insensitive comparison,
-    /// or when a key collides with one already present in <see cref="Arguments"/>. The whole call
-    /// is validated before any entry is applied, so a throw leaves this block unmodified.
+    /// Thrown when two keys in <paramref name="dict"/> collide under case-insensitive comparison
+    /// (either against each other or against a key already present in <see cref="Arguments"/>), or
+    /// when sorting a nested dictionary/decomposed-object value inside <paramref name="dict"/>
+    /// uncovers the same kind of collision. Every value is validated and sorted into a staging
+    /// buffer before anything is committed to this block, so a throw — top-level or nested — leaves
+    /// <see cref="Arguments"/> and <see cref="Variables"/> exactly as they were beforehand.
     /// </exception>
     public void AddArgument(IReadOnlyDictionary<string, object> dict)
     {
+        if (dict.Count == 1)
+        {
+            // Single entry: no cross-entry collision is possible within dict itself, and the
+            // nested-collision staging below would just allocate a one-element buffer for
+            // nothing. HandleAddArgument already validates against stored keys and commits
+            // atomically (sorts before it extracts variables or writes _arguments).
+            foreach (var (key, value) in dict)
+                HandleAddArgument(key, value);
+            return;
+        }
+
         ValidateNoCaseCollisions(dict);
 
+        // Stage every value's sorted form before committing anything: SortArgumentValue can
+        // itself throw on an OrdinalIgnoreCase collision inside a nested dictionary or a
+        // decomposed object's properties, and that must not leave _arguments or _variables
+        // partially written (see AddArgument XML doc).
+        var staged = new (string Key, object? Value)[dict.Count];
+        var i = 0;
         foreach (var (key, value) in dict)
-            HandleAddArgument(key, value);
+        {
+            staged[i++] = (key, Helpers.SortArgumentValue(value));
+        }
+
+        foreach (var (key, sortedValue) in staged)
+        {
+            Helpers.ExtractVariablesFromValue(sortedValue, _variables);
+            _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
+        }
     }
 
     /// <summary>
@@ -124,7 +152,7 @@ public sealed class QueryBlock
         Justification = "Plain foreach avoids allocating an enumerator/closure per incoming dictionary; mirrors TryGetExistingKey's style.")]
     private void ValidateNoCaseCollisions(IReadOnlyDictionary<string, object> dict)
     {
-        var seen = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var key in dict.Keys)
         {
             if (!seen.Add(key))
@@ -134,7 +162,9 @@ public sealed class QueryBlock
                     nameof(dict));
             }
 
-            if (TryGetExistingKey(key, out var existingKey) && !string.Equals(existingKey, key, StringComparison.Ordinal))
+            if (_arguments.ContainsKey(key) &&
+                TryGetExistingKey(key, out var existingKey) &&
+                !string.Equals(existingKey, key, StringComparison.Ordinal))
             {
                 throw new ArgumentException(
                     $"An item with the same key has already been added. Colliding key: '{key}'.",

@@ -1,0 +1,14 @@
+﻿query Merged{
+    aRoot{
+        other{
+            id
+            secretA
+        }
+    }
+    bRoot{
+        node{
+            id
+            secretB
+        }
+    }
+}
