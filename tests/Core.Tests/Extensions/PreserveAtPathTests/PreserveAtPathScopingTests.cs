@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Builders;
 using Xunit;
@@ -50,7 +51,7 @@ public class PreserveAtPathScopingTests
     }
 
     [Fact]
-    public void PreserveAtPath_RootedNodePath_PreservesTargetRootNode()
+    public Task PreserveAtPath_RootedNodePath_PreservesTargetRootNode()
     {
         // Arrange
         var query = BuildTwoRootQuery();
@@ -58,16 +59,17 @@ public class PreserveAtPathScopingTests
         // Act - scope preservation to root "a"
         var result = PreservationBuilder.Create(query)
             .PreserveAtPath("id", "a.node")
-            .Build()
-            .ToString();
+            .Build();
 
-        // Assert - root a's node keeps id (the targeted field) and drops secretA
-        result.Should().Contain("id");
-        result.Should().NotContain("secretA");
+        // Assert - snapshot pins the exact rendered structure: root a narrowed to node{id} with
+        // secretA dropped, root b entirely absent. A substring check on "id" alone would also
+        // pass for a no-op (unfiltered) result, since "id" is a substring of "secretA"/"secretB"
+        // renders too; the snapshot rules that out.
+        return result.Verify();
     }
 
     [Fact]
-    public void PreserveAtPath_RelativeNodePath_StillAppliesToAllRoots()
+    public Task PreserveAtPath_RelativeNodePath_StillAppliesToAllRoots()
     {
         // Arrange - a relative nodePath (first segment not a root name) keeps the pre-existing
         // cross-root behavior: every root that actually has the resolved node.field is preserved.
@@ -76,12 +78,48 @@ public class PreserveAtPathScopingTests
         // Act - "node" is relative: applies to both aRoot.node and bRoot.node
         var result = PreservationBuilder.Create(query)
             .PreserveAtPath("id", "node")
-            .Build()
-            .ToString();
+            .Build();
 
-        // Assert - both roots preserved id, both secrets dropped
-        result.Should().Contain("id");
-        result.Should().NotContain("secretA");
-        result.Should().NotContain("secretB");
+        // Assert - snapshot pins both roots narrowed to node{id}, both secrets dropped
+        return result.Verify();
+    }
+
+    [Fact]
+    public Task PreserveAtPath_RelativeNodePathCollidingWithUnrelatedRootName_AppliesToAllMatchingRoots()
+    {
+        // Arrange - three roots: dataA and dataB each have edges.node.{id,secret}, plus an
+        // unrelated root literally named "edges" with no "node" child. The nodePath "edges.node"
+        // is RELATIVE (its first segment is not meant to name a root), but it collides in name
+        // with the unrelated "edges" root. Resolving nodePath by first-segment alone would wrongly
+        // scope to the "edges" root, find no "node" child there, and preserve nothing anywhere -
+        // silently returning the query completely unfiltered with all secrets intact.
+        var dataA = QueryBuilder
+            .CreateDefaultBuilder("QueryA")
+            .AddField("dataA.edges.node.id")
+            .AddField("dataA.edges.node.secretA");
+
+        var dataB = QueryBuilder
+            .CreateDefaultBuilder("QueryB")
+            .AddField("dataB.edges.node.id")
+            .AddField("dataB.edges.node.secretB");
+
+        var unrelatedEdges = QueryBuilder
+            .CreateDefaultBuilder("QueryC")
+            .AddField("edges.tot");
+
+        var query = QueryBuilder
+            .CreateDefaultBuilder("Merged", MergingStrategy.NeverMerge)
+            .Include(dataA)
+            .Include(dataB)
+            .Include(unrelatedEdges);
+
+        // Act - "edges.node" collides with the unrelated "edges" root's name
+        var result = PreservationBuilder.Create(query)
+            .PreserveAtPath("id", "edges.node")
+            .Build();
+
+        // Assert - snapshot pins dataA/dataB both narrowed to node{id} with secrets dropped, and
+        // the unrelated "edges" root untouched. The query must not come back unfiltered.
+        return result.Verify();
     }
 }

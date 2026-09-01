@@ -82,19 +82,29 @@ public sealed class PreservationBuilder
         var fieldPathHasDot = fieldPath.Contains('.');
 
         // A dotted nodePath whose first segment names one of the query's roots (e.g. "a.node")
-        // is treated as ROOTED: it identifies a node under that specific root only. A nodePath
-        // whose first segment is NOT a root name (e.g. "edges.node") is RELATIVE and applies to
-        // every root that actually contains the resolved node.field. Without this scoping a
-        // rooted request such as PreserveAtPath("id", "a.node") would leak into a sibling root's
-        // same-named node ("b.node"), narrowing fields the caller never referenced.
+        // is a ROOTED candidate: it might identify a node under that specific root only. We only
+        // trust that reading once the candidate root actually resolves the full nodePath — via
+        // the same cached GetPathTo/NavigatePath machinery used below — because the rest of the
+        // pipeline resolves nodePath by its LAST segment, not its first. A first segment that
+        // merely collides with an unrelated root's name (e.g. "edges.node" where an unrelated
+        // "edges" root exists) must NOT scope away every other root; it must fall back to the
+        // RELATIVE behavior of searching every root that actually contains the resolved node.
         var firstSegment = lastIndex == -1 ? null : nodePath.AsSpan(0, nodePath.IndexOf('.'));
-        var scopedRoot = firstSegment is { Length: > 0 } fs ? ResolveScopedRoot(fs) : null;
+        var candidateRoot = firstSegment is { Length: > 0 } fs ? ResolveScopedRoot(fs) : null;
+
+        if (candidateRoot is not null &&
+            PreserveAtPathForRoot(candidateRoot, fieldPath, nodePath, lastSegment, fieldPathHasDot))
+        {
+            // The candidate root genuinely resolved nodePath — scope to it exclusively.
+            return this;
+        }
 
         foreach (var rootField in _sourceQuery.Definition.FieldsInternal.Values)
         {
             var rootName = rootField.Alias ?? rootField.Name;
-            if (scopedRoot is not null && !string.Equals(rootName, scopedRoot, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(rootName, candidateRoot, StringComparison.OrdinalIgnoreCase))
             {
+                // Already attempted above and did not resolve; avoid a redundant lookup.
                 continue;
             }
 
@@ -120,15 +130,22 @@ public sealed class PreservationBuilder
         return null;
     }
 
-    private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
+    /// <summary>
+    /// Attempts to preserve <paramref name="fieldPath"/> under <paramref name="nodePath"/>
+    /// scoped to <paramref name="rootName"/>. Returns whether nodePath actually resolved to a
+    /// field with children under that root — the caller uses this to decide whether the root was
+    /// a genuine match (scope exclusively to it) or a false-positive name collision (fall back to
+    /// searching every root).
+    /// </summary>
+    private bool PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
     {
         var pathToNode = _sourceQuery.GetPathTo(rootName, nodePath);
-        if (pathToNode.Length == 0) return;
+        if (pathToNode.Length == 0) return false;
 
         var fullNodePath = JoinPath(pathToNode, lastSegment);
         var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);
-        if (nodeField is null) return;
-        if (!nodeField.HasFields) return;
+        if (nodeField is null) return false;
+        if (!nodeField.HasFields) return false;
 
         if (fieldPathHasDot)
         {
@@ -138,6 +155,8 @@ public sealed class PreservationBuilder
         {
             PreserveDirectMatch(nodeField.Fields, fieldPath, fullNodePath);
         }
+
+        return true;
     }
 
     private void PreserveResolvedNestedPath(IReadOnlyDictionary<string, Abstractions.FieldDefinition> nodeFields, string fieldPath, string fullNodePath)

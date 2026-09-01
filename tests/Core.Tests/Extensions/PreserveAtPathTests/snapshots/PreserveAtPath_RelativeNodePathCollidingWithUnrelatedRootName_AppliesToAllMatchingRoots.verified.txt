@@ -1,0 +1,16 @@
+﻿query Merged{
+    dataA{
+        edges{
+            node{
+                id
+            }
+        }
+    }
+    dataB{
+        edges{
+            node{
+                id
+            }
+        }
+    }
+}

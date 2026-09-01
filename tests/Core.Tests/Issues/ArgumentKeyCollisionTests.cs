@@ -93,6 +93,57 @@ public class ArgumentKeyCollisionTests
         query.ToString().Should().Contain("id:2").And.NotContain("id:1");
     }
 
+    [Fact]
+    public void Where_TopLevelCollisionThrows_DoesNotLeaveOrphanVariableDeclared()
+    {
+        // Arrange
+        var query = new Query("root", new Variable("$a", "String!")).Select("id");
+        query.Where("id", 1);
+
+        // Act
+        var act = () => query.Where("Id", new Variable("$leaked", "Int!"));
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+        query.ToString().Should().NotContain("$leaked");
+    }
+
+    [Fact]
+    public void Where_DictionaryOverloadCollisionThrows_LeavesBlockAsIfCallNeverHappened()
+    {
+        // Arrange
+        var query = new Query("root").Select("id");
+        var conflicting = new Dictionary<string, object> { ["aaa"] = 1, ["AAA"] = 2, ["zzz"] = 3 };
+
+        // Act
+        var act = () => query.Where(conflicting);
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+        var rendered = query.ToString();
+        rendered.Should().NotContain("aaa").And.NotContain("zzz");
+    }
+
+    [Theory]
+    [InlineData("TopLevel")]
+    [InlineData("NestedDictionary")]
+    [InlineData("DictionaryOverload")]
+    public void CollisionPaths_AllThrow_SameExceptionType(string scenario)
+    {
+        // Arrange
+        var query = new Query("q").Select("id");
+        Action act = scenario switch
+        {
+            "TopLevel" => () => query.Where("id", 1).Where("Id", 2),
+            "NestedDictionary" => () => query.Where("filter", new Dictionary<string, object?> { ["id"] = 1, ["ID"] = 2 }),
+            "DictionaryOverload" => () => query.Where(new Dictionary<string, object> { ["id"] = 1, ["ID"] = 2 }),
+            _ => throw new InvalidOperationException($"Unknown scenario: {scenario}"),
+        };
+
+        // Act & Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
     private sealed class CollidingArgs
     {
         public int Value { get; set; } = 1;

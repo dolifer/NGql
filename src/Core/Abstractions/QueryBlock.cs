@@ -101,11 +101,46 @@ public sealed class QueryBlock
     /// </summary>
     /// <param name="dict">An existing Dictionary that takes &lt;string, object&gt;</param>
     /// <returns>Query</returns>
-    /// <throws>DuplicateKeyException and others</throws>
+    /// <exception cref="ArgumentException">
+    /// Thrown when two keys in <paramref name="dict"/> collide under case-insensitive comparison,
+    /// or when a key collides with one already present in <see cref="Arguments"/>. The whole call
+    /// is validated before any entry is applied, so a throw leaves this block unmodified.
+    /// </exception>
     public void AddArgument(IReadOnlyDictionary<string, object> dict)
     {
+        ValidateNoCaseCollisions(dict);
+
         foreach (var (key, value) in dict)
             HandleAddArgument(key, value);
+    }
+
+    /// <summary>
+    /// Validates that no key in <paramref name="dict"/> collides, under OrdinalIgnoreCase, with
+    /// another key in <paramref name="dict"/> or with a key already stored in <see cref="Arguments"/>.
+    /// Run before any entry is applied so a rejected call leaves the block untouched.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach avoids allocating an enumerator/closure per incoming dictionary; mirrors TryGetExistingKey's style.")]
+    private void ValidateNoCaseCollisions(IReadOnlyDictionary<string, object> dict)
+    {
+        var seen = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in dict.Keys)
+        {
+            if (!seen.Add(key))
+            {
+                throw new ArgumentException(
+                    $"An item with the same key has already been added. Colliding key: '{key}'.",
+                    nameof(dict));
+            }
+
+            if (TryGetExistingKey(key, out var existingKey) && !string.Equals(existingKey, key, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"An item with the same key has already been added. Colliding key: '{key}'.",
+                    nameof(dict));
+            }
+        }
     }
 
     /// <summary>
@@ -267,21 +302,24 @@ public sealed class QueryBlock
 
     private void HandleAddArgument(string key, object value)
     {
-        Helpers.ExtractVariablesFromValue(value, _variables);
-        var sortedValue = Helpers.SortArgumentValue(value);
-
         // Mirror the case-collision policy enforced for nested dictionary/object argument values
         // (which build via Dictionary.Add and throw on an OrdinalIgnoreCase collision): a key that
         // differs only by case from an existing one is a distinct GraphQL argument at the wire level,
         // so silently overwriting it via the indexer would lose data. Re-setting the exact same key
         // is still allowed; only a case-differing collision throws.
+        //
+        // This check runs before any mutation of the block (variable extraction, sorting, or the
+        // dictionary write below) so a throw leaves this block exactly as it was beforehand — no
+        // orphaned variable declarations, no partially-applied argument.
         if (TryGetExistingKey(key, out var existingKey) && !string.Equals(existingKey, key, StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                $"An argument with the same key (differing only by case) has already been added. Colliding key: '{key}'.",
+                $"An item with the same key has already been added. Colliding key: '{key}'.",
                 nameof(key));
         }
 
+        Helpers.ExtractVariablesFromValue(value, _variables);
+        var sortedValue = Helpers.SortArgumentValue(value);
         _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 
