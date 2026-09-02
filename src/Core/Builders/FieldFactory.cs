@@ -164,8 +164,7 @@ internal static class FieldFactory
 
     private static FieldDefinition GetOrCreateRootSegment(Dictionary<string, FieldDefinition> rootFields, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
     {
-        var segmentName = spanSegment.Name.ToString();
-        if (!rootFields.TryGetValue(segmentName, out var field))
+        if (!TryGetRootFieldBySpan(rootFields, spanSegment.Name, out var field, out var segmentName))
         {
             field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
             rootFields[segmentName] = field;
@@ -173,6 +172,31 @@ internal static class FieldFactory
         }
         PromoteToObjectIfNeeded(field, spanSegment.IsLastFragment);
         return field;
+    }
+
+    /// <summary>
+    /// Probes <paramref name="rootFields"/> (keyed <see cref="StringComparer.OrdinalIgnoreCase"/>) by
+    /// span without allocating on .NET 9+, via
+    /// <c>Dictionary&lt;TKey,TValue&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>. On a
+    /// miss (or on net8.0, where the alternate-lookup API does not exist), materializes
+    /// <paramref name="name"/> exactly once and hands it back via <paramref name="key"/> so the
+    /// caller's subsequent write on the not-found path reuses it instead of calling
+    /// <see cref="ReadOnlySpan{T}.ToString"/> again.
+    /// </summary>
+    private static bool TryGetRootFieldBySpan(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> name, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out FieldDefinition? field, out string key)
+    {
+#if NET9_0_OR_GREATER
+        if (rootFields.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out field))
+        {
+            key = null!;
+            return true;
+        }
+        key = name.ToString();
+        return false;
+#else
+        key = name.ToString();
+        return rootFields.TryGetValue(key, out field);
+#endif
     }
 
     private static FieldDefinition GetOrCreateChildSegment(FieldDefinition parentField, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
@@ -565,9 +589,9 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition ProcessFieldSegment(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
-        if (!currentFields.TryGetValue(segment.Name.ToString(), out var field))
+        if (!TryGetRootFieldBySpan(currentFields, segment.Name, out var field, out var segmentKey))
         {
-            return CreateNewField(currentFields, segment, arguments, parsedFieldType, fullPath, metadata);
+            return CreateNewField(currentFields, segmentKey, segment, arguments, parsedFieldType, fullPath, metadata);
         }
 
         return UpdateExistingField(currentFields, segment, field, arguments, parsedFieldType);
@@ -626,14 +650,17 @@ internal static class FieldFactory
                 : string.IsNullOrEmpty(field._alias));
 
     /// <summary>
-    /// Creates a new field for complex field processing — root-Dict variant.
+    /// Creates a new field for complex field processing — root-Dict variant. <paramref name="segmentKey"/>
+    /// is the already-materialized dictionary key for <c>segment.Name</c> (computed once by the
+    /// caller's failed probe via <see cref="TryGetRootFieldBySpan"/>), reused here for the insert
+    /// instead of calling <see cref="ReadOnlySpan{T}.ToString"/> a second time.
     /// </summary>
-    private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition CreateNewField(Dictionary<string, FieldDefinition> currentFields, string segmentKey, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
         var (fieldArgs, fieldMetadata) = ResolveSegmentArgsAndMetadata(segment, arguments, metadata);
         var fieldType = ResolveSegmentFieldType(segment, parsedFieldType);
         var field = Helpers.CreateFieldDefinition(segment.Name, fieldType, segment.Alias, fieldArgs, fullPath, fieldMetadata);
-        currentFields[segment.Name.ToString()] = field;
+        currentFields[segmentKey] = field;
         return field;
     }
 
@@ -669,7 +696,10 @@ internal static class FieldFactory
 
         if (arguments?.Count > 0)
         {
-            var fieldKey = segment.Name.ToString();
+            // field was found via a case-insensitive lookup keyed by this exact string (set at
+            // insertion time in CreateNewField), so reusing it here — rather than re-materializing
+            // segment.Name — both avoids a second allocation and targets the correct existing slot.
+            var fieldKey = field.Name;
             field = currentFields[fieldKey] = field.MergeFieldArguments(arguments);
         }
         ApplyParsedFieldType(field, parsedFieldType);

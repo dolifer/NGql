@@ -90,7 +90,10 @@ public static class FieldSignatureGenerator
             // Fallback to string concatenation for very long paths. The path is still appended
             // through AppendCaseInsensitive so this heap path yields the same case-folded
             // signature as the stackalloc path above — the two must never disagree on case.
-            var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath.ToString()}.{field.Name}";
+            // Interpolating parentPath directly (rather than parentPath.ToString()) lets the
+            // interpolated-string handler format the span in place, avoiding materializing an
+            // intermediate string just to concatenate it again.
+            var currentPath = parentPath.IsEmpty ? field.Name : $"{parentPath}.{field.Name}";
             AppendCaseInsensitive(builder, currentPath.AsSpan());
             AppendFieldSignatureRemainder(builder, field, currentPath.AsSpan());
             return;

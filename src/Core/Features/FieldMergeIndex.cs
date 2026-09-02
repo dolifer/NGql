@@ -178,11 +178,19 @@ internal sealed class FieldMergeIndex
         perName[key] = fingerprint;
     }
 
+    // Every call site adds exactly one entry immediately after creating a fresh bucket (see
+    // IndexAdd, ReindexFingerprint, EnsureFingerprintBucketsBuilt), and the production shape — every
+    // fragment carrying a distinct deep-argument fingerprint — means the overwhelming majority of
+    // buckets ever created hold exactly one entry for their entire lifetime. Pre-sizing to 1 avoids
+    // List{T}'s default first-growth to a 4-slot backing array, which would otherwise waste 3 slots
+    // per singleton bucket.
+    private const int InitialBucketCapacity = 1;
+
     private List<string> GetOrCreateBucket(string name)
     {
         if (!_byName.TryGetValue(name, out var bucket))
         {
-            bucket = new List<string>();
+            bucket = new List<string>(InitialBucketCapacity);
             _byName[name] = bucket;
         }
         return bucket;
@@ -192,7 +200,7 @@ internal sealed class FieldMergeIndex
     {
         if (!byFingerprint.TryGetValue(fingerprint, out var bucket))
         {
-            bucket = new List<string>();
+            bucket = new List<string>(InitialBucketCapacity);
             byFingerprint[fingerprint] = bucket;
         }
         return bucket;
@@ -252,12 +260,7 @@ internal sealed class FieldMergeIndex
             if (liveFingerprint == expectedFingerprint) continue;
 
             bucket.RemoveAt(i);
-            if (!byFingerprint.TryGetValue(liveFingerprint, out var correctBucket))
-            {
-                correctBucket = new List<string>();
-                byFingerprint[liveFingerprint] = correctBucket;
-            }
-            correctBucket.Add(key);
+            GetOrCreateFingerprintBucket(byFingerprint, liveFingerprint).Add(key);
             SetKeyFingerprint(name, key, liveFingerprint);
         }
     }
@@ -343,12 +346,7 @@ internal sealed class FieldMergeIndex
                 if (!fields.TryGetValue(key, out var field)) continue;
                 var fingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(field);
 
-                if (!byFingerprint.TryGetValue(fingerprint, out var bucket))
-                {
-                    bucket = new List<string>();
-                    byFingerprint[fingerprint] = bucket;
-                }
-                bucket.Add(key);
+                GetOrCreateFingerprintBucket(byFingerprint, fingerprint).Add(key);
                 SetKeyFingerprint(name, key, fingerprint);
             }
         }

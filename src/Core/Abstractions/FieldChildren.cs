@@ -104,7 +104,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         // re-checking under the lock would be a dead branch.
         lock (_lock)
         {
-            return _index!.TryGetValue(name.ToString(), out var slot) ? _items![slot] : null;
+            return TryGetIndexSlot(name, out var slot) ? _items![slot] : null;
         }
     }
 
@@ -218,7 +218,9 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
             var items = _items!;
             if (_index != null)
             {
-                var slot = _index[name.ToString()];
+                // Documented precondition (see method summary): name is guaranteed to already be a
+                // key, so the slot lookup itself never allocates a fallback string.
+                TryGetIndexSlot(name, out var slot);
                 items[slot] = child;
                 UpdateIndexKeyLocked(name, child.Name, slot);
                 return;
@@ -231,6 +233,40 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     }
 
     /// <summary>
+    /// Probes <see cref="_index"/> by span without allocating a lookup string on .NET 9+ (via
+    /// <c>Dictionary&lt;TKey,TValue&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>,
+    /// which <see cref="StringComparer.OrdinalIgnoreCase"/> supports as an
+    /// <c>IAlternateEqualityComparer&lt;ReadOnlySpan&lt;char&gt;, string&gt;</c>); falls back to
+    /// <see cref="ReadOnlySpan{T}.ToString"/> on net8.0, where the alternate-lookup API does not
+    /// exist. Must be called under <see cref="_lock"/> with <see cref="_index"/> known non-null.
+    /// The lookup struct itself is a zero-allocation view over the live dictionary — obtained
+    /// fresh on every call rather than cached, so it can never be used against a stale/rebuilt
+    /// <see cref="_index"/> instance.
+    /// </summary>
+    private bool TryGetIndexSlot(ReadOnlySpan<char> name, out int slot)
+    {
+#if NET9_0_OR_GREATER
+        return _index!.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(name, out slot);
+#else
+        return _index!.TryGetValue(name.ToString(), out slot);
+#endif
+    }
+
+    /// <summary>
+    /// Removes a key from <see cref="_index"/> by span, same allocation trade-off as
+    /// <see cref="TryGetIndexSlot"/>. Must be called under <see cref="_lock"/> with
+    /// <see cref="_index"/> known non-null.
+    /// </summary>
+    private void RemoveIndexKey(ReadOnlySpan<char> name)
+    {
+#if NET9_0_OR_GREATER
+        _index!.GetAlternateLookup<ReadOnlySpan<char>>().Remove(name);
+#else
+        _index!.Remove(name.ToString());
+#endif
+    }
+
+    /// <summary>
     /// After an in-place replace, keeps <see cref="_index"/> consistent when the replacement's
     /// name differs from the looked-up key (e.g. alias/name changes on the field object) — removes
     /// the stale key and (re)inserts the new one pointing at the same slot. Must be called under
@@ -240,7 +276,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         if (!oldKey.Equals(newKey.AsSpan(), StringComparison.OrdinalIgnoreCase))
         {
-            _index!.Remove(oldKey.ToString());
+            RemoveIndexKey(oldKey);
         }
         _index![newKey] = slot;
     }
