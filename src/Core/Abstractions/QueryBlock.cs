@@ -105,9 +105,21 @@ public sealed class QueryBlock
     /// Thrown when two keys in <paramref name="dict"/> collide under case-insensitive comparison
     /// (either against each other or against a key already present in <see cref="Arguments"/>), or
     /// when sorting a nested dictionary/decomposed-object value inside <paramref name="dict"/>
-    /// uncovers the same kind of collision. Every value is validated and sorted into a staging
-    /// buffer before anything is committed to this block, so a throw — top-level or nested — leaves
-    /// <see cref="Arguments"/> and <see cref="Variables"/> exactly as they were beforehand.
+    /// uncovers the same kind of collision.
+    /// <para>
+    /// For <paramref name="dict"/> with more than one entry, every value is validated and sorted
+    /// into a staging buffer before anything is committed to this block, so a throw — top-level or
+    /// nested — leaves <see cref="Arguments"/> and <see cref="Variables"/> exactly as they were
+    /// beforehand.
+    /// </para>
+    /// <para>
+    /// For a single-entry <paramref name="dict"/>, this guarantee does NOT extend to
+    /// <see cref="Variables"/>: that path routes through <see cref="HandleAddArgument"/>, which
+    /// extracts variables from the value before sorting it, so a throw caused by a nested
+    /// collision inside that single value can leave an extracted variable in <see cref="Variables"/>
+    /// even though <see cref="Arguments"/> itself was never written. This is a pre-existing
+    /// characteristic of the single-entry fast path, not new behavior.
+    /// </para>
     /// </exception>
     public void AddArgument(IReadOnlyDictionary<string, object> dict)
     {
@@ -115,8 +127,10 @@ public sealed class QueryBlock
         {
             // Single entry: no cross-entry collision is possible within dict itself, and the
             // nested-collision staging below would just allocate a one-element buffer for
-            // nothing. HandleAddArgument already validates against stored keys and commits
-            // atomically (sorts before it extracts variables or writes _arguments).
+            // nothing. HandleAddArgument validates against stored keys before touching this
+            // block, but — unlike the staged multi-entry path below — it extracts variables from
+            // the value before sorting it, so a throw from a nested collision inside the value can
+            // still leave a variable behind (see the AddArgument XML doc's single-entry caveat).
             foreach (var (key, value) in dict)
                 HandleAddArgument(key, value);
             return;
@@ -162,8 +176,7 @@ public sealed class QueryBlock
                     nameof(dict));
             }
 
-            if (_arguments.ContainsKey(key) &&
-                TryGetExistingKey(key, out var existingKey) &&
+            if (TryGetExistingKey(key, out var existingKey) &&
                 !string.Equals(existingKey, key, StringComparison.Ordinal))
             {
                 throw new ArgumentException(

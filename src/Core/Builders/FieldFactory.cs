@@ -46,6 +46,16 @@ internal static class FieldFactory
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
         var children = parent._children ??= new FieldChildren();
 
+        // parent's memoized deep fingerprint (if any) summarizes its entire subtree, including
+        // whatever descendant fieldPath resolves to. Only an argument-bearing call can change the
+        // merge-relevant subtree, so only those need to invalidate — but they must invalidate here,
+        // at the single choke point every simple/dotted/complex descendant mutation funnels through,
+        // since parent itself is never revisited by the per-segment walks below.
+        if (arguments is { Count: > 0 })
+        {
+            parent.ClearMergeMemo();
+        }
+
         // FAST PATH: Simple field name
         if (fieldPath.IsSimpleField())
         {
@@ -276,7 +286,13 @@ internal static class FieldFactory
             }
             else
             {
-                // Nested level — use FieldChildren.
+                // Nested level — use FieldChildren. parentField is an ancestor of whatever this
+                // segment (or a later one) mutates, so its memoized fingerprint must not survive
+                // an argument-bearing walk past it.
+                if (arguments is { Count: > 0 })
+                {
+                    parentField.ClearMergeMemo();
+                }
                 var children = parentField._children ??= new FieldChildren();
                 result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
             }
@@ -307,6 +323,12 @@ internal static class FieldFactory
             }
 
             pathBuilder.Append(spanSegment.Name);
+            // currentParent is an ancestor of whatever this segment (or a later one) mutates —
+            // see the root-level variant above for the full invalidation rationale.
+            if (arguments is { Count: > 0 })
+            {
+                currentParent.ClearMergeMemo();
+            }
             var children = currentParent._children ??= new FieldChildren();
             result = ProcessDottedSegment(children, spanSegment.Name, spanSegment.IsLastFragment, fieldType, arguments, metadata, pathBuilder.AsSpan());
             currentParent = result;
@@ -486,7 +508,13 @@ internal static class FieldFactory
                 }
                 else
                 {
-                    // Nested level
+                    // Nested level. parentField is an ancestor of whatever this segment (or a
+                    // later one) mutates — only the last fragment ever carries arguments, but
+                    // every field visited on the way there must lose its memoized fingerprint.
+                    if (arguments is { Count: > 0 })
+                    {
+                        parentField.ClearMergeMemo();
+                    }
                     var children = parentField._children ??= new FieldChildren();
                     result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
                 }
@@ -515,6 +543,12 @@ internal static class FieldFactory
             {
                 pathBuilder.Append(segment.Name);
                 var typeToUse = !segment.ParsedType.IsEmpty ? segment.ParsedType : parsedFieldType;
+                // currentParent is an ancestor of whatever this segment (or a later one) mutates —
+                // see the root-Dict variant above for the full invalidation rationale.
+                if (arguments is { Count: > 0 })
+                {
+                    currentParent.ClearMergeMemo();
+                }
                 var children = currentParent._children ??= new FieldChildren();
                 result = ProcessFieldSegment(children, segment, arguments, typeToUse, pathBuilder.AsSpan(), metadata);
                 currentParent = result;

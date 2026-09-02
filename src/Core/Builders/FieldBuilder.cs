@@ -413,6 +413,11 @@ public sealed class FieldBuilder
             // GetOrAddField above already added `field` as a child of _fieldDefinition,
             // so _fieldDefinition._children is non-null at this point.
             _fieldDefinition._children!.Set(field.Name, fieldBuilder._fieldDefinition);
+
+            // The action may have mutated arguments anywhere in field's subtree (nested Where()/
+            // AddField calls), which GetOrAddField above could not have anticipated. _fieldDefinition
+            // is field's parent, so its memoized deep fingerprint — if any — is now stale too.
+            _fieldDefinition.ClearMergeMemo();
         }
 
         return this;
@@ -484,6 +489,11 @@ public sealed class FieldBuilder
             {
                 RecursiveCreateField(parentChildren, childrenSpan[i]);
             }
+
+            // Any descendant merge above may have changed the merge-relevant subtree beneath
+            // parentField — its own memoized fingerprint (if any, from a prior FindMergeTarget
+            // call) is now stale.
+            parentField.ClearMergeMemo();
         }
     }
 
@@ -503,6 +513,11 @@ public sealed class FieldBuilder
             {
                 RecursiveCreateField(parentChildren, childrenSpan[i]);
             }
+
+            // Any descendant merge above may have changed the merge-relevant subtree beneath
+            // parentField — its own memoized fingerprint (if any, from a prior FindMergeTarget
+            // call) is now stale.
+            parentField.ClearMergeMemo();
         }
     }
 
@@ -579,7 +594,12 @@ public sealed class FieldBuilder
         // Ensure that _arguments exist (lazy initialization)
         if (_fieldDefinition._arguments is null)
         {
-            _fieldDefinition = _fieldDefinition with { _arguments = new(StringComparer.OrdinalIgnoreCase) };
+            _fieldDefinition = _fieldDefinition with
+            {
+                _arguments = new(StringComparer.OrdinalIgnoreCase),
+                _deepArgumentFingerprint = null,
+                _subtreeHasAnyArguments = null,
+            };
         }
 
         // Determine the final value: merge dictionaries if both are dictionaries, otherwise set/override
@@ -594,6 +614,11 @@ public sealed class FieldBuilder
                 _ => value
             }
             : value; // Key doesn't exist - set the value
+
+        // Mutating arguments in place (above) invalidates any memoized fingerprint on this field —
+        // including the case where _arguments already existed and only its contents changed.
+        _fieldDefinition._deepArgumentFingerprint = null;
+        _fieldDefinition._subtreeHasAnyArguments = null;
 
         return this;
     }

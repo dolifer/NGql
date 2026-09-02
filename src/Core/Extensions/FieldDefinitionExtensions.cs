@@ -567,12 +567,22 @@ internal static class FieldDefinitionExtensions
 
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {
-            return existingField with { _arguments = AsSortedCaseInsensitive(newArguments) };
+            return existingField with
+            {
+                _arguments = AsSortedCaseInsensitive(newArguments),
+                _deepArgumentFingerprint = null,
+                _subtreeHasAnyArguments = null,
+            };
         }
 
         var merged = CopyToSortedCaseInsensitive(existingField._arguments);
         ApplyArgumentOverrides(merged, newArguments);
-        return existingField with { _arguments = merged };
+        return existingField with
+        {
+            _arguments = merged,
+            _deepArgumentFingerprint = null,
+            _subtreeHasAnyArguments = null,
+        };
     }
 
     private static SortedDictionary<string, object?> AsSortedCaseInsensitive(IDictionary<string, object?> source)

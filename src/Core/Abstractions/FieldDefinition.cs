@@ -344,6 +344,22 @@ public sealed record FieldDefinition
     [JsonIgnore]
     public bool IsNeverMerge { get; internal set; }
 
+    /// <summary>
+    /// Clears this field's memoized <see cref="_deepArgumentFingerprint"/> and
+    /// <see cref="_subtreeHasAnyArguments"/> caches. Both caches summarize this field's entire
+    /// subtree, so any code path that mutates arguments or children anywhere beneath a field —
+    /// not just on the field itself — must call this on every ancestor between the root and the
+    /// mutation point, not only on the mutated node. A stale fingerprint that undercounts a
+    /// descendant's arguments causes <see cref="NGql.Core.Features.QueryMerger"/> to skip a
+    /// genuine merge candidate (a silent false split), which is strictly worse than the cost of
+    /// clearing eagerly.
+    /// </summary>
+    internal void ClearMergeMemo()
+    {
+        _deepArgumentFingerprint = null;
+        _subtreeHasAnyArguments = null;
+    }
+
     // Methods
     public bool Equals(FieldDefinition? other)
     {

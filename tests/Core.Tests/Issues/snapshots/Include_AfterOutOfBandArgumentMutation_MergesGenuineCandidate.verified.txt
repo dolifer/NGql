@@ -1,0 +1,8 @@
+﻿query R{
+    user{
+        id(filter:"B")
+    }
+    user_1:user{
+        id(filter:"ZZZ")
+    }
+}
