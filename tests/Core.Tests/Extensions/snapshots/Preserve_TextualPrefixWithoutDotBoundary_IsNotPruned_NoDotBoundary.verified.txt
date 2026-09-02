@@ -1,0 +1,8 @@
+﻿query TestQuery{
+    TestQuery:user{
+        Id:id
+    }
+    TestQuery:userProfile{
+        Id:id2
+    }
+}

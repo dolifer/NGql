@@ -40,32 +40,60 @@ public sealed class PreservationBuilder
     /// </summary>
     /// <param name="fieldPaths">Dot-separated field paths to preserve. Null/whitespace entries are skipped.</param>
     /// <returns>This builder, for chaining.</returns>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Plain foreach avoids the Where enumerator; the span-based prefix check below avoids one string concat per (path, existing) pair.")]
     public PreservationBuilder Preserve(params string[]? fieldPaths)
     {
         if (fieldPaths == null || fieldPaths.Length == 0) return this;
 
         foreach (var path in fieldPaths)
         {
-            if (string.IsNullOrWhiteSpace(path)) continue;
-
-            // Remove parent paths when adding more specific child. The check is equivalent to
-            // path.StartsWith(existing + ".") without allocating the concatenated prefix.
-            if (_pathsToPreserve.Count > 0)
-            {
-                _pathsToPreserve.RemoveWhere(existing =>
-                    path.Length > existing.Length
-                    && path[existing.Length] == '.'
-                    && path.AsSpan(0, existing.Length).Equals(existing, StringComparison.OrdinalIgnoreCase));
-            }
-
-            _pathsToPreserve.Add(path);
+            PreserveOne(path);
         }
 
         return this;
     }
+
+    /// <summary>
+    /// Adds a single dotted field path to the preservation set, pruning any previously-added
+    /// parent paths that <paramref name="path"/> is a more specific descendant of. This is the
+    /// per-path body shared by <see cref="Preserve(string[])"/> and the internal single-path
+    /// call sites in <see cref="PreserveAtPathForRoot"/>, so those sites don't need to allocate
+    /// a single-element <c>params string[]</c> just to add one path.
+    /// </summary>
+    /// <param name="path">Dot-separated field path to preserve. Null/whitespace is a no-op.</param>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach scan detects whether any parent needs pruning without allocating a Where enumerator or a RemoveWhere closure/delegate; removal itself is deferred to a second pass only taken when a match was found.")]
+    private void PreserveOne(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        // Remove parent paths when adding more specific child. The check is equivalent to
+        // path.StartsWith(existing + ".") without allocating the concatenated prefix.
+        if (_pathsToPreserve.Count > 0)
+        {
+            var hasMatch = false;
+            foreach (var existing in _pathsToPreserve)
+            {
+                if (IsDotDelimitedAncestor(path, existing))
+                {
+                    hasMatch = true;
+                    break;
+                }
+            }
+
+            if (hasMatch)
+            {
+                _pathsToPreserve.RemoveWhere(existing => IsDotDelimitedAncestor(path, existing));
+            }
+        }
+
+        _pathsToPreserve.Add(path);
+    }
+
+    private static bool IsDotDelimitedAncestor(string path, string existing)
+        => path.Length > existing.Length
+           && path[existing.Length] == '.'
+           && path.AsSpan(0, existing.Length).Equals(existing, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Preserves <paramref name="fieldPath"/> within the subtree at <paramref name="nodePath"/>.
@@ -166,7 +194,7 @@ public sealed class PreservationBuilder
         if (QueryDefinitionExtensions.NavigatePath(nodeFields, fieldPath.AsSpan(), out var resolved, fullNodePath) != null
             && resolved is not null)
         {
-            Preserve(resolved);
+            PreserveOne(resolved);
         }
     }
 
@@ -175,7 +203,7 @@ public sealed class PreservationBuilder
         var match = PreserveExtensions.FindFieldByNameOrAlias(nodeFields, fieldPath.AsSpan());
         if (match.HasValue)
         {
-            Preserve(string.Concat(fullNodePath, ".", match.Value.Key));
+            PreserveOne(string.Concat(fullNodePath, ".", match.Value.Key));
         }
     }
 
@@ -283,7 +311,7 @@ public sealed class PreservationBuilder
         Type? parameterType,
         string[]? alwaysPreserveFields)
     {
-        var processor = new ExpressionPreservationProcessor(_sourceQuery, path => Preserve(path));
+        var processor = new ExpressionPreservationProcessor(_sourceQuery, PreserveOne);
         processor.ProcessExpression(expression, nodePath, localMap, parameterType, alwaysPreserveFields);
         return this;
     }

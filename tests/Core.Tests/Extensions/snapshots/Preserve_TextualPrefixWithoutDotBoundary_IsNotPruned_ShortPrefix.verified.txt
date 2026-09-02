@@ -1,0 +1,10 @@
+﻿query TestQuery{
+    TestQuery:use{
+        Id:id
+    }
+    TestQuery:user{
+        name{
+            Id:id2
+        }
+    }
+}
