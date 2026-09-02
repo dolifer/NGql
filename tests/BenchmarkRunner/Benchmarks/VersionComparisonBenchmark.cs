@@ -342,7 +342,7 @@ public class VersionComparisonBenchmark
     public string DirectivesRendering(int iterations)
     {
         // Exercises the new directive render path: @include/@skip on an object field plus a
-        // generic @format on a leaf. Guarded for NGQL_PUBLISHED because Include/Skip/Directive
+        // generic @format on a leaf. Guarded for NGQL_PUBLISHED because IncludeIf/SkipIf/Directive
         // do not exist in NGql.Core 2.0.0 (the published-runner reference).
         string result = string.Empty;
         for (int i = 0; i < iterations; i++)
@@ -350,8 +350,8 @@ public class VersionComparisonBenchmark
             var query = QueryBuilder
                 .CreateDefaultBuilder("Directives")
                 .AddField("user", u => u
-                    .Include("$show")
-                    .Skip("$hide")
+                    .IncludeIf("$show")
+                    .SkipIf("$hide")
                     .AddField("name", n => n.Directive("format", new Dictionary<string, object?> { ["as"] = "ISO8601" }))
                     .AddField("email"));
             result = query.ToString();

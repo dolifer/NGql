@@ -250,8 +250,8 @@ public sealed record FieldDefinition
     /// </summary>
     /// <remarks>
     /// Order is user-visible and preserved verbatim — directives are never sorted. See
-    /// <see cref="NGql.Core.Builders.FieldBuilder.Include(string)"/>,
-    /// <see cref="NGql.Core.Builders.FieldBuilder.Skip(string)"/>, and
+    /// <see cref="NGql.Core.Builders.FieldBuilder.IncludeIf(Variable)"/>,
+    /// <see cref="NGql.Core.Builders.FieldBuilder.SkipIf(Variable)"/>, and
     /// <see cref="NGql.Core.Builders.FieldBuilder.Directive(string, System.Collections.Generic.Dictionary{string, object?})"/>
     /// for the builder-side API.
     /// </remarks>
@@ -270,10 +270,10 @@ public sealed record FieldDefinition
     /// <summary>
     /// Append a directive to this field's directive list. Order is preserved. A directive that is
     /// structurally identical to one already present is skipped, so calling e.g.
-    /// <c>.Include("$x").Include("$x")</c> on one field renders <c>@include(if:$x)</c> once rather
-    /// than emitting the spec-invalid <c>@include(if:$x) @include(if:$x)</c>. This mirrors the
-    /// structural dedup on the Include/merge path. Directives that differ (name or arguments) are
-    /// all kept.
+    /// <c>.IncludeIf("$x").IncludeIf("$x")</c> on one field renders <c>@include(if:$x)</c> once
+    /// rather than emitting the spec-invalid <c>@include(if:$x) @include(if:$x)</c>. This mirrors
+    /// the structural dedup on the fragment-merge path. Directives that differ (name or arguments)
+    /// are all kept.
     /// </summary>
     [SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",

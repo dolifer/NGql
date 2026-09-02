@@ -357,7 +357,7 @@ public sealed class QueryBuilder
 
         var fragment = _definition.GetOrAddNamedFragment(name, onType);
         FieldBuilder.PopulateFragmentSurface($"__named_fragment_{name}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, build);
+            ref fragment._fragments, ref fragment._spreadFragments, build, Definition.Variables);
 
         return this;
     }
@@ -420,8 +420,10 @@ public sealed class QueryBuilder
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
         }
 
-        // Use the provided field type
-        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, fieldType, arguments, metadata);
+        // Use the provided field type. Threads Definition.Variables down into the builder (and
+        // every nested Action<FieldBuilder> scope it creates) so IncludeIf(Variable)/SkipIf(Variable)
+        // called anywhere in the subtree promote into this operation's signature.
+        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, fieldType, arguments, metadata, Definition.Variables);
         fieldBuilder(builder);
 
         QueryMapInstance.UpdateRootMapping(_definition);

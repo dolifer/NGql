@@ -165,7 +165,7 @@ public class IncludeFragmentMergeTests
     {
         // Arrange — the incoming `user` field carries an @include directive.
         var source = QueryBuilder.CreateDefaultBuilder("Source")
-            .AddField("user", u => u.AddField("id").Include("showDetails"));
+            .AddField("user", u => u.AddField("id").IncludeIf("showDetails"));
 
         var target = QueryBuilder.CreateDefaultBuilder("Target")
             .AddField("admins", a => a.AddField("id"));
@@ -182,7 +182,7 @@ public class IncludeFragmentMergeTests
     {
         // Arrange — the same `user` field exists on both sides; the incoming one carries a directive.
         var source = QueryBuilder.CreateDefaultBuilder("Source", MergingStrategy.MergeByFieldPath)
-            .AddField("user", u => u.AddField("id").Skip("hideUser"));
+            .AddField("user", u => u.AddField("id").SkipIf("hideUser"));
 
         var target = QueryBuilder.CreateDefaultBuilder("Target", MergingStrategy.MergeByFieldPath)
             .AddField("user", u => u.AddField("name"));

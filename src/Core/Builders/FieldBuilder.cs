@@ -22,10 +22,19 @@ public sealed class FieldBuilder
     // invalidate.
     private readonly FieldBuilder? _parent;
 
-    private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null)
+    // The owning operation's variable set, threaded down from QueryBuilder.AddField(...) at the
+    // root and inherited by every nested Action<FieldBuilder> scope. Null for a FieldBuilder with
+    // no owning operation (the public FieldBuilder.Create(FieldDefinition) factory, used
+    // standalone e.g. by tests or FieldFactory-adjacent code) — IncludeIf(Variable)/SkipIf(Variable)
+    // still attach the directive in that case, they simply have nothing to promote the variable
+    // into.
+    private readonly SortedSet<Variable>? _variableSink;
+
+    private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null, SortedSet<Variable>? variableSink = null)
     {
         _fieldDefinition = fieldDefinition;
         _parent = parent;
+        _variableSink = variableSink ?? parent?._variableSink;
     }
 
     // Clears the memoized deep-fingerprint/subtree-has-arguments caches on every ancestor in this
@@ -462,6 +471,19 @@ public sealed class FieldBuilder
     /// <returns>A new FieldBuilder instance.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, IDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
+        => Create(fieldDefinitions, fieldName, type, arguments, metadata, variableSink: null);
+
+    /// <summary>
+    /// Internal counterpart of <see cref="Create(Dictionary{string, FieldDefinition}, string, string, IDictionary{string, object?}?, Dictionary{string, object?}?)"/>
+    /// that additionally threads the owning operation's variable set down into the returned
+    /// builder (and every nested <c>Action&lt;FieldBuilder&gt;</c> scope built from it), so
+    /// <see cref="IncludeIf(Variable)"/>/<see cref="SkipIf(Variable)"/> called anywhere in the
+    /// resulting subtree can promote their variable into the operation signature. Used by
+    /// <see cref="QueryBuilder"/>, which owns the <see cref="Abstractions.QueryDefinition.Variables"/>
+    /// set this flows from.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, SortedSet<Variable>? variableSink)
     {
         // Empty/whitespace dotted segments are collapsed by FieldFactory.GetOrAddField below, the
         // same shared routine the instance AddField overloads use — so this factory no longer
@@ -474,7 +496,7 @@ public sealed class FieldBuilder
         // Use FieldFactory for field creation
         var rootField = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
 
-        var fieldBuilder = new FieldBuilder(rootField);
+        var fieldBuilder = new FieldBuilder(rootField, variableSink: variableSink);
 
         return fieldBuilder;
     }
@@ -693,7 +715,7 @@ public sealed class FieldBuilder
 
         var fragment = _fieldDefinition.GetOrAddInlineFragment(typeName);
         PopulateFragmentSurface($"__inline_fragment_{typeName}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, action);
+            ref fragment._fragments, ref fragment._spreadFragments, action, _variableSink);
 
         return this;
     }
@@ -716,7 +738,8 @@ public sealed class FieldBuilder
         FieldChildren fieldsStore,
         ref Dictionary<string, InlineFragmentDefinition>? fragments,
         ref List<string>? spreadFragments,
-        Action<FieldBuilder> action)
+        Action<FieldBuilder> action,
+        SortedSet<Variable>? variableSink = null)
     {
         var surface = new FieldDefinition(surfaceName, Constants.DefaultFieldType)
         {
@@ -725,7 +748,7 @@ public sealed class FieldBuilder
             _spreadFragments = spreadFragments,
         };
 
-        var builder = new FieldBuilder(surface);
+        var builder = new FieldBuilder(surface, variableSink: variableSink);
         action(builder);
 
         var final = builder._fieldDefinition;
@@ -763,8 +786,34 @@ public sealed class FieldBuilder
     /// <c>"$show"</c> and <c>"show"</c> render as <c>if:$show</c>.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="ifVariable"/> is null or whitespace.</exception>
-    public FieldBuilder Include(string ifVariable)
+    /// <remarks>
+    /// <b>This overload does NOT promote a variable declaration into the operation signature</b> —
+    /// a bare <see cref="string"/> carries no GraphQL type, so there is nothing to promote. Use it
+    /// only when the variable is already declared some other way (e.g. via
+    /// <c>QueryBuilder.Definition.Variables.Add(...)</c>, or because another field argument already
+    /// promoted a <see cref="Variable"/> with this same name). If you want the variable declared
+    /// for you, use <see cref="IncludeIf(Variable)"/> instead — it both renders the directive and
+    /// promotes the variable into <c>query Name($var:Type!){ … }</c>. Calling this overload with a
+    /// variable that is never declared elsewhere renders a document a GraphQL server will reject.
+    /// </remarks>
+    public FieldBuilder IncludeIf(string ifVariable)
         => AddIfDirective("include", ifVariable);
+
+    /// <summary>
+    /// Attaches an <c>@include(if:$var)</c> directive to the current field and promotes
+    /// <paramref name="condition"/> into the operation's variable signature (deduplicated with any
+    /// other variable of the same name already declared), exactly as a <see cref="Variable"/>
+    /// passed as a field argument does today. The field is kept in the response only when the
+    /// runtime value of the variable is <c>true</c>.
+    /// </summary>
+    /// <param name="condition">The Boolean variable that gates inclusion. <see cref="Variable.Type"/>
+    /// must reduce to <c>Boolean!</c> or <c>Boolean</c> — the GraphQL spec requires the <c>if</c>
+    /// argument of <c>@include</c> to be a Boolean expression.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="condition"/>'s type is not
+    /// <c>Boolean</c> or <c>Boolean!</c>.</exception>
+    public FieldBuilder IncludeIf(Variable condition)
+        => AddIfDirective("include", condition);
 
     /// <summary>
     /// Attaches a <c>@skip(if:$var)</c> directive to the current field. The field is omitted from
@@ -774,8 +823,34 @@ public sealed class FieldBuilder
     /// <c>"$hide"</c> and <c>"hide"</c> render as <c>if:$hide</c>.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="ifVariable"/> is null or whitespace.</exception>
-    public FieldBuilder Skip(string ifVariable)
+    /// <remarks>
+    /// <b>This overload does NOT promote a variable declaration into the operation signature</b> —
+    /// a bare <see cref="string"/> carries no GraphQL type, so there is nothing to promote. Use it
+    /// only when the variable is already declared some other way (e.g. via
+    /// <c>QueryBuilder.Definition.Variables.Add(...)</c>, or because another field argument already
+    /// promoted a <see cref="Variable"/> with this same name). If you want the variable declared
+    /// for you, use <see cref="SkipIf(Variable)"/> instead — it both renders the directive and
+    /// promotes the variable into <c>query Name($var:Type!){ … }</c>. Calling this overload with a
+    /// variable that is never declared elsewhere renders a document a GraphQL server will reject.
+    /// </remarks>
+    public FieldBuilder SkipIf(string ifVariable)
         => AddIfDirective("skip", ifVariable);
+
+    /// <summary>
+    /// Attaches a <c>@skip(if:$var)</c> directive to the current field and promotes
+    /// <paramref name="condition"/> into the operation's variable signature (deduplicated with any
+    /// other variable of the same name already declared), exactly as a <see cref="Variable"/>
+    /// passed as a field argument does today. The field is omitted from the response when the
+    /// runtime value of the variable is <c>true</c>.
+    /// </summary>
+    /// <param name="condition">The Boolean variable that gates the skip. <see cref="Variable.Type"/>
+    /// must reduce to <c>Boolean!</c> or <c>Boolean</c> — the GraphQL spec requires the <c>if</c>
+    /// argument of <c>@skip</c> to be a Boolean expression.</param>
+    /// <returns>The current FieldBuilder instance for method chaining.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="condition"/>'s type is not
+    /// <c>Boolean</c> or <c>Boolean!</c>.</exception>
+    public FieldBuilder SkipIf(Variable condition)
+        => AddIfDirective("skip", condition);
 
     /// <summary>
     /// Attaches an arbitrary directive to the current field, rendered as <c>@name</c> optionally
@@ -785,7 +860,9 @@ public sealed class FieldBuilder
     /// <param name="name">The directive name, with or without the leading <c>@</c> — both
     /// <c>"@format"</c> and <c>"format"</c> render as <c>@format</c>.</param>
     /// <param name="arguments">Optional directive arguments; <c>null</c> or empty for a
-    /// no-argument directive like <c>@deprecated</c>.</param>
+    /// no-argument directive like <c>@deprecated</c>. Any <see cref="Variable"/> values found in
+    /// this dictionary (including nested inside dictionaries/lists/objects) are promoted into the
+    /// operation's variable signature, exactly like field arguments.</param>
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is null or whitespace.</exception>
     public FieldBuilder Directive(string name, Dictionary<string, object?>? arguments = null)
@@ -802,13 +879,20 @@ public sealed class FieldBuilder
         {
             throw new ArgumentException("Directive name cannot consist only of '@' characters.", nameof(name));
         }
+
+        if (arguments?.Count > 0 && _variableSink is not null)
+        {
+            Helpers.ExtractVariablesFromValue(arguments, _variableSink);
+        }
+
         _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
         return this;
     }
 
-    // Shared helper for @include / @skip — both take a single `if:$var` argument. The variable is
-    // normalized so callers may pass the name with or without the leading `$`; it is always
-    // rendered with a single `$`.
+    // Shared helper for the bare-string @include / @skip overloads — both take a single `if:$var`
+    // argument. The variable is normalized so callers may pass the name with or without the
+    // leading `$`; it is always rendered with a single `$`. Does NOT promote — see the string
+    // overloads' XML doc remarks for why.
     private FieldBuilder AddIfDirective(string directiveName, string ifVariable)
     {
         if (string.IsNullOrWhiteSpace(ifVariable))
@@ -831,4 +915,38 @@ public sealed class FieldBuilder
         _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
         return this;
     }
+
+    // Shared helper for the Variable-typed IncludeIf/SkipIf overloads — validates that the
+    // variable's declared type reduces to a Boolean per the GraphQL spec's requirement for the
+    // `if` argument of @include/@skip, attaches the directive, and — unlike AddIfDirective(string,
+    // string) — promotes the variable into the owning operation's signature via the same
+    // Helpers.ExtractVariablesFromValue path field-argument Variables already use.
+    private FieldBuilder AddIfDirective(string directiveName, Variable condition)
+    {
+        if (!IsBooleanType(condition.Type))
+        {
+            throw new ArgumentException(
+                $"Variable '{condition.Name}' passed to @{directiveName}'s condition must have type 'Boolean' or 'Boolean!', but was '{condition.Type}'.",
+                nameof(condition));
+        }
+
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["if"] = condition,
+        };
+        _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+
+        // Same promotion path field-argument Variables already use (Helpers.ExtractVariablesFromValue
+        // adds the Variable to the set, deduping via Variable's value equality) rather than a
+        // parallel mechanism.
+        if (_variableSink is not null)
+        {
+            Helpers.ExtractVariablesFromValue(condition, _variableSink);
+        }
+
+        return this;
+    }
+
+    private static bool IsBooleanType(string type)
+        => type.Equals("Boolean", StringComparison.Ordinal) || type.Equals("Boolean!", StringComparison.Ordinal);
 }
