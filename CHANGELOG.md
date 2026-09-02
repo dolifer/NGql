@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 The companion Claude Code Skill is versioned independently — see [`.claude/skills/ngql-local/CHANGELOG.md`](.claude/skills/ngql-local/CHANGELOG.md).
 
-## [Unreleased]
+## [2.2.0] - 2026-09-02
 
 ### Added
 - `QueryBuilder.CreateSubscriptionBuilder(name)` and `CreateSubscriptionBuilder(name, MergingStrategy)` — completes the query/mutation/subscription trio on the fluent builder. The surface (`AddField`, `Include`, `WithMetadata`, merging) is identical to the query and mutation paths; only the leading operation keyword differs, rendering as `subscription Name(...) { … }`. New `OperationType.Subscription` backs the render.
@@ -19,9 +19,9 @@ The companion Claude Code Skill is versioned independently — see [`.claude/ski
 - `PreservationBuilder.PreserveAtPathInRoot(fieldPath, nodePath, root)` — scopes preservation to exactly one named query root. `PreserveAtPath` resolves `nodePath` relative to *every* root, which is ambiguous when several roots share a node name; the new overload matches `root` against each root's alias-or-name (ordinal, case-insensitive) and never falls back. If `root` names no existing root, or `nodePath` does not resolve beneath it, the call is a clean no-op — it never retargets a different root.
 
 ### Changed
+- **Breaking (minor):** `QueryDefinition.Fields` and `QueryDefinition.Metadata` now return `IReadOnlyDictionary<,>` instead of the live mutable `Dictionary<,>`, and the `Metadata` public setter has been removed. Consumers could previously `Clear()`/`Remove()`/insert into these dictionaries and desync the internal query map. Read access (indexer-get, `ContainsKey`, `TryGetValue`, `Count`, `Values`, enumeration) is unchanged; mutate via the `QueryBuilder`/`FieldBuilder` API. Mirrors the existing `NamedFragments` encapsulation.
 - **Merging is now linear rather than quadratic.** Batches that share a field path but carry divergent argument filters — the shape produced by composing many independent query fragments into one request — previously cost O(N²) in both time and allocation, because every `Include` rescanned all existing roots and ran a full structural comparison against each. Merge candidates are now indexed by field name and sub-bucketed by a conservative deep-argument fingerprint, so an incoming fragment goes straight to the candidates that could actually merge. Measured on 800 divergent-filter fragments: ~117 ms → ~1.4 ms and ~60 MB → ~1.5 MB, with structural comparisons dropping from ~320,000 to zero. Shared-parent merges (many fragments collapsing into one node) are linear too, via index-backed child lookup and unique-key generation. Rendered output is unchanged in every case — this is purely a lookup optimisation, and the full structural comparison still decides every merge.
 - Classic `Query`/`Mutation` deep nesting benefits from the same work: a 30-level nested query renders ~3.7× faster with ~11.8× less allocation than 2.1.0.
-- **Breaking (minor):** `QueryDefinition.Fields` and `QueryDefinition.Metadata` now return `IReadOnlyDictionary<,>` instead of the live mutable `Dictionary<,>`, and the `Metadata` public setter has been removed. Consumers could previously `Clear()`/`Remove()`/insert into these dictionaries and desync the internal query map. Read access (indexer-get, `ContainsKey`, `TryGetValue`, `Count`, `Values`, enumeration) is unchanged; mutate via the `QueryBuilder`/`FieldBuilder` API. Mirrors the existing `NamedFragments` encapsulation.
 - Performance: classic `Query`/`QueryBlock` rendering no longer materializes an intermediate string per nested block (up to 24× faster and 67× less allocation for deeply nested queries); assorted allocation cuts across the builder, render, and preservation hot paths (LINQ-free render/insert loops, comparer-based hashing, span-based alias parsing, pooled path building, pre-sized clone collections).
 
 ### Fixed
@@ -67,6 +67,7 @@ Major release. See [`docs/v2.0.0/RELEASE_NOTES.md`](docs/v2.0.0/RELEASE_NOTES.md
 - `QueryDefinitionExtensions` is now `internal` (was effectively unused outside the assembly).
 - `PreserveExtensions` is internal — use `PreservationBuilder` instead.
 
-[Unreleased]: https://github.com/dolifer/NGql/compare/2.1.0...HEAD
+[Unreleased]: https://github.com/dolifer/NGql/compare/2.2.0...HEAD
+[2.2.0]: https://github.com/dolifer/NGql/compare/2.1.0...2.2.0
 [2.1.0]: https://github.com/dolifer/NGql/compare/2.0.0...2.1.0
 [2.0.0]: https://github.com/dolifer/NGql/compare/1.5.0...2.0.0
