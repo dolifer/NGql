@@ -82,6 +82,96 @@ internal static class FieldDefinitionExtensions
         return result;
     }
 
+    // FNV-style mixing constant shared with Helpers.ComputeArgumentFingerprint's CombineHash —
+    // duplicated here (rather than exposed) to keep the deep-fingerprint recursion self-contained
+    // within the file that owns its invalidation contract.
+    private const ulong DeepFingerprintFnvPrime = 1099511628211UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong CombineDeepHash(ulong hash, ulong value)
+        => (hash ^ value) * DeepFingerprintFnvPrime;
+
+    /// <summary>
+    /// Computes (and memoizes on <see cref="FieldDefinition._deepArgumentFingerprint"/>) a
+    /// conservative fingerprint over the MERGE-RELEVANT subtree of <paramref name="field"/>, for
+    /// use as a cheap pre-filter bucket key in <c>QueryMerger.FindMergeTarget</c> — NEVER as a
+    /// merge decision by itself. Strictly refines (never coarsens) the shallow, own-arguments-only
+    /// fingerprint <see cref="Helpers.ComputeArgumentFingerprint"/> already provides, since this
+    /// fingerprint folds that same value in at every level plus a commutative combination of every
+    /// argument-carrying descendant.
+    ///
+    /// <para>
+    /// <b>Conservatism proof sketch</b> (the contract this method must uphold: <c>CanMergeFields(a, b)
+    /// == true</c> MUST imply <c>ComputeDeepFingerprint(a) == ComputeDeepFingerprint(b)</c>).
+    /// <c>CanMergeFields</c> requires equal own arguments (already covered — matches
+    /// <see cref="Helpers.ComputeArgumentFingerprint"/>'s own proven contract) and, recursively for
+    /// every child on EITHER side whose subtree carries an argument anywhere
+    /// (<see cref="SubtreeHasAnyArguments"/>), that the OTHER side has a same-named child which is
+    /// itself pairwise <c>CanMergeFields</c>-compatible. (<see cref="IsIncomingChildCompatible"/>'s
+    /// and <see cref="IsExistingExtraCompatible"/>'s absent/argument-free branches only accept a
+    /// missing counterpart when the present side's subtree is ENTIRELY argument-free — so an
+    /// argument-carrying child always demands an argument-carrying, pairwise-compatible match on
+    /// the other side.) By induction on subtree depth, a pairwise-compatible child pair has equal
+    /// deep fingerprints — so folding in EVERY argument-carrying child's (name, deep fingerprint)
+    /// pair can never observe two <c>CanMergeFields</c>-compatible fields disagree.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Argument-free-child invariance.</b> A child whose entire subtree carries no arguments
+    /// (checked via the existing memoized <see cref="SubtreeHasAnyArguments"/> — NOT the child's
+    /// own <c>_arguments</c> in isolation) contributes NOTHING to the hash: <c>CanMergeFields</c>
+    /// tolerates such a child being entirely absent from, or structurally different on, the other
+    /// side (<see cref="IsIncomingChildCompatible"/> returns true for an incoming argument-free
+    /// child missing from existing; <see cref="ExistingExtrasCompatible"/> early-outs completely
+    /// when the existing subtree has no arguments at all). Two otherwise-identical fields differing
+    /// only in argument-free children — at any depth — MUST hash equal, or a genuine merge would be
+    /// falsely split. Recursing through <see cref="SubtreeHasAnyArguments"/> (not a shallow check)
+    /// is what lets a SINGLE argument three levels down still make the whole ancestor chain down to
+    /// it significant, while an entirely argument-free branch of arbitrary depth vanishes completely.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Order independence.</b> Children are matched by name, not position (see
+    /// <see cref="FieldChildren.Find(string)"/>), so per-child contributions are combined with XOR —
+    /// commutative and associative — rather than an order-sensitive fold.
+    /// </para>
+    /// </summary>
+    internal static ulong ComputeDeepFingerprint(FieldDefinition field)
+    {
+        if (field._deepArgumentFingerprint is { } cached) return cached;
+
+        var ownArgsFp = Helpers.ComputeArgumentFingerprint(field._arguments);
+        var childrenFp = DeepChildrenFingerprint(field._children);
+        var result = CombineDeepHash(ownArgsFp, childrenFp);
+
+        field._deepArgumentFingerprint = result;
+        return result;
+    }
+
+    private static ulong DeepChildrenFingerprint(FieldChildren? children)
+    {
+        if (children is not { Count: > 0 }) return 0UL;
+
+        var span = children.AsSpan();
+        var accumulator = 0UL;
+        for (int i = 0; i < span.Length; i++)
+        {
+            var child = span[i];
+
+            // Argument-free-at-every-depth children are invisible to CanMergeFields (see the
+            // conservatism proof above) — they must be invisible to the fingerprint too, or a
+            // genuine merge candidate that only differs by such a child would be falsely split.
+            if (!SubtreeHasAnyArguments(child)) continue;
+
+            // XOR (commutative) so sibling iteration order never affects the result — children
+            // are matched by NAME during the actual merge, never by position.
+            var nameHash = (ulong)child.Name.GetHashCode(StringComparison.OrdinalIgnoreCase);
+            var childContribution = CombineDeepHash(nameHash, ComputeDeepFingerprint(child));
+            accumulator ^= childContribution;
+        }
+        return accumulator;
+    }
+
     private static bool AnyChildHasArguments(FieldChildren? children)
     {
         if (children is null || children.Count == 0) return false;
@@ -398,6 +488,7 @@ internal static class FieldDefinitionExtensions
             MergeChildInPlace(existingChildren, span[i]);
         }
         existing._subtreeHasAnyArguments = null;
+        existing._deepArgumentFingerprint = null;
     }
 
     private static void MergeIncomingArgumentsInPlace(FieldDefinition existing, SortedDictionary<string, object?>? incomingArguments)
@@ -405,6 +496,7 @@ internal static class FieldDefinitionExtensions
         if (incomingArguments is not { Count: > 0 }) return;
         existing.MergeFieldArgumentsInPlace(incomingArguments);
         existing._subtreeHasAnyArguments = null;
+        existing._deepArgumentFingerprint = null;
     }
 
     private static void MergeChildInPlace(FieldChildren existingChildren, FieldDefinition incomingChild)

@@ -28,6 +28,15 @@ public sealed record FieldDefinition
     /// </summary>
     internal bool? _subtreeHasAnyArguments;
 
+    /// <summary>
+    /// Cached conservative fingerprint over this field's own arguments plus, recursively, every
+    /// descendant whose subtree carries arguments anywhere (see
+    /// <see cref="Extensions.FieldDefinitionExtensions.ComputeDeepFingerprint"/>). Null = not yet
+    /// computed. Reset to null at exactly the same two sites as <see cref="_subtreeHasAnyArguments"/>
+    /// whenever the subtree mutates — the two caches share an invalidation contract by design.
+    /// </summary>
+    internal ulong? _deepArgumentFingerprint;
+
     private bool? _isArray;
     private bool? _isNullable;
 

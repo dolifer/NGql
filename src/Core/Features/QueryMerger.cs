@@ -212,7 +212,13 @@ internal static class QueryMerger
         var candidateKeys = targetDefinition.MergeIndex.GetMergeCandidates(existingFields, incomingField.Name);
         if (candidateKeys is null) return null;
 
-        var incomingFingerprint = Helpers.ComputeArgumentFingerprint(incomingField._arguments);
+        // Deep (subtree) fingerprint — strictly refines the old own-arguments-only fingerprint by
+        // also folding in every descendant whose subtree carries an argument anywhere (see
+        // FieldDefinitionExtensions.ComputeDeepFingerprint for the full conservatism proof). This is
+        // what lets the production shape (a root field with zero arguments, whose only discriminator
+        // is a filter several levels down) get bucketed correctly instead of every candidate
+        // colliding into one fingerprint and falling through to a full CanMergeFields scan.
+        var incomingFingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(incomingField);
 
         foreach (var key in candidateKeys)
         {
@@ -222,12 +228,14 @@ internal static class QueryMerger
             if (existingField.IsNeverMerge)
                 continue;
 
-            // Conservative pre-filter only, computed from the LIVE field so it can never drift
-            // from an out-of-band argument mutation: a fingerprint mismatch proves the arguments
-            // differ (safe to skip), but a match does NOT prove equality — CanMergeFields (via
-            // AreArgumentsEqual) remains the sole source of truth. Collisions just cost one
+            // Conservative pre-filter only, computed from the LIVE field (memoized on the field
+            // itself and invalidated at exactly the same two in-place-merge sites as the sibling
+            // SubtreeHasAnyArguments cache — see FieldDefinition._deepArgumentFingerprint) so it can
+            // never drift from a mutation that goes through QueryMerger. A fingerprint mismatch
+            // proves the merge-relevant subtree differs (safe to skip), but a match does NOT prove
+            // equality — CanMergeFields remains the sole source of truth. Collisions just cost one
             // extra, unmodified CanMergeFields call below.
-            if (Helpers.ComputeArgumentFingerprint(existingField._arguments) != incomingFingerprint)
+            if (FieldDefinitionExtensions.ComputeDeepFingerprint(existingField) != incomingFingerprint)
                 continue;
 
             if (FieldDefinitionExtensions.CanMergeFields(existingField, incomingField))
