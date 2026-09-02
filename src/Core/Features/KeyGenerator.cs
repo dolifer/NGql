@@ -28,6 +28,17 @@ internal static class KeyGenerator
     }
 
     /// <summary>
+    /// Generates a unique key using a <see cref="FieldMergeIndex"/>'s live key set and
+    /// per-base-name suffix counter instead of rebuilding a <see cref="HashSet{T}"/> from every
+    /// existing key. O(1) amortized per call versus the O(N)-per-call cost of the
+    /// <see cref="GenerateUniqueKey(string, IEnumerable{string})"/> overload above, which
+    /// <c>QueryMerger.AddFieldWithUniqueKey</c> used to call once per inserted field — O(N) work
+    /// for each of N insertions, O(N&#0178;) overall for a chain of N <c>Include()</c> calls.
+    /// </summary>
+    internal static string GenerateUniqueKey(FieldMergeIndex mergeIndex, Dictionary<string, FieldDefinition> fields, string baseKey)
+        => mergeIndex.NextUniqueKey(fields, baseKey);
+
+    /// <summary>
     /// Generates a unique key from field definitions' effective names (zero-alloc for span iteration).
     /// </summary>
     internal static string GenerateUniqueKey(string baseKey, ReadOnlySpan<FieldDefinition> fields)

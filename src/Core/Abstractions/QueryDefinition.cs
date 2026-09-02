@@ -2,6 +2,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json.Serialization;
 using NGql.Core.Builders;
+using NGql.Core.Features;
 
 namespace NGql.Core.Abstractions;
 
@@ -14,6 +15,20 @@ public sealed record QueryDefinition(string Name, string Description = "")
     internal SortedSet<Variable>? _variables;
     internal Dictionary<string, object?>? _metadata;
     internal Dictionary<string, NamedFragmentDefinition>? _namedFragments;
+
+    /// <summary>
+    ///     Merge-candidate index over the root field dictionary, used by
+    ///     <see cref="Features.QueryMerger"/> to avoid an O(N) scan per <see cref="MergingStrategy.MergeByFieldPath"/>
+    ///     <c>Include()</c> call. Lazily created; excluded from record equality/deep-clone semantics —
+    ///     it is a derived cache over <see cref="_fields"/>, not query data.
+    /// </summary>
+    internal FieldMergeIndex? _mergeIndex;
+
+    /// <summary>
+    ///     Lazily creates (or returns) the merge-candidate index for this definition's root field
+    ///     dictionary. Never shared across <see cref="QueryDefinition"/> instances.
+    /// </summary>
+    internal FieldMergeIndex MergeIndex => _mergeIndex ??= new FieldMergeIndex();
 
     /// <summary>
     /// The name of the query.

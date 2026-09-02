@@ -354,6 +354,92 @@ internal static class Helpers
         return true;
     }
 
+    // Fixed sentinel hash contributed for any argument value whose type is not on the
+    // verified-safe allow list below. Every such value collides into the same bucket, so
+    // FindMergeTarget falls back to running the full CanMergeFields check for all of them —
+    // correctness over speed. This is what keeps the fingerprint conservative: a hash MUST
+    // NEVER cause AreArgumentsEqual-equal values to land in different buckets, and folding
+    // an unrecognized shape into one shared bucket guarantees that.
+    private const ulong ConservativeValueSentinel = 0x9E3779B97F4A7C15UL;
+
+    // Distinct sentinel for null so "null" never accidentally collides with the fallback
+    // bucket used for unrecognized non-null shapes (harmless either way, but keeps hash
+    // distribution meaningful when arguments frequently omit optional keys).
+    private const ulong NullValueSentinel = 0xD1B54A32D192ED03UL;
+
+    private const ulong FnvOffsetBasis = 14695981039346656037UL;
+    private const ulong FnvPrime = 1099511628211UL;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong CombineHash(ulong hash, ulong value)
+    {
+        hash = (hash ^ value) * FnvPrime;
+        return hash;
+    }
+
+    /// <summary>
+    /// Computes a conservative fingerprint over a field's own arguments, for use as a cheap
+    /// pre-filter bucket key in <c>QueryMerger.FindMergeTarget</c> — NEVER as a merge decision
+    /// by itself. The contract this fingerprint must uphold: any two argument dictionaries that
+    /// <see cref="AreArgumentsEqual"/> considers equal MUST produce the same fingerprint. A hash
+    /// collision between unequal arguments is harmless (costs one extra, already-unmodified
+    /// <c>CanMergeFields</c> call); a fingerprint mismatch between equal arguments would be a
+    /// silent correctness bug (a genuine merge candidate skipped), so this method is designed to
+    /// only ever be "too coarse", never "too fine".
+    ///
+    /// <see cref="SortedDictionary{TKey,TValue}"/> already enumerates keys in a fixed, deterministic
+    /// order (its own comparer), so entries are hashed in that existing order — no extra sort.
+    /// </summary>
+    internal static ulong ComputeArgumentFingerprint(SortedDictionary<string, object?>? arguments)
+    {
+        if (arguments is null || arguments.Count == 0) return FnvOffsetBasis;
+
+        var hash = FnvOffsetBasis;
+        foreach (var (key, value) in arguments)
+        {
+            // Keys compare OrdinalIgnoreCase inside the argument dictionary itself (its own
+            // comparer) — mirror that here via the case-insensitive hash overload so two keys
+            // differing only by case still contribute the same hash contribution.
+            hash = CombineHash(hash, (ulong)key.GetHashCode(StringComparison.OrdinalIgnoreCase));
+            hash = CombineHash(hash, ComputeValueFingerprint(value));
+        }
+        return hash;
+    }
+
+    /// <summary>
+    /// Conservative per-value hash contribution. Only contributes a "real" (equality-consistent)
+    /// hash for shapes verified against <see cref="AreValuesEqual"/>'s own comparison rule:
+    /// strings (ordinal, matching <c>string.Equals</c>) and CLR value types whose documented
+    /// <c>GetHashCode</c>/<c>Equals</c> contract is known to agree (numeric primitives, bool,
+    /// char, Guid, DateTime/DateTimeOffset, Enum-derived types, and NGql's own <see cref="EnumValue"/>,
+    /// whose <c>Equals</c>/<c>GetHashCode</c> pair is explicitly case-insensitive-consistent).
+    /// Everything else — nested <c>IDictionary&lt;string,object?&gt;</c>, <c>IList</c>/arrays,
+    /// reflected objects compared via <c>AreObjectsStructurallyEqual</c>, and any other type not
+    /// on this allow list — returns the shared <see cref="ConservativeValueSentinel"/> so it is
+    /// never split from a value it might structurally equal.
+    /// </summary>
+    private static ulong ComputeValueFingerprint(object? value)
+    {
+        if (value is null) return NullValueSentinel;
+
+        switch (value)
+        {
+            case string s:
+                // AreValuesEqual uses value1.Equals(value2) for strings, i.e. ordinal equality —
+                // hash ordinally to match, not case-insensitively.
+                return CombineHash((ulong)typeof(string).GetHashCode(), (ulong)s.GetHashCode(StringComparison.Ordinal));
+            case bool or byte or sbyte or short or ushort or int or uint or long or ulong
+                or float or double or decimal or char or Guid or DateTime or DateTimeOffset or Enum or NGql.Core.EnumValue:
+                // These types' Equals/GetHashCode pairs are the standard, documented .NET (or
+                // NGql, for EnumValue) contract: GetHashCode is consistent with Equals. Folding
+                // the runtime type into the hash mirrors AreValuesEqual's own
+                // `type1 != value2.GetType()` early rejection.
+                return CombineHash((ulong)value.GetType().GetHashCode(), (ulong)value.GetHashCode());
+            default:
+                return ConservativeValueSentinel;
+        }
+    }
+
     /// <summary>
     /// Compares two values for equality, using optimized comparison strategies.
     /// </summary>

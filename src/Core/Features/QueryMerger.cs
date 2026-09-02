@@ -28,7 +28,7 @@ internal static class QueryMerger
         if (incomingQuery._fields == null || incomingQuery._fields.Count == 0) return;
 
         var beforeCount = targetDefinition.Fields.Count;
-        ApplyFieldMerge(targetDefinition.FieldsInternal, incomingQuery, targetDefinition.MergingStrategy, queryMap);
+        ApplyFieldMerge(targetDefinition, incomingQuery, targetDefinition.MergingStrategy, queryMap);
 
         if (targetDefinition.Fields.Count != beforeCount)
         {
@@ -90,16 +90,18 @@ internal static class QueryMerger
     }
 
     /// <summary>
-    /// Mutates <paramref name="fields"/> in place by applying every field from the incoming query
-    /// according to the resolved merging strategy. Avoids the O(N) copy-out / copy-back of the
-    /// existing approach so a chain of <c>Include()</c>s is O(K) per call instead of O(N+K).
+    /// Mutates <paramref name="targetDefinition"/>'s root fields in place by applying every field
+    /// from the incoming query according to the resolved merging strategy. Avoids the O(N)
+    /// copy-out / copy-back of the existing approach so a chain of <c>Include()</c>s is O(K) per
+    /// call instead of O(N+K).
     /// </summary>
     private static void ApplyFieldMerge(
-        Dictionary<string, FieldDefinition> fields,
+        QueryDefinition targetDefinition,
         QueryDefinition incomingQuery,
         MergingStrategy rootStrategy,
         QueryMap queryMap)
     {
+        var fields = targetDefinition.FieldsInternal;
         var strategy = GetEffectiveMergingStrategy(rootStrategy, incomingQuery.MergingStrategy);
         var queryName = incomingQuery.Name;
 
@@ -108,16 +110,20 @@ internal static class QueryMerger
             switch (strategy)
             {
                 case MergingStrategy.MergeByDefault:
+                    // FieldBuilder.Include may insert a brand-new root key (when no existing
+                    // field shares its Name) — resync the merge index by count on next use rather
+                    // than tracking this path's insertions individually, since MergeByDefault
+                    // never consults FindMergeTarget/the fingerprint index itself.
                     FieldBuilder.Include(fields, incomingField);
                     queryMap.SetMapping(queryName, originalFieldKey);
                     break;
 
                 case MergingStrategy.NeverMerge:
-                    AddFieldWithUniqueKey(fields, originalFieldKey, MarkAsNeverMerge(incomingField), queryMap, queryName);
+                    AddFieldWithUniqueKey(targetDefinition, originalFieldKey, MarkAsNeverMerge(incomingField), queryMap, queryName);
                     break;
 
                 case MergingStrategy.MergeByFieldPath:
-                    ApplyMergeByFieldPath(fields, originalFieldKey, incomingField, queryMap, queryName);
+                    ApplyMergeByFieldPath(targetDefinition, originalFieldKey, incomingField, queryMap, queryName);
                     break;
 
                 default:
@@ -127,17 +133,18 @@ internal static class QueryMerger
     }
 
     private static void ApplyMergeByFieldPath(
-        Dictionary<string, FieldDefinition> fields,
+        QueryDefinition targetDefinition,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
         string queryName)
     {
-        var mergeTarget = FindMergeTarget(fields, incomingField);
+        var fields = targetDefinition.FieldsInternal;
+        var mergeTarget = FindMergeTarget(targetDefinition, fields, incomingField);
 
         if (mergeTarget == null)
         {
-            AddFieldWithUniqueKey(fields, originalFieldKey, incomingField, queryMap, queryName);
+            AddFieldWithUniqueKey(targetDefinition, originalFieldKey, incomingField, queryMap, queryName);
             return;
         }
 
@@ -145,6 +152,9 @@ internal static class QueryMerger
         {
             // Mutate the existing field in place — we own the reference (we're about to overwrite the
             // dictionary entry with the same instance). Avoids cloning the entire subtree on every Include.
+            // The merge target's own top-level arguments are already AreArgumentsEqual to the
+            // incoming field's (CanMergeFields required it), so its fingerprint is unaffected —
+            // no index update needed for the merge-in-place case.
             FieldDefinitionExtensions.MergeFieldsInPlace(mergeTarget.Value.Field, incomingField);
             queryMap.SetMapping(queryName, mergeTarget.Value.Key);
         }
@@ -170,13 +180,15 @@ internal static class QueryMerger
     }
 
     private static void AddFieldWithUniqueKey(
-        Dictionary<string, FieldDefinition> fields,
+        QueryDefinition targetDefinition,
         string originalFieldKey,
         FieldDefinition incomingField,
         QueryMap queryMap,
         string queryName)
     {
-        var uniqueKey = KeyGenerator.GenerateUniqueKey(incomingField._effectiveName, fields.Keys);
+        var fields = targetDefinition.FieldsInternal;
+        var mergeIndex = targetDefinition.MergeIndex;
+        var uniqueKey = KeyGenerator.GenerateUniqueKey(mergeIndex, fields, incomingField._effectiveName);
 
         // Deep-clone so the target dictionary owns its subtree exclusively. Subsequent in-place
         // merges (MergeFieldsInPlace below) must not leak field additions back into the source
@@ -188,17 +200,34 @@ internal static class QueryMerger
         }
 
         fields[uniqueKey] = fieldToAdd;
+        mergeIndex.IndexAdd(uniqueKey, fieldToAdd);
         queryMap.SetMapping(queryName, uniqueKey);
     }
 
-    private static (string Key, FieldDefinition Field)? FindMergeTarget(Dictionary<string, FieldDefinition> existingFields, FieldDefinition incomingField)
+    private static (string Key, FieldDefinition Field)? FindMergeTarget(
+        QueryDefinition targetDefinition,
+        Dictionary<string, FieldDefinition> existingFields,
+        FieldDefinition incomingField)
     {
-        foreach (var (key, existingField) in existingFields)
+        var candidateKeys = targetDefinition.MergeIndex.GetMergeCandidates(existingFields, incomingField.Name);
+        if (candidateKeys is null) return null;
+
+        var incomingFingerprint = Helpers.ComputeArgumentFingerprint(incomingField._arguments);
+
+        foreach (var key in candidateKeys)
         {
-            if (!string.Equals(existingField.Name, incomingField.Name, StringComparison.OrdinalIgnoreCase))
+            if (!existingFields.TryGetValue(key, out var existingField))
                 continue;
 
             if (existingField.IsNeverMerge)
+                continue;
+
+            // Conservative pre-filter only, computed from the LIVE field so it can never drift
+            // from an out-of-band argument mutation: a fingerprint mismatch proves the arguments
+            // differ (safe to skip), but a match does NOT prove equality — CanMergeFields (via
+            // AreArgumentsEqual) remains the sole source of truth. Collisions just cost one
+            // extra, unmodified CanMergeFields call below.
+            if (Helpers.ComputeArgumentFingerprint(existingField._arguments) != incomingFingerprint)
                 continue;
 
             if (FieldDefinitionExtensions.CanMergeFields(existingField, incomingField))
