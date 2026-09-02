@@ -622,6 +622,11 @@ public sealed class FieldBuilder
         _fieldDefinition._deepArgumentFingerprint = null;
         _fieldDefinition._subtreeHasAnyArguments = null;
 
+        // This field may be sitting in FieldMergeIndex's fingerprint sub-buckets (directly, if it
+        // is a root field, or as the reason an ancestor's deep fingerprint is stale) without
+        // QueryMerger ever being told — see FieldDefinition's merge-memo-epoch remarks.
+        FieldDefinition.BumpMergeMemoEpoch();
+
         return this;
     }
 

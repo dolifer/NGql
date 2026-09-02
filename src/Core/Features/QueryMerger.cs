@@ -152,10 +152,14 @@ internal static class QueryMerger
         {
             // Mutate the existing field in place — we own the reference (we're about to overwrite the
             // dictionary entry with the same instance). Avoids cloning the entire subtree on every Include.
-            // The merge target's own top-level arguments are already AreArgumentsEqual to the
-            // incoming field's (CanMergeFields required it), so its fingerprint is unaffected —
-            // no index update needed for the merge-in-place case.
             FieldDefinitionExtensions.MergeFieldsInPlace(mergeTarget.Value.Field, incomingField);
+
+            // The merge can change the target's deep fingerprint (new argument-bearing content
+            // merged deeper into an already-significant subtree — see MergeFieldsInPlace's memo
+            // invalidation). The fingerprint-bucketed index must be told explicitly: the field kept
+            // its identity (same reference, same key) but may now belong under a different
+            // fingerprint bucket, and nothing else would ever notice the move.
+            targetDefinition.MergeIndex.ReindexFingerprint(fields, incomingField.Name, mergeTarget.Value.Key);
             queryMap.SetMapping(queryName, mergeTarget.Value.Key);
         }
         catch (QueryMergeException ex)
@@ -209,9 +213,6 @@ internal static class QueryMerger
         Dictionary<string, FieldDefinition> existingFields,
         FieldDefinition incomingField)
     {
-        var candidateKeys = targetDefinition.MergeIndex.GetMergeCandidates(existingFields, incomingField.Name);
-        if (candidateKeys is null) return null;
-
         // Deep (subtree) fingerprint — strictly refines the old own-arguments-only fingerprint by
         // also folding in every descendant whose subtree carries an argument anywhere (see
         // FieldDefinitionExtensions.ComputeDeepFingerprint for the full conservatism proof). This is
@@ -219,6 +220,17 @@ internal static class QueryMerger
         // is a filter several levels down) get bucketed correctly instead of every candidate
         // colliding into one fingerprint and falling through to a full CanMergeFields scan.
         var incomingFingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(incomingField);
+
+        // Sub-bucketed by (Name, fingerprint): narrows the candidate set to just the handful of
+        // existing fields that could actually match, instead of every field sharing incomingField's
+        // Name (which is exactly what makes the production shape — N fragments, one shared root
+        // Name, N distinct deep filters — quadratic under Name-only bucketing). The index
+        // self-heals any entry whose live fingerprint has drifted since it was bucketed (see
+        // FieldMergeIndex remarks), so this can never produce a false split: every candidate
+        // returned here is confirmed, from its LIVE field, to share incomingFingerprint.
+        var candidateKeys = targetDefinition.MergeIndex.GetMergeCandidatesByFingerprint(
+            existingFields, incomingField.Name, incomingFingerprint);
+        if (candidateKeys is null) return null;
 
         foreach (var key in candidateKeys)
         {
@@ -228,16 +240,10 @@ internal static class QueryMerger
             if (existingField.IsNeverMerge)
                 continue;
 
-            // Conservative pre-filter only, computed from the LIVE field (memoized on the field
-            // itself and invalidated at exactly the same two in-place-merge sites as the sibling
-            // SubtreeHasAnyArguments cache — see FieldDefinition._deepArgumentFingerprint) so it can
-            // never drift from a mutation that goes through QueryMerger. A fingerprint mismatch
-            // proves the merge-relevant subtree differs (safe to skip), but a match does NOT prove
-            // equality — CanMergeFields remains the sole source of truth. Collisions just cost one
-            // extra, unmodified CanMergeFields call below.
-            if (FieldDefinitionExtensions.ComputeDeepFingerprint(existingField) != incomingFingerprint)
-                continue;
-
+            // CanMergeFields remains the sole source of truth — the fingerprint match above is a
+            // conservative pre-filter only. A match does NOT prove equality (a hash collision costs
+            // one extra, unmodified CanMergeFields call here; it is never treated as sufficient on
+            // its own).
             if (FieldDefinitionExtensions.CanMergeFields(existingField, incomingField))
                 return (key, existingField);
         }
