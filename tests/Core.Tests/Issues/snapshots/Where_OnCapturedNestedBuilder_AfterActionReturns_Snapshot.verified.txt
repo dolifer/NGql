@@ -1,0 +1,5 @@
+﻿query T{
+    metrics{
+        deposits(cur:"EUR")
+    }
+}

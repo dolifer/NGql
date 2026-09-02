@@ -14,9 +14,35 @@ public sealed class FieldBuilder
 {
     private FieldDefinition _fieldDefinition;
 
-    private FieldBuilder(FieldDefinition fieldDefinition)
+    // Tracks the enclosing FieldBuilder for nested Action<FieldBuilder> scopes (null for a root
+    // builder, e.g. one created via QueryBuilder.AddField or a fragment surface). FieldDefinition
+    // itself carries no parent back-pointer — adding one would ripple through Equals/DeepClone/
+    // `with` semantics — so this is the only place a captured, since-detached FieldBuilder (see
+    // Where()'s remarks) can still discover which ancestors' memoized deep fingerprints it must
+    // invalidate.
+    private readonly FieldBuilder? _parent;
+
+    private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null)
     {
         _fieldDefinition = fieldDefinition;
+        _parent = parent;
+    }
+
+    // Clears the memoized deep-fingerprint/subtree-has-arguments caches on every ancestor in this
+    // builder's nesting chain, walking from the immediate parent up to the root. Used by mutation
+    // sites (Where()) that can run long after the Action<FieldBuilder> that produced this builder
+    // has returned — at which point AddFieldCore's own cascading ClearMergeMemo calls (one per
+    // nesting level, run as each action unwinds) have already happened and cannot see this later
+    // mutation. Idempotent and cheap: ClearMergeMemo is O(1) per node, and a chain of unrelated
+    // Where() calls simply repeats the same small walk.
+    private void ClearAncestorMergeMemos()
+    {
+        var ancestor = _parent;
+        while (ancestor != null)
+        {
+            ancestor._fieldDefinition.ClearMergeMemo();
+            ancestor = ancestor._parent;
+        }
     }
 
     /// <summary>
@@ -408,7 +434,7 @@ public sealed class FieldBuilder
         // FAST PATH: Skip action processing if null
         if (action != null)
         {
-            var fieldBuilder = new FieldBuilder(field);
+            var fieldBuilder = new FieldBuilder(field, this);
             action(fieldBuilder);
             // GetOrAddField above already added `field` as a child of _fieldDefinition,
             // so _fieldDefinition._children is non-null at this point. Replace by REFERENCE (not
@@ -621,6 +647,14 @@ public sealed class FieldBuilder
         // including the case where _arguments already existed and only its contents changed.
         _fieldDefinition._deepArgumentFingerprint = null;
         _fieldDefinition._subtreeHasAnyArguments = null;
+
+        // This field's own memo is cleared above, but a captured, since-detached FieldBuilder (the
+        // Action<FieldBuilder> that produced it already returned) means AddFieldCore's own cascading
+        // ClearMergeMemo calls — one per nesting level, run as each action unwinds — happened BEFORE
+        // this Where() call and cannot see it. Every ancestor in this builder's nesting chain still
+        // has this field in its merge-relevant subtree, so their memoized deep fingerprints are
+        // equally stale and must be cleared explicitly here.
+        ClearAncestorMergeMemos();
 
         // This field may be sitting in FieldMergeIndex's fingerprint sub-buckets (directly, if it
         // is a root field, or as the reason an ancestor's deep fingerprint is stale) without

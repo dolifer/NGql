@@ -102,6 +102,16 @@ internal sealed class FieldMergeIndex
     // same name during the same synced generation reuses them instead of rebuilding.
     private readonly HashSet<string> _fingerprintBucketsBuilt = new(StringComparer.OrdinalIgnoreCase);
 
+    // Name (OrdinalIgnoreCase) -> key -> the fingerprint that key is CURRENTLY bucketed under in
+    // _byNameFingerprint[name]. Reverse index of the same data _byNameFingerprint holds forward,
+    // maintained in lock-step everywhere a key's bucket membership changes (build, IndexAdd,
+    // HealBucketInPlace, ReindexFingerprint) so ReindexFingerprint's re-key can look up "which
+    // bucket currently holds this key" in O(1) instead of scanning every fingerprint bucket under
+    // the name — the fix for the production shape where a name accumulates many singleton buckets
+    // (one per distinct incoming filter) and re-keying after every successful merge would otherwise
+    // cost O(bucket count) each time, i.e. O(N) per merge / O(N^2) over a chain of N Includes.
+    private readonly Dictionary<string, Dictionary<string, ulong>> _keyFingerprint = new(StringComparer.OrdinalIgnoreCase);
+
     // Every key currently in the root dictionary, plus a per-base-name suffix counter — backs
     // KeyGenerator.GenerateUniqueKey(FieldMergeIndex, ...) so it can produce the next unique key
     // directly instead of rebuilding a HashSet from fields.Keys on every call.
@@ -151,7 +161,21 @@ internal sealed class FieldMergeIndex
         {
             var fingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(field);
             GetOrCreateFingerprintBucket(_byNameFingerprint[field.Name], fingerprint).Add(key);
+            SetKeyFingerprint(field.Name, key, fingerprint);
         }
+    }
+
+    // Records `key`'s current bucket fingerprint under `name` in the reverse index, creating the
+    // per-name map on first use. Every write to a _byNameFingerprint bucket has a matching call
+    // here so the two stay in lock-step.
+    private void SetKeyFingerprint(string name, string key, ulong fingerprint)
+    {
+        if (!_keyFingerprint.TryGetValue(name, out var perName))
+        {
+            perName = new Dictionary<string, ulong>(StringComparer.Ordinal);
+            _keyFingerprint[name] = perName;
+        }
+        perName[key] = fingerprint;
     }
 
     private List<string> GetOrCreateBucket(string name)
@@ -192,7 +216,7 @@ internal sealed class FieldMergeIndex
         if (!byFingerprint.TryGetValue(fingerprint, out var bucket) || bucket.Count == 0)
             return null;
 
-        HealBucketInPlace(fields, byFingerprint, fingerprint, bucket);
+        HealBucketInPlace(fields, name, byFingerprint, fingerprint, bucket);
         return bucket.Count > 0 ? bucket : null;
     }
 
@@ -202,8 +226,9 @@ internal sealed class FieldMergeIndex
     // single forward pass with swap-remove, so healing is O(entries actually stale) beyond the
     // unavoidable O(bucket size) fingerprint recompute — each recompute is itself O(1) when the
     // field's own memo is valid.
-    private static void HealBucketInPlace(
+    private void HealBucketInPlace(
         Dictionary<string, FieldDefinition> fields,
+        string name,
         Dictionary<ulong, List<string>> byFingerprint,
         ulong expectedFingerprint,
         List<string> bucket)
@@ -219,6 +244,7 @@ internal sealed class FieldMergeIndex
             if (!fields.TryGetValue(key, out var liveField))
             {
                 bucket.RemoveAt(i);
+                _keyFingerprint.GetValueOrDefault(name)?.Remove(key);
                 continue;
             }
 
@@ -232,6 +258,7 @@ internal sealed class FieldMergeIndex
                 byFingerprint[liveFingerprint] = correctBucket;
             }
             correctBucket.Add(key);
+            SetKeyFingerprint(name, key, liveFingerprint);
         }
     }
 
@@ -255,20 +282,21 @@ internal sealed class FieldMergeIndex
 
         var liveFingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(liveField);
 
-        // Remove the key from whichever bucket currently holds it (its old fingerprint — unknown
-        // to the caller, since MergeFieldsInPlace already invalidated the memo before this runs).
-        // Buckets are typically small (that is the whole point of this index), so a linear scan
-        // across the handful of fingerprint buckets under this name is cheap and avoids having to
-        // track a reverse key->fingerprint map purely to serve this rare re-key path.
-        foreach (var (existingFingerprint, bucket) in byFingerprint)
+        // Remove the key from whichever bucket currently holds it. _keyFingerprint[name] records
+        // exactly that bucket's fingerprint, so this is an O(1) dictionary lookup + O(bucket size)
+        // removal from that ONE bucket — never a scan across every fingerprint bucket under the
+        // name. That per-name scan was the quadratic hazard this reverse index exists to remove:
+        // the production shape accumulates many singleton buckets (one per distinct incoming
+        // filter) under one name, so scanning all of them on every successful merge was O(N) per
+        // merge / O(N^2) over a chain of N Includes. A miss here (key not yet tracked, e.g. it was
+        // added to _byName but its fingerprint buckets were built before this key existed under an
+        // old code path) is harmless — it just means there is no stale bucket entry to remove.
+        if (_keyFingerprint.TryGetValue(name, out var perName)
+            && perName.TryGetValue(key, out var oldFingerprint)
+            && oldFingerprint != liveFingerprint
+            && byFingerprint.TryGetValue(oldFingerprint, out var oldBucket))
         {
-            if (existingFingerprint == liveFingerprint) continue;
-
-            var idx = bucket.IndexOf(key);
-            if (idx < 0) continue;
-
-            bucket.RemoveAt(idx);
-            break;
+            oldBucket.Remove(key);
         }
 
         var targetBucket = GetOrCreateFingerprintBucket(byFingerprint, liveFingerprint);
@@ -276,6 +304,7 @@ internal sealed class FieldMergeIndex
         {
             targetBucket.Add(key);
         }
+        SetKeyFingerprint(name, key, liveFingerprint);
     }
 
     // Invalidates every fingerprint sub-bucket wholesale when FieldDefinition's global merge-memo epoch has
@@ -290,6 +319,7 @@ internal sealed class FieldMergeIndex
 
         _byNameFingerprint.Clear();
         _fingerprintBucketsBuilt.Clear();
+        _keyFingerprint.Clear();
         _syncedMergeMemoEpoch = liveEpoch;
     }
 
@@ -319,6 +349,7 @@ internal sealed class FieldMergeIndex
                     byFingerprint[fingerprint] = bucket;
                 }
                 bucket.Add(key);
+                SetKeyFingerprint(name, key, fingerprint);
             }
         }
 
@@ -362,6 +393,7 @@ internal sealed class FieldMergeIndex
         _byName.Clear();
         _byNameFingerprint.Clear();
         _fingerprintBucketsBuilt.Clear();
+        _keyFingerprint.Clear();
         _allKeys.Clear();
         _suffixCounters.Clear();
         foreach (var (key, field) in fields)

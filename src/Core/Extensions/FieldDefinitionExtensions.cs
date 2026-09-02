@@ -53,23 +53,14 @@ internal static class FieldDefinitionExtensions
     /// <summary>
     /// Finds a child matching <paramref name="target"/>'s exact GraphQL identity — (Name, alias),
     /// not Name alone. Two children may legitimately share a Name while differing by alias (distinct
-    /// response keys); a Name-only lookup would wrongly treat one as a match for the other. Mirrors
-    /// <see cref="Helpers.FindExistingField(FieldChildren, FieldDefinition)"/>'s fast-path/slow-path
-    /// shape: a name-index miss proves absence outright, a hit that also matches by alias is the
-    /// common case, and only a hit that disagrees on alias forces the rare linear fallback scan.
+    /// response keys); a Name-only lookup would wrongly treat one as a match for the other. Thin
+    /// wrapper over the shared ordinal probe <see cref="Helpers.FindByOrdinalNameAndAlias"/> — unlike
+    /// <see cref="Helpers.FindExistingField(FieldChildren, FieldDefinition)"/>, an outright miss here
+    /// stays a plain null (no Path-based fallback): every caller of this method treats null as
+    /// "no compatible existing child", not "search further by another identity".
     /// </summary>
     private static FieldDefinition? FindChildByNameAndAlias(FieldChildren children, FieldDefinition target)
-    {
-        var candidate = children.Find(target.Name);
-        if (candidate is null) return null;
-        if (candidate.Name == target.Name && candidate._alias == target._alias) return candidate;
-
-        foreach (var f in children.AsSpan())
-        {
-            if (f.Name == target.Name && f._alias == target._alias) return f;
-        }
-        return null;
-    }
+        => Helpers.FindByOrdinalNameAndAlias(children, target.Name, target._alias);
 
     // Skip the existing-not-in-incoming check entirely when nothing in the existing subtree
     // could ever fail it — early-out when no field in the existing subtree carries arguments.
@@ -516,11 +507,15 @@ internal static class FieldDefinitionExtensions
     {
         if (incomingChildren is null) return;
 
-        // Existing._children is non-null on every path that reaches here through the public
-        // Include API: type-compatibility means both sides are object-typed, and object-typed
-        // FieldDefinitions get a children collection from QueryBuilder.AddField at construction
-        // time. Trust the invariant.
-        var existingChildren = existing._children!;
+        // existing._children can legitimately still be null here: an object-typed field created
+        // via AddField(name, "Object") with no sub-fields yet (or one whose type was promoted to
+        // Object by ShouldConvertToObjectType without ever gaining a child) is a leaf-shaped node
+        // that CanMergeFields already accepted as compatible with ANY incoming children —
+        // ExistingExtrasCompatible early-outs as soon as existing's own children collection is
+        // absent/empty, with nothing further to check on that side. So this is not an unenforced
+        // invariant to trust; it is a real, reachable shape that must allocate on demand rather
+        // than asserting non-null.
+        var existingChildren = existing._children ??= new FieldChildren();
         var span = incomingChildren.AsSpan();
         for (int i = 0; i < span.Length; i++)
         {
@@ -609,11 +604,14 @@ internal static class FieldDefinitionExtensions
 
         if (!incomingChildrenHaveArguments)
         {
-            // Not already known true, and this merge's incoming children contributed nothing: the
-            // subtree provably stays argument-free, so both memos are left exactly as they are
-            // (the fingerprint's constant value is still correct; _subtreeHasAnyArguments is recorded
-            // explicitly — not left null — so a future read is also O(1)).
-            existing._subtreeHasAnyArguments = false;
+            // Not already known true, and this merge's incoming children contributed nothing new.
+            // Whether the subtree is argument-free now depends on existing's OWN arguments, not
+            // just its children — recording a bare `false` here would be actively wrong for a
+            // field that has its own arguments but had never had SubtreeHasAnyArguments computed
+            // (memo still null) before this merge. Recompute from existing._arguments directly
+            // (O(1) — no child recursion needed, since AnyChildHasArguments over existing's
+            // children is exactly what's already known to be unaffected by this incoming merge).
+            existing._subtreeHasAnyArguments = existing._arguments is { Count: > 0 };
             return;
         }
 

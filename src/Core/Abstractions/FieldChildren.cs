@@ -45,7 +45,21 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// Maps name to its SLOT INDEX in <see cref="_items"/> (not the <see cref="FieldDefinition"/> itself),
     /// so a hit gives both the current value (via <c>_items[slot]</c>) and the position needed for an
     /// in-place replace. All access (including reads) is guarded by <see cref="_lock"/> because
-    /// <see cref="Dictionary{TKey,TValue}"/> is not safe for concurrent read+write.</summary>
+    /// <see cref="Dictionary{TKey,TValue}"/> is not safe for concurrent read+write.
+    /// <para>
+    /// <b>"Last occurrence wins" is the intended invariant for <see cref="AppendLocked"/> and
+    /// <see cref="BuildIndexLocked"/>, but <see cref="ReplaceReference"/>'s linear-scan fallback
+    /// (reached only for the rare same-name/different-alias collision the index cannot fully
+    /// disambiguate) can re-point a name's slot at an EARLIER same-named sibling's position via
+    /// <see cref="UpdateIndexKeyLocked"/>, technically breaking that invariant for the remainder of
+    /// that name's entries.</b> No observable misbehavior is currently known: every caller that
+    /// legitimately needs to distinguish same-named/different-alias siblings
+    /// (<c>NGql.Core.Extensions.Helpers.FindExistingField(FieldChildren, FieldDefinition)</c>,
+    /// <c>NGql.Core.Extensions.FieldDefinitionExtensions.FindChildByNameAndAlias</c>) already falls back to an exhaustive
+    /// scan rather than trusting a bare name-index hit as authoritative. Documented here rather than
+    /// changed because a fix would need to touch the same re-bucketing/index machinery under active,
+    /// separate revision — flag before altering.
+    /// </para></summary>
     private Dictionary<string, int>? _index;
     private readonly object _lock = new();
 

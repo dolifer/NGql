@@ -624,6 +624,27 @@ internal static class Helpers
 
     internal static FieldDefinition? FindExistingField(FieldChildren children, FieldDefinition fieldDefinition)
     {
+        // Shared ordinal (Name, alias) probe — see FindByOrdinalNameAndAlias's own remarks for the
+        // fast-path/slow-path rationale. A miss here does NOT prove absence for this caller: unlike
+        // FieldDefinitionExtensions.FindChildByNameAndAlias (which returns null and lets its callers
+        // treat that as "append a new sibling"), CreateOrMergeField additionally tolerates a child
+        // that shares this field's Path under a DIFFERENT (Name, alias) — the Path fallback below is
+        // load-bearing for that caller and must not be dropped.
+        var byIdentity = FindByOrdinalNameAndAlias(children, fieldDefinition.Name, fieldDefinition._alias);
+        return byIdentity ?? children.Find(fieldDefinition.Path.AsSpan());
+    }
+
+    /// <summary>
+    /// Finds a child matching an exact GraphQL identity — (Name, alias), not Name alone. Two
+    /// children may legitimately share a Name while differing by alias (distinct response keys); a
+    /// Name-only lookup would wrongly treat one as a match for the other. Shared kernel for
+    /// <see cref="FindExistingField(FieldChildren, FieldDefinition)"/> and
+    /// <see cref="Extensions.FieldDefinitionExtensions.CanMergeFields"/>'s merge-compatibility
+    /// lookups — both need exactly this ordinal probe; what differs between them is what each does
+    /// on an outright miss (a Path fallback here, a plain null there), which stays with the caller.
+    /// </summary>
+    internal static FieldDefinition? FindByOrdinalNameAndAlias(FieldChildren children, string name, string? alias)
+    {
         // FAST PATH #1: a NAME-based (case-insensitive) miss via FieldChildren's own Find is
         // strictly broader than this method's ordinal (Name, alias) match — if no child shares the
         // Name even case-insensitively, none can share it ordinally either, so absence here proves
@@ -631,17 +652,17 @@ internal static class Helpers
         // never-before-seen sibling names (e.g. Including N distinct fields under one shared
         // parent) and is what turns the old unconditional per-Include linear scan into an O(1)/
         // O(log) index lookup once FieldChildren's index is built.
-        var candidate = children.Find(fieldDefinition.Name);
+        var candidate = children.Find(name);
         if (candidate is null)
         {
-            return children.Find(fieldDefinition.Path.AsSpan());
+            return null;
         }
 
         // FAST PATH #2: a case-insensitive HIT that also matches ordinally (Name) and by alias is
         // exactly the entry a subsequent Include() of the "same" field will hit, since FieldChildren's
         // index always maps a name to its LAST-appended occurrence (see FieldChildren.Append and
         // BuildIndexLocked) — precisely the slot a genuine repeated-merge candidate lives in.
-        if (candidate.Name == fieldDefinition.Name && candidate._alias == fieldDefinition._alias)
+        if (candidate.Name == name && candidate._alias == alias)
         {
             return candidate;
         }
@@ -649,15 +670,15 @@ internal static class Helpers
         // SLOW PATH: the index found *a* same-name (case-insensitively) child, but it doesn't match
         // ordinally or by alias — this does NOT prove absence, because two children CAN legitimately
         // share a Name with different aliases (FieldFactory.CreateOrMergeField itself appends such a
-        // sibling when this method's Path fallback below finds no match) and FieldChildren's index
-        // only ever remembers ONE slot per name. Fall back to the exhaustive scan, which remains
-        // authoritative and preserves first-match-in-append-order semantics.
+        // sibling when the caller's own fallback finds no match) and FieldChildren's index only ever
+        // remembers ONE slot per name. Fall back to the exhaustive scan, which remains authoritative
+        // and preserves first-match-in-append-order semantics.
         foreach (var f in children.AsSpan())
         {
-            if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)
+            if (f.Name == name && f._alias == alias)
                 return f;
         }
-        return children.Find(fieldDefinition.Path.AsSpan());
+        return null;
     }
 
     /// <summary>
