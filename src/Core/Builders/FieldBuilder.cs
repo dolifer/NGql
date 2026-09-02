@@ -411,8 +411,10 @@ public sealed class FieldBuilder
             var fieldBuilder = new FieldBuilder(field);
             action(fieldBuilder);
             // GetOrAddField above already added `field` as a child of _fieldDefinition,
-            // so _fieldDefinition._children is non-null at this point.
-            _fieldDefinition._children!.Set(field.Name, fieldBuilder._fieldDefinition);
+            // so _fieldDefinition._children is non-null at this point. Replace by REFERENCE (not
+            // by Name) so a same-named/different-alias sibling already in _children is never
+            // mistaken for `field`'s own slot.
+            _fieldDefinition._children!.ReplaceReference(field, fieldBuilder._fieldDefinition);
 
             // The action may have mutated arguments anywhere in field's subtree (nested Where()/
             // AddField calls), which GetOrAddField above could not have anticipated. _fieldDefinition

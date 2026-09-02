@@ -44,9 +44,31 @@ internal static class FieldDefinitionExtensions
     private static bool IsIncomingChildCompatible(FieldChildren? existingChildren, FieldDefinition incomingChild)
     {
         if (existingChildren is null) return !HasAnyArguments(incomingChild);
-        if (!existingChildren.TryGetValue(incomingChild.Name, out var existingChild)) return !HasAnyArguments(incomingChild);
-        return Helpers.AreArgumentsEqual(existingChild!._arguments, incomingChild._arguments)
+        var existingChild = FindChildByNameAndAlias(existingChildren, incomingChild);
+        if (existingChild is null) return !HasAnyArguments(incomingChild);
+        return Helpers.AreArgumentsEqual(existingChild._arguments, incomingChild._arguments)
             && AreNestedFieldsCompatible(existingChild, incomingChild);
+    }
+
+    /// <summary>
+    /// Finds a child matching <paramref name="target"/>'s exact GraphQL identity — (Name, alias),
+    /// not Name alone. Two children may legitimately share a Name while differing by alias (distinct
+    /// response keys); a Name-only lookup would wrongly treat one as a match for the other. Mirrors
+    /// <see cref="Helpers.FindExistingField(FieldChildren, FieldDefinition)"/>'s fast-path/slow-path
+    /// shape: a name-index miss proves absence outright, a hit that also matches by alias is the
+    /// common case, and only a hit that disagrees on alias forces the rare linear fallback scan.
+    /// </summary>
+    private static FieldDefinition? FindChildByNameAndAlias(FieldChildren children, FieldDefinition target)
+    {
+        var candidate = children.Find(target.Name);
+        if (candidate is null) return null;
+        if (candidate.Name == target.Name && candidate._alias == target._alias) return candidate;
+
+        foreach (var f in children.AsSpan())
+        {
+            if (f.Name == target.Name && f._alias == target._alias) return f;
+        }
+        return null;
     }
 
     // Skip the existing-not-in-incoming check entirely when nothing in the existing subtree
@@ -70,7 +92,7 @@ internal static class FieldDefinitionExtensions
     private static bool IsExistingExtraCompatible(FieldDefinition existingChild, FieldChildren? incomingChildren)
     {
         if (incomingChildren is null) return !HasAnyArguments(existingChild);
-        return incomingChildren.Find(existingChild.Name) is not null || !HasAnyArguments(existingChild);
+        return FindChildByNameAndAlias(incomingChildren, existingChild) is not null || !HasAnyArguments(existingChild);
     }
 
     private static bool SubtreeHasAnyArguments(FieldDefinition field)
@@ -607,7 +629,8 @@ internal static class FieldDefinitionExtensions
 
     private static void MergeChildInPlace(FieldChildren existingChildren, FieldDefinition incomingChild)
     {
-        if (existingChildren.TryGetValue(incomingChild.Name, out var existingNested) && existingNested != null)
+        var existingNested = FindChildByNameAndAlias(existingChildren, incomingChild);
+        if (existingNested != null)
         {
             MergeFieldsInPlace(existingNested, incomingChild);
             return;

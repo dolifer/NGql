@@ -232,6 +232,54 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     }
 
     /// <summary>
+    /// Replaces <paramref name="oldChild"/> with <paramref name="newChild"/> in the exact slot
+    /// <paramref name="oldChild"/> occupies, identified by REFERENCE — never by name. Name-keyed
+    /// lookup/replace cannot disambiguate two children that legitimately share a
+    /// <see cref="FieldDefinition.Name"/> but differ by alias (distinct GraphQL response keys); a
+    /// caller that already holds the exact matched instance (e.g. after an alias-aware scan) uses
+    /// this to guarantee the replace lands on that instance's own slot, preserving both its
+    /// position (render order) and every OTHER same-named sibling untouched.
+    /// </summary>
+    /// <remarks>
+    /// Common case is O(1): <see cref="_index"/> is keyed by <see cref="FieldDefinition.Name"/>, and
+    /// its remembered slot for <paramref name="oldChild"/>'s name almost always already holds
+    /// <paramref name="oldChild"/> itself, since a caller only reaches here after a same-name hit.
+    /// Only when that slot no longer holds <paramref name="oldChild"/> (a genuine same-name/
+    /// different-alias collision, where the index can remember only one of the colliding slots) does
+    /// this fall back to a linear scan by reference — exactly the same rare case that already forces
+    /// a linear scan in <see cref="NGql.Core.Extensions.Helpers.FindExistingField(FieldChildren, FieldDefinition)"/>'s
+    /// slow path.
+    /// </remarks>
+    internal void ReplaceReference(FieldDefinition oldChild, FieldDefinition newChild)
+    {
+        lock (_lock)
+        {
+            var items = _items!;
+
+            if (_index != null && _index.TryGetValue(oldChild.Name, out var hintSlot)
+                && ReferenceEquals(items[hintSlot], oldChild))
+            {
+                items[hintSlot] = newChild;
+                UpdateIndexKeyLocked(oldChild.Name.AsSpan(), newChild.Name, hintSlot);
+                return;
+            }
+
+            for (int i = 0; i < _count; i++)
+            {
+                if (ReferenceEquals(items[i], oldChild))
+                {
+                    items[i] = newChild;
+                    if (_index != null)
+                    {
+                        UpdateIndexKeyLocked(oldChild.Name.AsSpan(), newChild.Name, i);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Supports collection initializer syntax: <c>new FieldChildren { new FieldDefinition("x") }</c>.
     /// Delegates to <see cref="Append"/>.
     /// </summary>

@@ -578,13 +578,52 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition ProcessFieldSegment(FieldChildren children, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
-        if (!children.TryGetValue(segment.Name, out var field))
+        var field = FindExistingSegmentChild(children, segment);
+        if (field is null)
         {
             return CreateNewField(children, segment, arguments, parsedFieldType, fullPath, metadata);
         }
 
         return UpdateExistingField(children, segment, field, arguments, parsedFieldType);
     }
+
+    /// <summary>
+    /// Finds a child matching <paramref name="segment"/>. For the LAST fragment of a complex path,
+    /// identity is (Name, alias) — not Name alone — because two children may legitimately share a
+    /// Name while differing by alias (distinct response keys), e.g. adding <c>"aliasA:id"</c> then
+    /// <c>"aliasB:id"</c> under the same parent must produce two siblings, not collapse the second
+    /// into the first. Intermediate (non-last) segments route purely by Name, exactly like dotted
+    /// paths: a path addresses an intermediate node structurally by name, and an alias set on it
+    /// (e.g. <c>"alias:profile.displayName:name"</c>) is rendering metadata, not routing identity —
+    /// a LATER reference to the same node via its bare name (e.g. <c>"profile.userEmail:email"</c>)
+    /// must still resolve to that one node, never fork a duplicate.
+    /// </summary>
+    private static FieldDefinition? FindExistingSegmentChild(FieldChildren children, SpanSegment segment)
+    {
+        var candidate = children.Find(segment.Name);
+        if (candidate is null) return null;
+        if (!segment.IsLastFragment) return candidate;
+
+        if (SegmentAliasMatches(segment, candidate)) return candidate;
+
+        foreach (var f in children.AsSpan())
+        {
+            if (f.Name.AsSpan().Equals(segment.Name, StringComparison.OrdinalIgnoreCase) && SegmentAliasMatches(segment, f))
+                return f;
+        }
+        return null;
+    }
+
+    // An existing child with NO alias yet always matches — it hasn't picked a response-key identity
+    // yet, so this segment either confirms the unaliased identity or (via ApplyIntermediateUpdates)
+    // adopts an incoming alias onto it, exactly like the FIRST time any alias is set on a field.
+    // Once a child HAS an alias, a segment only matches it when the aliases agree — a same-named
+    // segment carrying a DIFFERENT (or absent) alias is a distinct sibling, not the same field.
+    private static bool SegmentAliasMatches(SpanSegment segment, FieldDefinition field)
+        => field._alias is null
+            || (segment.HasAlias
+                ? segment.Alias.Equals(field._alias.AsSpan(), StringComparison.Ordinal)
+                : string.IsNullOrEmpty(field._alias));
 
     /// <summary>
     /// Creates a new field for complex field processing — root-Dict variant.
@@ -643,8 +682,11 @@ internal static class FieldFactory
 
         if (arguments?.Count > 0)
         {
-            field = field.MergeFieldArguments(arguments);
-            children.Set(segment.Name, field);
+            var mergedField = field.MergeFieldArguments(arguments);
+            // Replace by REFERENCE: field was matched by (Name, alias) in FindExistingSegmentChild,
+            // and a name-keyed Set could instead overwrite a different same-named/different-alias sibling.
+            children.ReplaceReference(field, mergedField);
+            field = mergedField;
         }
         ApplyParsedFieldType(field, parsedFieldType);
         return field;
@@ -658,6 +700,11 @@ internal static class FieldFactory
         if (segment.HasAlias && field._alias is null)
         {
             field._alias = segment.Alias.ToString();
+            // Direct-field assignment bypasses the Alias init-only property, so _effectiveName
+            // (this field's identity key in any FieldChildren it's already a member of) must be
+            // kept in sync here too — otherwise a later lookup by the field's true current
+            // identity would miss its own slot.
+            field._effectiveName = field._alias;
         }
         if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
         {
@@ -703,7 +750,10 @@ internal static class FieldFactory
         if (existingField != null)
         {
             var mergedField = existingField.MergeFieldArguments(fieldDefinition._arguments);
-            children.Set(existingField.Name, mergedField);
+            // Replace by REFERENCE, not by name: existingField was matched by (Name, alias) above,
+            // and a name-keyed replace could instead overwrite a different same-named sibling that
+            // carries a different alias (see FieldChildren.ReplaceReference).
+            children.ReplaceReference(existingField, mergedField);
             return mergedField;
         }
 
