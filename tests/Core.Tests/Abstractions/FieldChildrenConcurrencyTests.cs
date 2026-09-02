@@ -670,3 +670,147 @@ public class FieldChildrenReadRaceConditionTests
     }
 
 }
+
+public class FieldChildrenIndexedReplaceTests
+{
+    [Fact]
+    public void Set_ReplaceExisting_PreservesPositionAndValue()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("first", "String"));
+        children.Append(new FieldDefinition("second", "String"));
+        children.Append(new FieldDefinition("third", "String"));
+
+        // Act
+        children.Set("second", new FieldDefinition("second", "UpdatedType"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().Equal("first", "second", "third");
+        children.Find("second")!.Type.Should().Be("UpdatedType");
+    }
+
+    [Fact]
+    public void Set_AppendNew_PreservesInsertionOrder()
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("alpha"));
+        children.Append(new FieldDefinition("beta"));
+
+        // Act
+        children.Set("gamma", new FieldDefinition("gamma"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().Equal("alpha", "beta", "gamma");
+    }
+
+    [Theory]
+    [InlineData("SECOND")]
+    [InlineData("Second")]
+    [InlineData("second")]
+    public void Set_CaseInsensitiveName_ReplacesExistingMatch(string lookupName)
+    {
+        // Arrange
+        var children = new FieldChildren();
+        children.Append(new FieldDefinition("first"));
+        children.Append(new FieldDefinition("second", "OriginalType"));
+        children.Append(new FieldDefinition("third"));
+
+        // Act
+        children.Set(lookupName, new FieldDefinition("second", "ReplacedType"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().Equal("first", "second", "third");
+        children.Find("second")!.Type.Should().Be("ReplacedType");
+    }
+
+    [Fact]
+    public void Set_ReplaceEarlyChild_AfterCrossingIndexThreshold_PreservesPositionAndRenderedOrder()
+    {
+        // Arrange: add 15 (below threshold), then 16th and 17th (crossing/past threshold)
+        var children = new FieldChildren();
+        for (int i = 0; i < 15; i++)
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+        children.Append(new FieldDefinition("field15", "String")); // 16th — triggers index build
+        children.Append(new FieldDefinition("field16", "String")); // 17th — index already built
+
+        // Act: replace an EARLY child (position 0) after the index exists
+        children.Set("field00", new FieldDefinition("field00", "ReplacedType"));
+
+        // Assert: position unchanged, value updated, full order preserved
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().HaveCount(17);
+        names[0].Should().Be("field00");
+        names.Should().BeInAscendingOrder(StringComparer.Ordinal);
+        children.Find("field00")!.Type.Should().Be("ReplacedType");
+    }
+
+    [Fact]
+    public void Set_ReplaceChild_BelowIndexThreshold_UpdatesInPlaceWithoutIndex()
+    {
+        // Arrange: stay below the 16-item threshold so no index is built
+        var children = new FieldChildren();
+        for (int i = 0; i < 10; i++)
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+
+        // Act
+        children.Set("field03", new FieldDefinition("field03", "ReplacedType"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().HaveCount(10);
+        names[3].Should().Be("field03");
+        children.Find("field03")!.Type.Should().Be("ReplacedType");
+    }
+
+    [Fact]
+    public void Set_ReplaceChild_AboveIndexThreshold_UpdatesInPlaceViaIndex()
+    {
+        // Arrange: exceed the 16-item threshold so the lookup index is active
+        var children = new FieldChildren();
+        for (int i = 0; i < 20; i++)
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+
+        // Act
+        children.Set("field17", new FieldDefinition("field17", "ReplacedType"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().HaveCount(20);
+        names[17].Should().Be("field17");
+        children.Find("field17")!.Type.Should().Be("ReplacedType");
+    }
+
+    [Fact]
+    public void Set_SpanOverload_ReplaceEarlyChild_AfterCrossingIndexThreshold_PreservesPositionAndOrder()
+    {
+        // Arrange: mirrors the string-key test but exercises the ReadOnlySpan<char> overload,
+        // which FieldFactory.ProcessDottedSegment invokes strictly after a successful TryGetValue.
+        var children = new FieldChildren();
+        for (int i = 0; i < 17; i++)
+        {
+            children.Append(new FieldDefinition($"field{i:D2}", "String"));
+        }
+        children.TryGetValue("field00".AsSpan(), out _).Should().BeTrue();
+
+        // Act
+        children.Set("field00".AsSpan(), new FieldDefinition("field00", "ReplacedType"));
+
+        // Assert
+        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
+        names.Should().HaveCount(17);
+        names[0].Should().Be("field00");
+        names.Should().BeInAscendingOrder(StringComparer.Ordinal);
+        children.Find("field00")!.Type.Should().Be("ReplacedType");
+    }
+}

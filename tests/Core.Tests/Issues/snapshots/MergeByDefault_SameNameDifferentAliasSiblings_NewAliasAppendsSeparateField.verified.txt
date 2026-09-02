@@ -1,0 +1,7 @@
+﻿query Root{
+    user{
+        aliasA:id
+        aliasB:id
+        aliasC:id
+    }
+}

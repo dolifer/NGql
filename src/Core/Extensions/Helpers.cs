@@ -624,6 +624,34 @@ internal static class Helpers
 
     internal static FieldDefinition? FindExistingField(FieldChildren children, FieldDefinition fieldDefinition)
     {
+        // FAST PATH #1: a NAME-based (case-insensitive) miss via FieldChildren's own Find is
+        // strictly broader than this method's ordinal (Name, alias) match — if no child shares the
+        // Name even case-insensitively, none can share it ordinally either, so absence here proves
+        // absence in the exhaustive scan below too. This is the dominant case for a growing set of
+        // never-before-seen sibling names (e.g. Including N distinct fields under one shared
+        // parent) and is what turns the old unconditional per-Include linear scan into an O(1)/
+        // O(log) index lookup once FieldChildren's index is built.
+        var candidate = children.Find(fieldDefinition.Name);
+        if (candidate is null)
+        {
+            return children.Find(fieldDefinition.Path.AsSpan());
+        }
+
+        // FAST PATH #2: a case-insensitive HIT that also matches ordinally (Name) and by alias is
+        // exactly the entry a subsequent Include() of the "same" field will hit, since FieldChildren's
+        // index always maps a name to its LAST-appended occurrence (see FieldChildren.Append and
+        // BuildIndexLocked) — precisely the slot a genuine repeated-merge candidate lives in.
+        if (candidate.Name == fieldDefinition.Name && candidate._alias == fieldDefinition._alias)
+        {
+            return candidate;
+        }
+
+        // SLOW PATH: the index found *a* same-name (case-insensitively) child, but it doesn't match
+        // ordinally or by alias — this does NOT prove absence, because two children CAN legitimately
+        // share a Name with different aliases (FieldFactory.CreateOrMergeField itself appends such a
+        // sibling when this method's Path fallback below finds no match) and FieldChildren's index
+        // only ever remembers ONE slot per name. Fall back to the exhaustive scan, which remains
+        // authoritative and preserves first-match-in-append-order semantics.
         foreach (var f in children.AsSpan())
         {
             if (f.Name == fieldDefinition.Name && f._alias == fieldDefinition._alias)

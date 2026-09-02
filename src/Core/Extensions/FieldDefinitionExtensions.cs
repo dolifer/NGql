@@ -140,6 +140,23 @@ internal static class FieldDefinitionExtensions
     {
         if (field._deepArgumentFingerprint is { } cached) return cached;
 
+        // O(1) short-circuit for the common argument-free subtree: when SubtreeHasAnyArguments(field)
+        // is false, field._arguments is empty/null (so ownArgsFp is the fixed FnvOffsetBasis constant
+        // — see Helpers.ComputeArgumentFingerprint) AND every descendant's own SubtreeHasAnyArguments
+        // is also false (that is exactly what AnyChildHasArguments, which SubtreeHasAnyArguments folds
+        // in, recursively requires). DeepChildrenFingerprint's loop would therefore `continue` past
+        // every single child without ever computing a contribution, always returning 0UL — so skipping
+        // straight to CombineDeepHash(ownArgsFp, 0UL) here is provably identical to running the loop,
+        // without visiting a single child. This is what collapses the O(children)-per-call cost that
+        // MergeIncomingChildrenInPlace's memo invalidation otherwise forces on every Include for the
+        // (extremely common) case of a merge-irrelevant, argument-free subtree of arbitrary size.
+        if (!SubtreeHasAnyArguments(field))
+        {
+            var constantResult = CombineDeepHash(Helpers.ComputeArgumentFingerprint(null), 0UL);
+            field._deepArgumentFingerprint = constantResult;
+            return constantResult;
+        }
+
         var ownArgsFp = Helpers.ComputeArgumentFingerprint(field._arguments);
         var childrenFp = DeepChildrenFingerprint(field._children);
         var result = CombineDeepHash(ownArgsFp, childrenFp);
@@ -487,14 +504,103 @@ internal static class FieldDefinitionExtensions
         {
             MergeChildInPlace(existingChildren, span[i]);
         }
-        existing._subtreeHasAnyArguments = null;
-        existing._deepArgumentFingerprint = null;
+
+        // incomingChildren is evaluated for "any arguments anywhere" BEFORE the merge loop mutated
+        // it into existingChildren's clones — AnyChildHasArguments only reads _arguments/_children,
+        // which the merge loop does not mutate on the SOURCE side (MergeChildInPlace only clones
+        // incoming nodes into the target; ExistingNested merges happen on the existing side).
+        InvalidateMergeMemoAfterChildrenMerge(existing, AnyChildHasArguments(incomingChildren));
     }
 
     private static void MergeIncomingArgumentsInPlace(FieldDefinition existing, SortedDictionary<string, object?>? incomingArguments)
     {
         if (incomingArguments is not { Count: > 0 }) return;
         existing.MergeFieldArgumentsInPlace(incomingArguments);
+
+        // No memo update needed here: CanMergeFields (which every MergeFieldsInPlace caller already
+        // ran) requires AreArgumentsEqual(existing._arguments, incoming._arguments) at this exact
+        // node, so reaching this line with a non-empty incomingArguments means existing._arguments
+        // was ALREADY non-empty and equal — i.e. SubtreeHasAnyArguments(existing) was already true
+        // (and therefore memoized true, or about to memoize true next read regardless). The values
+        // merged in refine existing keys' nested dictionary contents (see MergeFieldArgumentsInPlace)
+        // without changing the fingerprint-relevant "has any argument" shape at this node, but the
+        // fingerprint VALUE can still change (nested value content differs) — so only the fingerprint
+        // memo needs invalidating, and only when it was actually cached.
+        if (existing._deepArgumentFingerprint is not null)
+        {
+            existing._deepArgumentFingerprint = null;
+        }
+    }
+
+    /// <summary>
+    /// Updates <see cref="FieldDefinition._subtreeHasAnyArguments"/> and
+    /// <see cref="FieldDefinition._deepArgumentFingerprint"/> after merging incoming CHILDREN into
+    /// <paramref name="existing"/>'s subtree, exploiting monotonicity instead of always nulling both
+    /// memos (which forced an O(existing-subtree-size) recompute on every single Include — the
+    /// O(N²) driver for a chain of N Includes into one shared parent).
+    ///
+    /// <para>
+    /// <b>Monotonicity.</b> Merging NEVER removes an argument or a child — <c>MergeFieldArgumentsInPlace</c>
+    /// only adds/overwrites keys, <c>MergeChildInPlace</c> only appends new children or recurses into
+    /// existing ones (itself subject to this same monotonic rule). So once a subtree contains any
+    /// argument anywhere, it always will — <c>_subtreeHasAnyArguments</c> can only ever transition
+    /// false/null → true for a given live instance, never true → false. If it was already memoized
+    /// <c>true</c>, no merge can invalidate that fact — both memos are left untouched (a global no-op,
+    /// O(1)) beyond the fingerprint invalidation below.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The false/unknown case.</b> If it was NOT already known <c>true</c>, whether it becomes true
+    /// now depends solely on whether THIS merge's incoming children introduced an argument anywhere —
+    /// i.e. <paramref name="incomingChildrenHaveArguments"/>, which the caller computes over the
+    /// (typically small, single-fragment) INCOMING side only, never by re-walking the accumulated
+    /// existing subtree. If nothing was contributed, the subtree provably remains argument-free:
+    /// <c>_subtreeHasAnyArguments</c> stays false (recorded explicitly, not left null, so a future
+    /// call is also O(1)) — and per <c>ComputeDeepFingerprint</c>'s own short-circuit, an
+    /// argument-free subtree's fingerprint is a fixed constant independent of its children, so the
+    /// OLD fingerprint (if already memoized) is still correct and is likewise left untouched.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Why there is no third ("was false, incoming introduces a genuinely new argument") case to
+    /// handle here.</b> <c>CanMergeFields</c> — which every <c>MergeFieldsInPlace</c> caller already
+    /// ran before reaching this method — rejects that shape outright: <c>IsIncomingChildCompatible</c>
+    /// only tolerates an incoming child ABSENT from existing when that child's whole subtree is
+    /// argument-free, and any incoming child that DOES exist by name on the existing side must have
+    /// <c>AreArgumentsEqual</c>-equal own arguments before recursing further — so an argument can only
+    /// ever appear where the existing side already carries the identical argument (already <c>true</c>,
+    /// handled above) or where both sides remain argument-free (handled above). A merge that would
+    /// introduce a net-new argument into a previously argument-free region is therefore never accepted
+    /// by <c>CanMergeFields</c> in the first place and never reaches this method at all.
+    /// </para>
+    /// </summary>
+    private static void InvalidateMergeMemoAfterChildrenMerge(FieldDefinition existing, bool incomingChildrenHaveArguments)
+    {
+        if (existing._subtreeHasAnyArguments == true)
+        {
+            // Already true — monotonicity guarantees it stays true; the exact fingerprint VALUE can
+            // still change (new argument-bearing content deeper in an already-significant subtree),
+            // so the fingerprint alone still needs invalidating.
+            existing._deepArgumentFingerprint = null;
+            return;
+        }
+
+        if (!incomingChildrenHaveArguments)
+        {
+            // Not already known true, and this merge's incoming children contributed nothing: the
+            // subtree provably stays argument-free, so both memos are left exactly as they are
+            // (the fingerprint's constant value is still correct; _subtreeHasAnyArguments is recorded
+            // explicitly — not left null — so a future read is also O(1)).
+            existing._subtreeHasAnyArguments = false;
+            return;
+        }
+
+        // Unreachable under the current CanMergeFields contract (see proof above): every caller of
+        // MergeFieldsInPlace already confirmed compatibility, which rejects any merge that would
+        // introduce a net-new argument into a previously argument-free region. Kept as a conservative
+        // fallback — full invalidation is always safe — so a future change to CanMergeFields's
+        // compatibility rules cannot silently resurrect the stale-fingerprint false-split bug fixed
+        // in a prior commit; it would instead just lose this method's O(1) fast path for this case.
         existing._subtreeHasAnyArguments = null;
         existing._deepArgumentFingerprint = null;
     }

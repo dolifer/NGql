@@ -42,9 +42,11 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// (release semantics) so readers observing the new value also see the corresponding slot.</summary>
     private int _count;
     /// <summary>Lazy lookup index, built when <see cref="_count"/> reaches <see cref="IndexThreshold"/>.
-    /// All access (including reads) is guarded by <see cref="_lock"/> because <see cref="Dictionary{TKey,TValue}"/>
-    /// is not safe for concurrent read+write.</summary>
-    private Dictionary<string, FieldDefinition>? _index;
+    /// Maps name to its SLOT INDEX in <see cref="_items"/> (not the <see cref="FieldDefinition"/> itself),
+    /// so a hit gives both the current value (via <c>_items[slot]</c>) and the position needed for an
+    /// in-place replace. All access (including reads) is guarded by <see cref="_lock"/> because
+    /// <see cref="Dictionary{TKey,TValue}"/> is not safe for concurrent read+write.</summary>
+    private Dictionary<string, int>? _index;
     private readonly object _lock = new();
 
     // ── Counts ────────────────────────────────────────────────────────────────
@@ -88,7 +90,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         // re-checking under the lock would be a dead branch.
         lock (_lock)
         {
-            return _index!.TryGetValue(name.ToString(), out var indexed) ? indexed : null;
+            return _index!.TryGetValue(name.ToString(), out var slot) ? _items![slot] : null;
         }
     }
 
@@ -110,7 +112,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
 
         lock (_lock)
         {
-            return _index!.TryGetValue(name, out var indexed) ? indexed : null;
+            return _index!.TryGetValue(name, out var slot) ? _items![slot] : null;
         }
     }
 
@@ -163,13 +165,24 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
             var items = _items;
             if (items != null)
             {
-                for (int i = 0; i < _count; i++)
+                if (_index != null)
                 {
-                    if (string.Equals(items[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                    if (_index.TryGetValue(name, out var slot))
                     {
-                        items[i] = child;
-                        if (_index != null) _index[child.Name] = child;
+                        items[slot] = child;
+                        UpdateIndexKeyLocked(name, child.Name, slot);
                         return;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < _count; i++)
+                    {
+                        if (string.Equals(items[i].Name, name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            items[i] = child;
+                            return;
+                        }
                     }
                 }
             }
@@ -181,18 +194,41 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// Replaces an existing child by span name (case-insensitive). The only call site —
     /// <c>FieldFactory.ProcessDottedSegment</c> — invokes this strictly after a successful
     /// <see cref="TryGetValue(ReadOnlySpan{char},out FieldDefinition)"/>, so the entry is
-    /// guaranteed to exist; the loop is simply walking to the index of the known match.
+    /// guaranteed to exist; below the index threshold the loop simply walks to the position of
+    /// the known match, and once indexed the index resolves that position directly.
     /// </summary>
     internal void Set(ReadOnlySpan<char> name, FieldDefinition child)
     {
         lock (_lock)
         {
             var items = _items!;
+            if (_index != null)
+            {
+                var slot = _index[name.ToString()];
+                items[slot] = child;
+                UpdateIndexKeyLocked(name, child.Name, slot);
+                return;
+            }
+
             int i = 0;
             while (!name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase)) i++;
             items[i] = child;
-            if (_index != null) _index[child.Name] = child;
         }
+    }
+
+    /// <summary>
+    /// After an in-place replace, keeps <see cref="_index"/> consistent when the replacement's
+    /// name differs from the looked-up key (e.g. alias/name changes on the field object) — removes
+    /// the stale key and (re)inserts the new one pointing at the same slot. Must be called under
+    /// <see cref="_lock"/> with <see cref="_index"/> known non-null.
+    /// </summary>
+    private void UpdateIndexKeyLocked(ReadOnlySpan<char> oldKey, string newKey, int slot)
+    {
+        if (!oldKey.Equals(newKey.AsSpan(), StringComparison.OrdinalIgnoreCase))
+        {
+            _index!.Remove(oldKey.ToString());
+        }
+        _index![newKey] = slot;
     }
 
     /// <summary>
@@ -225,13 +261,14 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
             Volatile.Write(ref _items, items);
         }
 
-        items[_count] = child;
+        var newSlot = _count;
+        items[newSlot] = child;
         // Release-store the new count last so any reader that observes it also sees the slot above.
-        Volatile.Write(ref _count, _count + 1);
+        Volatile.Write(ref _count, newSlot + 1);
 
         if (_index != null)
         {
-            _index[child.Name] = child;
+            _index[child.Name] = newSlot;
         }
         else if (_count >= IndexThreshold)
         {
@@ -241,9 +278,9 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
 
     private void BuildIndexLocked()
     {
-        var built = new Dictionary<string, FieldDefinition>(_count, StringComparer.OrdinalIgnoreCase);
+        var built = new Dictionary<string, int>(_count, StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < _count; i++)
-            built[_items![i].Name] = _items[i];
+            built[_items![i].Name] = i;
         // Publish the index pointer last so readers that observe non-null _index see a fully populated dict.
         Volatile.Write(ref _index, built);
     }
