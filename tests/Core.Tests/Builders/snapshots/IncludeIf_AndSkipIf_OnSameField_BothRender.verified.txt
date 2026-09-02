@@ -1,0 +1,3 @@
+﻿query Q($a:Boolean!, $b:Boolean!){
+    field @include(if:$a) @skip(if:$b)
+}

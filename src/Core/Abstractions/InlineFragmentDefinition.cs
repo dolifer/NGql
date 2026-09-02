@@ -21,6 +21,7 @@ public sealed record InlineFragmentDefinition
     internal FieldChildren? _fields;
     internal Dictionary<string, InlineFragmentDefinition>? _fragments;
     internal List<string>? _spreadFragments;
+    internal List<FieldDirective>? _directives;
 
     /// <summary>
     /// Creates an inline fragment for <paramref name="typeName"/> with no children.
@@ -74,9 +75,41 @@ public sealed record InlineFragmentDefinition
     public IReadOnlyList<string> SpreadFragments
         => (IReadOnlyList<string>?)_spreadFragments ?? EmptySpreadFragments;
 
+    /// <summary>
+    /// Directives attached to this inline fragment, in the order they were added. Rendered after
+    /// <c>... on TypeName</c> and before the selection set, e.g. <c>... on Admin @include(if:$a){ … }</c>.
+    /// Returns an empty list (never null) when the fragment has no directives.
+    /// </summary>
+    /// <remarks>
+    /// See <see cref="Builders.FieldBuilder.IncludeIf(Variable)"/>/<see cref="Builders.FieldBuilder.SkipIf(Variable)"/>/
+    /// <see cref="Builders.FieldBuilder.Directive(string, System.Collections.Generic.Dictionary{string, object?})"/>
+    /// called on the <see cref="Builders.FieldBuilder"/> passed to
+    /// <see cref="Builders.FieldBuilder.OnType(string, System.Action{Builders.FieldBuilder})"/>'s
+    /// lambda — the same directive API fields expose, attaching to the fragment itself rather than
+    /// its parent field.
+    /// </remarks>
+    [JsonPropertyName("directives")]
+    public IReadOnlyList<FieldDirective> Directives
+        => (IReadOnlyList<FieldDirective>?)_directives ?? EmptyDirectives;
+
+    /// <summary>
+    /// Gets a value indicating whether this inline fragment carries any directives. Unlike reading
+    /// <see cref="Directives"/>, this check allocates nothing on directive-less fragments.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasDirectives => _directives is { Count: > 0 };
+
+    /// <summary>
+    /// Append a directive to this fragment's directive list. Shares <see cref="DirectiveListOps"/>
+    /// with <see cref="FieldDefinition.AddDirective"/>, so <c>include</c>/<c>skip</c> collapse
+    /// (last-call-wins) and every other directive dedups structurally, identically to fields.
+    /// </summary>
+    internal void AddDirective(FieldDirective directive) => DirectiveListOps.Add(ref _directives, directive);
+
     private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyFields = new Dictionary<string, FieldDefinition>();
     private static readonly IReadOnlyDictionary<string, InlineFragmentDefinition> EmptyFragments = new Dictionary<string, InlineFragmentDefinition>();
     private static readonly IReadOnlyList<string> EmptySpreadFragments = Array.Empty<string>();
+    private static readonly IReadOnlyList<FieldDirective> EmptyDirectives = Array.Empty<FieldDirective>();
 
     public bool Equals(InlineFragmentDefinition? other)
     {

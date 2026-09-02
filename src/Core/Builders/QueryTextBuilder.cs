@@ -479,6 +479,14 @@ internal sealed class QueryTextBuilder
                 _stringBuilder.Append(padding);
                 _stringBuilder.Append("... on ");
                 _stringBuilder.Append(fragment.TypeName);
+
+                // Directives render after the type condition and before the selection set, exactly
+                // like on a plain field: `... on Admin @include(if:$a){ … }`.
+                if (fragment._directives is { Count: > 0 })
+                {
+                    BuildFieldDirectives(fragment._directives);
+                }
+
                 _stringBuilder.AppendLine("{");
 
                 BuildSelectionSetBody(fragment._fields, fragment._fragments, fragment._spreadFragments, indent + IndentSize);

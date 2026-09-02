@@ -270,26 +270,17 @@ public sealed record FieldDefinition
     /// <summary>
     /// Append a directive to this field's directive list. Order is preserved. A directive that is
     /// structurally identical to one already present is skipped, so calling e.g.
-    /// <c>.IncludeIf("$x").IncludeIf("$x")</c> on one field renders <c>@include(if:$x)</c> once
-    /// rather than emitting the spec-invalid <c>@include(if:$x) @include(if:$x)</c>. This mirrors
-    /// the structural dedup on the fragment-merge path. Directives that differ (name or arguments)
-    /// are all kept.
+    /// <c>.Directive("format", …).Directive("format", …)</c> with identical arguments on one field
+    /// renders the directive once rather than duplicating it. Directives that differ (name or
+    /// arguments) are all kept, EXCEPT for the two non-repeatable, spec-constrained directive names
+    /// <c>include</c> and <c>skip</c> — see <see cref="DirectiveListOps.Add"/>, which every
+    /// <c>@include</c>/<c>@skip</c> call site (both <see cref="Builders.FieldBuilder.IncludeIf(Variable)"/>/
+    /// <see cref="Builders.FieldBuilder.SkipIf(Variable)"/> and the generic
+    /// <see cref="Builders.FieldBuilder.Directive(string, System.Collections.Generic.Dictionary{string, object?})"/>
+    /// called with <c>"include"</c>/<c>"skip"</c> directly — routes through) shares with
+    /// <see cref="InlineFragmentDefinition.AddDirective"/>.
     /// </summary>
-    [SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "The plain loop short-circuits without allocating an enumerator on the builder hot path.")]
-    internal void AddDirective(FieldDirective directive)
-    {
-        _directives ??= new List<FieldDirective>();
-        foreach (var existing in _directives)
-        {
-            if (existing.IsStructurallyEqualTo(directive))
-            {
-                return;
-            }
-        }
-        _directives.Add(directive);
-    }
+    internal void AddDirective(FieldDirective directive) => DirectiveListOps.Add(ref _directives, directive);
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

@@ -356,8 +356,13 @@ public sealed class QueryBuilder
         ArgumentNullException.ThrowIfNull(build);
 
         var fragment = _definition.GetOrAddNamedFragment(name, onType);
+        // Named fragments have no directive storage — directives issue #23 covers are fields and
+        // inline fragments only; fragment-spread directives are deferred alongside issue #20. This
+        // local is a discard: a directive call directly on the top-level builder passed to `build`
+        // is silently dropped, exactly as before this parameter was threaded through.
+        List<FieldDirective>? discardedDirectives = null;
         FieldBuilder.PopulateFragmentSurface($"__named_fragment_{name}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, build, Definition.Variables);
+            ref fragment._fragments, ref fragment._spreadFragments, ref discardedDirectives, build, Definition.Variables);
 
         return this;
     }

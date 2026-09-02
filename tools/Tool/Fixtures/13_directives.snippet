@@ -1,0 +1,16 @@
+// @include/@skip directives via FieldBuilder.IncludeIf/SkipIf (issue #23).
+// Conditionally includes the user's profile fields based on an $expand variable, and skips
+// email based on a separate $hideEmail variable — both Variables auto-promote into the
+// operation's signature.
+var expand = new Variable("$expand", "Boolean!");
+var hideEmail = new Variable("$hideEmail", "Boolean!");
+
+QueryBuilder.CreateDefaultBuilder("GetUser")
+    .AddField("user", u => u
+        .AddField("id")
+        .AddField("name")
+        .AddField("email", e => e.SkipIf(hideEmail))
+        .AddField("profile", p => p
+            .IncludeIf(expand)
+            .AddField("bio")
+            .AddField("avatarUrl")))

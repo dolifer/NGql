@@ -715,7 +715,7 @@ public sealed class FieldBuilder
 
         var fragment = _fieldDefinition.GetOrAddInlineFragment(typeName);
         PopulateFragmentSurface($"__inline_fragment_{typeName}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, action, _variableSink);
+            ref fragment._fragments, ref fragment._spreadFragments, ref fragment._directives, action, _variableSink);
 
         return this;
     }
@@ -732,12 +732,22 @@ public sealed class FieldBuilder
     /// replace the definition with a <c>with</c> record copy, so maps first created after such
     /// a call exist only on the copy. The <c>_children</c> store needs no reflect-back — it is
     /// created non-null up front and `with` copies carry the same reference.
+    /// <para>
+    /// <paramref name="directives"/> writes back <c>IncludeIf</c>/<c>SkipIf</c>/<c>Directive</c>
+    /// calls made directly on the lambda's top-level builder into the caller's own directive store
+    /// — <see cref="OnType"/> passes its <see cref="InlineFragmentDefinition"/>'s <c>_directives</c>
+    /// so directives on an inline fragment (<c>... on Admin @include(if:$a){ … }</c>) survive.
+    /// <see cref="QueryBuilder.AddFragment"/> passes a throwaway local: named-fragment-level
+    /// directives are out of scope until fragment-spread directives ship (tracked alongside issue
+    /// #20), so a call there is a silent no-op today, unchanged from before this parameter existed.
+    /// </para>
     /// </remarks>
     internal static void PopulateFragmentSurface(
         string surfaceName,
         FieldChildren fieldsStore,
         ref Dictionary<string, InlineFragmentDefinition>? fragments,
         ref List<string>? spreadFragments,
+        ref List<FieldDirective>? directives,
         Action<FieldBuilder> action,
         SortedSet<Variable>? variableSink = null)
     {
@@ -746,6 +756,7 @@ public sealed class FieldBuilder
             _children = fieldsStore,
             _fragments = fragments,
             _spreadFragments = spreadFragments,
+            _directives = directives,
         };
 
         var builder = new FieldBuilder(surface, variableSink: variableSink);
@@ -754,6 +765,7 @@ public sealed class FieldBuilder
         var final = builder._fieldDefinition;
         fragments = final._fragments;
         spreadFragments = final._spreadFragments;
+        directives = final._directives;
     }
 
     /// <summary>
@@ -886,6 +898,7 @@ public sealed class FieldBuilder
         }
 
         _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
+        InvalidateMergeMemoIfConditional(normalizedName);
         return this;
     }
 
@@ -913,6 +926,7 @@ public sealed class FieldBuilder
             ["if"] = new Variable(name, "Boolean!"),
         };
         _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+        InvalidateMergeMemoIfConditional(directiveName);
         return this;
     }
 
@@ -935,6 +949,7 @@ public sealed class FieldBuilder
             ["if"] = condition,
         };
         _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+        InvalidateMergeMemoIfConditional(directiveName);
 
         // Same promotion path field-argument Variables already use (Helpers.ExtractVariablesFromValue
         // adds the Variable to the set, deduping via Variable's value equality) rather than a
@@ -949,4 +964,26 @@ public sealed class FieldBuilder
 
     private static bool IsBooleanType(string type)
         => type.Equals("Boolean", StringComparison.Ordinal) || type.Equals("Boolean!", StringComparison.Ordinal);
+
+    // @include/@skip are now merge-identity-relevant (see FieldDefinitionExtensions.CanMergeFields'
+    // conditional-directive check), so attaching/replacing one is exactly the same class of mutation
+    // as Where()'s argument change: it can invalidate this field's OWN memoized deep fingerprint and
+    // every ancestor's, and the field may already be sitting in FieldMergeIndex's fingerprint
+    // sub-buckets under its now-stale value. Mirrors Where()'s three-step invalidation (own memo,
+    // ancestor memos via the possibly-detached-builder chain, global epoch bump) exactly. Gated on
+    // the directive actually being include/skip so a custom Directive("format", …) call — which is
+    // never merge-identity-relevant — pays nothing extra on the hot path.
+    private void InvalidateMergeMemoIfConditional(string directiveName)
+    {
+        if (!directiveName.Equals("include", StringComparison.Ordinal)
+            && !directiveName.Equals("skip", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _fieldDefinition._deepArgumentFingerprint = null;
+        _fieldDefinition._subtreeHasAnyArguments = null;
+        ClearAncestorMergeMemos();
+        FieldDefinition.BumpMergeMemoEpoch();
+    }
 }

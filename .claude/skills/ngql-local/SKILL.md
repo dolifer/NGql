@@ -68,11 +68,22 @@ QueryBuilder.CreateDefaultBuilder("GetUsers")
     .AddField("users", u => u.SpreadFragment("UserCard"))
     .AddField("admins", a => a.SpreadFragment("UserCard"))
 
+// Conditional fields — IncludeIf(variable)/SkipIf(variable) render @include/@skip and
+// auto-promote the Variable into the operation signature, same as a field-argument Variable.
+var expand = new Variable("$expand", "Boolean!");
+QueryBuilder.CreateDefaultBuilder("GetUser")
+    .AddField("user", u => u
+        .AddField("id")
+        .AddField("profile", p => p.IncludeIf(expand).AddField("bio").AddField("avatarUrl")))
+// -> query GetUser($expand:Boolean!){ user{ id profile @include(if:$expand){ avatarUrl bio } } }
+
 // Metadata — via lambda + WithMetadata, NEVER as a positional dict
 .AddField("user", new Dictionary<string, object?> { ["id"] = idVar }, b => b
     .WithMetadata(new Dictionary<string, object> { ["cached"] = true })
     .AddField("name"))
 ```
+
+Calling `IncludeIf`/`SkipIf` twice on the same field is last-call-wins (the later condition replaces the earlier one) — it never emits two `@include`s, which the GraphQL spec forbids. `OnType`'s lambda supports the same two methods for inline-fragment conditions (`... on Admin @include(if:$x){ … }`).
 
 ### `PreservationBuilder`
 
@@ -163,7 +174,7 @@ QueryBuilder.CreateDefaultBuilder("Hello").AddField("world.name")
 |---|---|
 | Inline fragments / union narrowing | ✅ `FieldBuilder.OnType("TypeName", b => …)` |
 | Named fragments (`fragment X on T`, `...X`) | ✅ `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)` |
-| `@include` / `@skip` directives | ❌ — [#23](https://github.com/dolifer/NGql/issues/23). Restructure conditional branches at the C# level. |
+| `@include` / `@skip` directives | ✅ `FieldBuilder.IncludeIf(variable)` / `FieldBuilder.SkipIf(variable)` — also work on `OnType`'s lambda for inline fragments. See the worked example below. |
 | Custom directives | ❌ — file-separately if needed; uncommon in real APIs. |
 | Subscriptions | ❌ — out of scope (transport-layer concern). |
 | `Include` + any fragments | ❌ — throws `NotSupportedException`. Build the merged query without fragments, or apply `Include` *before* adding fragments. |

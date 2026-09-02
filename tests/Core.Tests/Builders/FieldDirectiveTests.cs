@@ -529,4 +529,368 @@ public class FieldDirectiveTests
         query.Should().StartWith("query Q($locale:String!){");
         query.Should().Contain("name @format(locale:$locale)");
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Issue #23 gap-closing tests
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public Task IncludeIf_AndSkipIf_OnSameField_BothRender()
+    {
+        // Arrange & Act — issue #23's "both @include and @skip on the same field" edge case.
+        var a = new Variable("$a", "Boolean!");
+        var b = new Variable("$b", "Boolean!");
+        var qb = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("field", f => f.IncludeIf(a).SkipIf(b));
+
+        // Assert
+        return qb.Verify();
+    }
+
+    [Fact]
+    public void IncludeIf_CalledTwiceWithDifferentVariables_LastCallWins()
+    {
+        // Arrange & Act — issue #23: "Same IncludeIf called twice on the same field: last-call-wins
+        // (not 'two @include directives')". Two @include on one field is spec-invalid (GraphQL
+        // §5.7.3 — a non-repeatable directive may appear at most once per location).
+        var a = new Variable("$a", "Boolean!");
+        var b = new Variable("$b", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("x", f => { f.IncludeIf(a); f.IncludeIf(b); })
+            .ToString();
+
+        // Assert
+        query.Should().Contain("x @include(if:$b)");
+        query.Should().NotContain("if:$a");
+        System.Text.RegularExpressions.Regex.Matches(query, "@include").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void SkipIf_CalledTwiceWithDifferentVariables_LastCallWins()
+    {
+        // Arrange & Act — same last-call-wins contract for @skip.
+        var a = new Variable("$a", "Boolean!");
+        var b = new Variable("$b", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("x", f => { f.SkipIf(a); f.SkipIf(b); })
+            .ToString();
+
+        // Assert
+        query.Should().Contain("x @skip(if:$b)");
+        query.Should().NotContain("if:$a");
+        System.Text.RegularExpressions.Regex.Matches(query, "@skip").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Directive_CalledTwiceWithNameInclude_AlsoCollapsesLastCallWins()
+    {
+        // Arrange & Act — the generic Directive(name, arguments) overload, called directly with the
+        // reserved name "include", must collapse exactly like IncludeIf(Variable) — there is no
+        // entry point that can silently emit two @include directives on one field.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("x", f => f
+                .Directive("include", new Dictionary<string, object?> { ["if"] = new Variable("$a", "Boolean!") })
+                .Directive("include", new Dictionary<string, object?> { ["if"] = new Variable("$b", "Boolean!") }))
+            .ToString();
+
+        // Assert
+        query.Should().Contain("x @include(if:$b)");
+        query.Should().NotContain("if:$a");
+        System.Text.RegularExpressions.Regex.Matches(query, "@include").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void IncludeIf_ThenSkipIf_ThenIncludeIfAgain_PreservesRelativeOrderOnReplace()
+    {
+        // Arrange & Act — last-call-wins replaces IN PLACE (same list position), so the directive
+        // order relative to other directives on the field does not change on replacement.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("x", f => f.IncludeIf(new Variable("$a", "Boolean!"))
+                .SkipIf(new Variable("$b", "Boolean!"))
+                .IncludeIf(new Variable("$c", "Boolean!")))
+            .ToString();
+
+        // Assert — include stays first (now $c), skip stays second, matching original insertion order.
+        query.Should().Contain("x @include(if:$c) @skip(if:$b)");
+    }
+
+    [Theory]
+    [InlineData(MergingStrategy.MergeByFieldPath)]
+    public Task MergeByFieldPath_ConflictingIncludeIfVariables_AutoAliases(MergingStrategy strategy)
+    {
+        // Arrange — issue #23: two fragments requesting the same field path under DIFFERENT
+        // IncludeIf conditions must NOT merge into one node (that would apply one side's condition
+        // to content the other side asked for unconditionally) — same auto-alias behavior as an
+        // argument conflict.
+        var a = new Variable("$a", "Boolean!");
+        var b = new Variable("$b", "Boolean!");
+        var fragmentA = QueryBuilder.CreateDefaultBuilder("A", strategy)
+            .AddField("user", f => { f.IncludeIf(a); f.AddField("id"); });
+        var fragmentB = QueryBuilder.CreateDefaultBuilder("B", strategy)
+            .AddField("user", f => { f.IncludeIf(b); f.AddField("name"); });
+
+        // Act
+        var merged = QueryBuilder.CreateDefaultBuilder("Q", strategy)
+            .Include(fragmentA)
+            .Include(fragmentB);
+
+        // Assert
+        return merged.Verify();
+    }
+
+    [Fact]
+    public void MergeByFieldPath_ConflictingIncludeIfVariables_KeepsFieldsSeparate()
+    {
+        // Arrange — same setup as the Verify test above, asserted via direct string checks so the
+        // "two roots, not one merged node" contract is explicit and doesn't rely on snapshot review.
+        var a = new Variable("$a", "Boolean!");
+        var b = new Variable("$b", "Boolean!");
+        var fragmentA = QueryBuilder.CreateDefaultBuilder("A", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => { f.IncludeIf(a); f.AddField("id"); });
+        var fragmentB = QueryBuilder.CreateDefaultBuilder("B", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => { f.IncludeIf(b); f.AddField("name"); });
+
+        // Act
+        var merged = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .Include(fragmentA)
+            .Include(fragmentB)
+            .ToString();
+
+        // Assert — two separate "user" roots (auto-aliased), each keeping only its own field and
+        // its own condition. Neither root ends up with BOTH id and name.
+        merged.Should().Contain("user @include(if:$a){");
+        merged.Should().Contain("user_1:user @include(if:$b){");
+        System.Text.RegularExpressions.Regex.Matches(merged, "@include").Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void MergeByFieldPath_SameIncludeIfVariable_StillMergesNormally()
+    {
+        // Arrange — two fragments requesting the SAME field under the SAME condition must still
+        // merge into one node (directive identity must not cause a false split when conditions
+        // genuinely match) — this is the conservatism-preserving counterpart to the conflict test.
+        var a = new Variable("$a", "Boolean!");
+        var fragmentA = QueryBuilder.CreateDefaultBuilder("A", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => { f.IncludeIf(a); f.AddField("id"); });
+        var fragmentB = QueryBuilder.CreateDefaultBuilder("B", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => { f.IncludeIf(a); f.AddField("name"); });
+
+        // Act
+        var merged = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .Include(fragmentA)
+            .Include(fragmentB)
+            .ToString();
+
+        // Assert — one merged "user" root carrying both id and name under the single shared condition.
+        merged.Should().Contain("user @include(if:$a){");
+        merged.Should().NotContain("user_1");
+        merged.Should().Contain("id");
+        merged.Should().Contain("name");
+        System.Text.RegularExpressions.Regex.Matches(merged, "@include").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void MergeByFieldPath_IncludeIfVsNoDirective_AutoAliases()
+    {
+        // Arrange — one fragment conditional, the other unconditional, on the same field path: also
+        // a directive-identity conflict (conditional state differs), must auto-alias.
+        var a = new Variable("$a", "Boolean!");
+        var fragmentA = QueryBuilder.CreateDefaultBuilder("A", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => { f.IncludeIf(a); f.AddField("id"); });
+        var fragmentB = QueryBuilder.CreateDefaultBuilder("B", MergingStrategy.MergeByFieldPath)
+            .AddField("user", f => f.AddField("name"));
+
+        // Act
+        var merged = QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath)
+            .Include(fragmentA)
+            .Include(fragmentB)
+            .ToString();
+
+        // Assert
+        merged.Should().Contain("user @include(if:$a){");
+        merged.Should().Contain("user_1:user{");
+        System.Text.RegularExpressions.Regex.Matches(merged, "@include").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreservesIntermediateFieldDirective_AndPromotesVariable()
+    {
+        // Arrange — issue #23: "directives travel with the preserved field. No new API needed."
+        // The directive lives on an INTERMEDIATE node (`user`), not the preserved leaf (`id`).
+        var expand = new Variable("$expand", "Boolean!");
+        var src = QueryBuilder.CreateDefaultBuilder("S")
+            .AddField("user", f => { f.IncludeIf(expand); f.AddField("id"); f.AddField("secret"); });
+
+        // Act
+        var preserved = PreservationBuilder.Create(src).Preserve("user.id").Build().ToString();
+
+        // Assert — the @include directive AND its variable declaration survive; "secret" does not.
+        preserved.Should().StartWith("query S($expand:Boolean!){");
+        preserved.Should().Contain("user @include(if:$expand){");
+        preserved.Should().Contain("id");
+        preserved.Should().NotContain("secret");
+    }
+
+    [Fact]
+    public void PreservationBuilder_PreservesLeafFieldDirective_AndPromotesVariable()
+    {
+        // Arrange — the directive lives on the preserved LEAF itself rather than an ancestor.
+        var hide = new Variable("$hide", "Boolean!");
+        var src = QueryBuilder.CreateDefaultBuilder("S")
+            .AddField("user", f => f.AddField("email", e => e.SkipIf(hide)).AddField("name"));
+
+        // Act
+        var preserved = PreservationBuilder.Create(src).Preserve("user.email").Build().ToString();
+
+        // Assert
+        preserved.Should().StartWith("query S($hide:Boolean!){");
+        preserved.Should().Contain("email @skip(if:$hide)");
+        preserved.Should().NotContain("name");
+    }
+
+    [Fact]
+    public void IncludeIf_VariableWithNonBooleanType_ThrowsAtCallTime()
+    {
+        // Arrange — issue #23's explicit edge case: "Variable not a Boolean: throw at IncludeIf/
+        // SkipIf call time." (Already covered elsewhere in this file for the base case; restated
+        // here as part of the issue's enumerated contract set.)
+        var builder = QueryBuilder.CreateDefaultBuilder("Q");
+        var notBoolean = new Variable("$x", "Int!");
+
+        // Act
+        var act = () => builder.AddField("field", f => f.IncludeIf(notBoolean));
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public Task OnType_IncludeIf_RendersDirectiveOnInlineFragment()
+    {
+        // Arrange & Act — issue #23 Gap 4: "... on Admin @include(if:$a){ … }".
+        var showAdmin = new Variable("$showAdmin", "Boolean!");
+        var qb = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("permissions")));
+
+        // Assert
+        return qb.Verify();
+    }
+
+    [Fact]
+    public void OnType_IncludeIf_RendersDirectiveBetweenTypeConditionAndBrace()
+    {
+        // Arrange & Act
+        var showAdmin = new Variable("$showAdmin", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("permissions")))
+            .ToString();
+
+        // Assert
+        query.Should().Contain("... on Admin @include(if:$showAdmin){");
+        query.Should().StartWith("query Q($showAdmin:Boolean!){");
+    }
+
+    [Fact]
+    public void OnType_SkipIf_RendersDirectiveOnInlineFragment()
+    {
+        // Arrange & Act
+        var hideAdmin = new Variable("$hideAdmin", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad.SkipIf(hideAdmin).AddField("permissions")))
+            .ToString();
+
+        // Assert
+        query.Should().Contain("... on Admin @skip(if:$hideAdmin){");
+    }
+
+    [Fact]
+    public void OnType_DirectiveOnFragment_ExposedOnInlineFragmentDefinition()
+    {
+        // Arrange & Act
+        var showAdmin = new Variable("$showAdmin", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("permissions")));
+
+        var fragment = query.Definition.Fields["node"].InlineFragments["Admin"];
+
+        // Assert
+        fragment.HasDirectives.Should().BeTrue();
+        fragment.Directives.Should().ContainSingle().Which.Name.Should().Be("include");
+    }
+
+    [Fact]
+    public void OnType_WithoutDirective_InlineFragmentHasNoDirectives()
+    {
+        // Arrange & Act
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad.AddField("permissions")));
+
+        var fragment = query.Definition.Fields["node"].InlineFragments["Admin"];
+
+        // Assert
+        fragment.HasDirectives.Should().BeFalse();
+        fragment.Directives.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnType_TwoTypesWithDifferentDirectives_BothIndependentlyRender()
+    {
+        // Arrange & Act — two OnType fragments on the same parent field, each with its own
+        // independent directive, must not leak into each other.
+        var showAdmin = new Variable("$showAdmin", "Boolean!");
+        var showMod = new Variable("$showMod", "Boolean!");
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n
+                .OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("permissions"))
+                .OnType("Moderator", mo => mo.IncludeIf(showMod).AddField("banCount")))
+            .ToString();
+
+        // Assert
+        query.Should().Contain("... on Admin @include(if:$showAdmin){");
+        query.Should().Contain("... on Moderator @include(if:$showMod){");
+    }
+
+    [Fact]
+    public void Include_MergingTwoBuildersWithSameInlineFragmentType_MergesDirectivesAndFields()
+    {
+        // Arrange — two independently-built queries each declare an OnType("Admin", …) fragment
+        // under the SAME parent field path. MergeByDefault merges same-name root fields, which
+        // recurses into merging the two "Admin" inline fragments (same type name) into one —
+        // exercising the inline-fragment merge path for BOTH field bodies and directives together.
+        var showAdmin = new Variable("$showAdmin", "Boolean!");
+        var a = QueryBuilder.CreateDefaultBuilder("A")
+            .AddField("node", n => n.OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("permissions")));
+        var b = QueryBuilder.CreateDefaultBuilder("B")
+            .AddField("node", n => n.OnType("Admin", ad => ad.IncludeIf(showAdmin).AddField("role")));
+
+        // Act
+        var merged = QueryBuilder.CreateDefaultBuilder("Q")
+            .Include(a)
+            .Include(b)
+            .ToString();
+
+        // Assert — one merged "Admin" fragment carrying both fields and the (identical, deduped)
+        // directive exactly once.
+        merged.Should().Contain("... on Admin @include(if:$showAdmin){");
+        merged.Should().Contain("permissions");
+        merged.Should().Contain("role");
+        System.Text.RegularExpressions.Regex.Matches(merged, "@include").Should().HaveCount(1);
+        System.Text.RegularExpressions.Regex.Matches(merged, "\\.\\.\\. on Admin").Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void OnType_CustomDirectiveCalledTwiceIdentically_DedupsStructurally()
+    {
+        // Arrange & Act — a repeatable (non-include/skip) directive called twice with identical
+        // arguments on an inline fragment must dedup, exactly like on a plain field.
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("node", n => n.OnType("Admin", ad => ad
+                .Directive("cacheable")
+                .Directive("cacheable")
+                .AddField("permissions")))
+            .ToString();
+
+        // Assert
+        System.Text.RegularExpressions.Regex.Matches(query, "@cacheable").Should().HaveCount(1);
+    }
 }

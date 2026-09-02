@@ -1,0 +1,7 @@
+﻿query Q($showAdmin:Boolean!){
+    node{
+        ... on Admin @include(if:$showAdmin){
+            permissions
+        }
+    }
+}

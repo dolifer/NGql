@@ -1,0 +1,8 @@
+﻿query Q($a:Boolean!, $b:Boolean!){
+    user @include(if:$a){
+        id
+    }
+    user_1:user @include(if:$b){
+        name
+    }
+}

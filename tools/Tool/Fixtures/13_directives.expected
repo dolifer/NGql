@@ -1,0 +1,11 @@
+query GetUser($expand:Boolean!, $hideEmail:Boolean!){
+    user{
+        email @skip(if:$hideEmail)
+        id
+        name
+        profile @include(if:$expand){
+            avatarUrl
+            bio
+        }
+    }
+}

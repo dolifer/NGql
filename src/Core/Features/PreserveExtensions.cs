@@ -222,7 +222,8 @@ internal static class PreserveExtensions
     }
 
     /// <summary>
-    /// Creates a shallow clone of a field without its children, preserving arguments and metadata.
+    /// Creates a shallow clone of a field without its children, preserving arguments, metadata,
+    /// and directives.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition CloneFieldWithoutChildren(FieldDefinition source)
@@ -250,6 +251,16 @@ internal static class PreserveExtensions
                 cloned.Metadata[meta.Key] = meta.Value;
             }
         }
+
+        // An intermediate node on a preserved path (e.g. "user" when preserving "user.id") can
+        // itself carry a conditional include/skip directive that gates the whole subtree beneath
+        // it — dropping it here would silently make the preserved projection unconditional where
+        // the source was conditional. FieldDirective is an immutable record, so sharing the list
+        // entries is safe; only the LIST needs to be a fresh instance so mutating the clone's
+        // directives can never reach back into the source.
+        cloned._directives = source._directives is { Count: > 0 }
+            ? new List<FieldDirective>(source._directives)
+            : null;
 
         return cloned;
     }
@@ -295,11 +306,28 @@ internal static class PreserveExtensions
         }
     }
 
+    // A preserved field's conditional-include directive — or any custom directive carrying a
+    // Variable argument — must keep its variable declared in the projected query's signature,
+    // exactly like a field argument does. Without this, a preserved field with an include/skip
+    // condition would render referencing a variable never declared, which a GraphQL server rejects.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Plain foreach avoids a Where enumerator allocation on the preservation hot path.")]
     private static void ExtractVariablesFromField(FieldDefinition field, SortedSet<Variable> variables)
     {
         if (field._arguments?.Count > 0)
         {
             Helpers.ExtractVariablesFromValue(field._arguments, variables);
+        }
+        if (field._directives is { Count: > 0 } directives)
+        {
+            foreach (var directive in directives)
+            {
+                if (directive.Arguments is { Count: > 0 })
+                {
+                    Helpers.ExtractVariablesFromValue(directive.Arguments, variables);
+                }
+            }
         }
         if (field._children is { Count: > 0 })
         {

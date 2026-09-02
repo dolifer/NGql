@@ -8,9 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ### Added
 - **Named fragment generation** via `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)`. With NGql 2.2 shipping the underlying API, the Skill drops named fragments from the gap table and adds a worked example covering the canonical "DRY across multiple use sites" use case. EVAL prompt #16 (users + admins with shared selection) flips from "refuses to generate" to "generates clean snippet using `AddFragment` + `SpreadFragment`."
+- **Conditional field generation** via `FieldBuilder.IncludeIf(variable)` / `SkipIf(variable)`. With NGql 2.2 shipping the underlying API (closing [issue #23](https://github.com/dolifer/NGql/issues/23)), the Skill drops `@include`/`@skip` from the gap table and adds a worked example: conditionally including a user's profile fields based on an `$expand` variable. EVAL prompt #10 (add `@include(if: $verbose)` to a field) flips from "refuses/restructures" to "generates clean snippet using `IncludeIf`." New EVAL prompt #17 exercises `IncludeIf` + variable auto-hoisting into the operation signature specifically.
 
 ### Changed
-- Feature-gaps table updated: directives now point at issue #23 (the focused `@include`/`@skip` issue, not a generic directives gap), and `Include` + fragments is added as an explicit gap with a clear workaround note since the library now throws `NotSupportedException` instead of silently dropping fragments during `Include`.
+- Feature-gaps table updated: `@include`/`@skip` directives move from ❌ to ✅ now that issue #23 has shipped (custom directives remain out of scope — file separately if needed), and `Include` + fragments is added as an explicit gap with a clear workaround note since the library now throws `NotSupportedException` instead of silently dropping fragments during `Include`.
 
 ## [1.0.0] - 2026-05-04
 

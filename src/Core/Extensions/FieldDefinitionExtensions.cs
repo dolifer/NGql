@@ -11,7 +11,8 @@ namespace NGql.Core.Extensions;
 internal static class FieldDefinitionExtensions
 {
     /// <summary>
-    /// Determines if two fields can be merged based on their structure and arguments.
+    /// Determines if two fields can be merged based on their structure, arguments, and
+    /// conditional-include state (<c>@include</c>/<c>@skip</c> — see <see cref="AreConditionalDirectivesEqual"/>).
     /// The recursion is bounded by the field tree's depth — the public API does not allow
     /// constructing cyclic trees (FieldDefinition.Fields is get-only, _children is internal),
     /// so the recursion always terminates. A library bug introducing a cycle would surface as
@@ -21,8 +22,66 @@ internal static class FieldDefinitionExtensions
     {
         if (!Helpers.AreArgumentsEqual(existingField._arguments, incomingField._arguments))
             return false;
+        if (!AreConditionalDirectivesEqual(existingField, incomingField))
+            return false;
         return AreNestedFieldsCompatible(existingField, incomingField);
     }
+
+    /// <summary>
+    /// Compares the <c>@include</c>/<c>@skip</c> conditional state of two fields — the part of a
+    /// field's directive list that is MERGE-IDENTITY-RELEVANT. Two fragments requesting the same
+    /// field path under different runtime conditions (different <c>if</c> variables, or one
+    /// conditional and one not) are not the same field for merge purposes: collapsing them into one
+    /// node would apply one side's condition to content the other side asked for unconditionally.
+    /// Custom directives (added via the generic <see cref="Builders.FieldBuilder.Directive(string, System.Collections.Generic.Dictionary{string, object?})"/>
+    /// overload, excluding the reserved <c>include</c>/<c>skip</c> names) are intentionally NOT part
+    /// of this comparison — they stay repeatable/mergeable exactly as before, matching the issue's
+    /// scope (only <c>@include</c>/<c>@skip</c> are constrained here).
+    /// </summary>
+    private static bool AreConditionalDirectivesEqual(FieldDefinition existingField, FieldDefinition incomingField)
+    {
+        var existingInclude = FindConditional(existingField._directives, "include");
+        var incomingInclude = FindConditional(incomingField._directives, "include");
+        if (!AreDirectivesStructurallyEqual(existingInclude, incomingInclude)) return false;
+
+        var existingSkip = FindConditional(existingField._directives, "skip");
+        var incomingSkip = FindConditional(incomingField._directives, "skip");
+        return AreDirectivesStructurallyEqual(existingSkip, incomingSkip);
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "The plain loop short-circuits on first match without allocating an enumerator on the merge-identity hot path.")]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static FieldDirective? FindConditional(List<FieldDirective>? directives, string name)
+    {
+        if (directives is not { Count: > 0 }) return null;
+        foreach (var directive in directives)
+        {
+            if (string.Equals(directive.Name, name, StringComparison.Ordinal)) return directive;
+        }
+        return null;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool AreDirectivesStructurallyEqual(FieldDirective? a, FieldDirective? b)
+    {
+        if (a is null || b is null) return a is null && b is null;
+        return a.IsStructurallyEqualTo(b);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="field"/> carries an <c>@include</c> or <c>@skip</c> directive on its
+    /// own node. Folded into <see cref="HasAnyArguments"/>/<see cref="SubtreeHasAnyArguments"/> so a
+    /// child that differs ONLY by conditional-include state (no arguments anywhere) is still treated
+    /// as merge-identity-significant — otherwise <see cref="IsIncomingChildCompatible"/>/
+    /// <see cref="IsExistingExtraCompatible"/>'s argument-free early-out would silently accept a
+    /// mismatched condition as "absent, therefore compatible".
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool HasConditionalDirectives(FieldDefinition field)
+        => field._directives is { Count: > 0 } directives
+        && (FindConditional(directives, "include") is not null || FindConditional(directives, "skip") is not null);
 
     private static bool AreNestedFieldsCompatible(FieldDefinition existingField, FieldDefinition incomingField)
         => IncomingChildrenCompatible(existingField._children, incomingField._children)
@@ -47,6 +106,7 @@ internal static class FieldDefinitionExtensions
         var existingChild = FindChildByNameAndAlias(existingChildren, incomingChild);
         if (existingChild is null) return !HasAnyArguments(incomingChild);
         return Helpers.AreArgumentsEqual(existingChild._arguments, incomingChild._arguments)
+            && AreConditionalDirectivesEqual(existingChild, incomingChild)
             && AreNestedFieldsCompatible(existingChild, incomingChild);
     }
 
@@ -86,11 +146,20 @@ internal static class FieldDefinitionExtensions
         return FindChildByNameAndAlias(incomingChildren, existingChild) is not null || !HasAnyArguments(existingChild);
     }
 
+    // Named "HasAnyArguments" historically (pre-directives), but the memoized flag actually answers
+    // a broader question: "is this subtree merge-identity-significant beyond bare structure?" —
+    // which now includes conditional-include state, not just arguments. Folding
+    // HasConditionalDirectives in here (rather than a parallel memoized flag) means every existing
+    // caller — the fingerprint short-circuit, ExistingExtrasCompatible's early-out, ancestor
+    // invalidation — picks up directive-significance for free, with the same invalidation contract
+    // (ClearMergeMemo) that already covers argument mutations.
     private static bool SubtreeHasAnyArguments(FieldDefinition field)
     {
         if (field._subtreeHasAnyArguments is { } cached) return cached;
 
-        var result = field._arguments is { Count: > 0 } || AnyChildHasArguments(field._children);
+        var result = field._arguments is { Count: > 0 }
+            || HasConditionalDirectives(field)
+            || AnyChildHasArguments(field._children);
         field._subtreeHasAnyArguments = result;
         return result;
     }
@@ -170,13 +239,62 @@ internal static class FieldDefinitionExtensions
             return constantResult;
         }
 
-        var ownArgsFp = Helpers.ComputeArgumentFingerprint(field._arguments);
+        var ownArgsFp = CombineDeepHash(Helpers.ComputeArgumentFingerprint(field._arguments), ConditionalDirectiveFingerprint(field));
         var childrenFp = DeepChildrenFingerprint(field._children);
         var result = CombineDeepHash(ownArgsFp, childrenFp);
 
         field._deepArgumentFingerprint = result;
         return result;
     }
+
+    // Distinct sentinel folded in when a field carries NEITHER @include nor @skip, so an
+    // include/skip-bearing field's fingerprint can never coincide with one that reuses the same
+    // combined value by coincidence of the two directives' own fingerprints XORing to the "absent"
+    // marker's bit pattern (defense in depth — CombineDeepHash's FNV mixing already makes this
+    // astronomically unlikely, but a named sentinel makes the "absent" case an explicit branch
+    // rather than an emergent zero).
+    private const ulong NoConditionalDirectiveSentinel = 0xA24BAED4963EE889UL;
+
+    /// <summary>
+    /// Conservative fingerprint contribution for <paramref name="field"/>'s OWN <c>@include</c>/
+    /// <c>@skip</c> state, folded into <see cref="ComputeDeepFingerprint"/>'s own-node hash exactly
+    /// like <see cref="Helpers.ComputeArgumentFingerprint"/> folds in arguments. Must uphold the same
+    /// conservatism contract: <see cref="AreConditionalDirectivesEqual"/> considering two fields
+    /// equal MUST imply this returns the same value for both — reuses
+    /// <see cref="Helpers.ComputeArgumentFingerprint"/> directly on each directive's (already
+    /// case-insensitively sorted — see <see cref="FieldDirective"/>'s constructor)
+    /// <see cref="FieldDirective.Arguments"/>, which is already proven conservative for arbitrary
+    /// argument shapes (nested dictionaries, lists, and unrecognized value types all fold into the
+    /// shared conservative sentinel rather than risk a false inequality).
+    /// </summary>
+    private static ulong ConditionalDirectiveFingerprint(FieldDefinition field)
+    {
+        if (field._directives is not { Count: > 0 } directives) return NoConditionalDirectiveSentinel;
+
+        var include = FindConditional(directives, "include");
+        var skip = FindConditional(directives, "skip");
+        if (include is null && skip is null) return NoConditionalDirectiveSentinel;
+
+        // "include" and "skip" are hashed under distinct salts so `@include(if:$x)` alone and
+        // `@skip(if:$x)` alone (same underlying argument shape, different directive name) never
+        // collide into the same contribution — mirroring how ComputeArgumentFingerprint folds the
+        // KEY hash in alongside the value hash rather than hashing values alone.
+        var includeFp = include is { } inc
+            ? CombineDeepHash((ulong)"include".GetHashCode(StringComparison.Ordinal), ArgumentsFingerprint(inc.Arguments))
+            : 0UL;
+        var skipFp = skip is { } sk
+            ? CombineDeepHash((ulong)"skip".GetHashCode(StringComparison.Ordinal), ArgumentsFingerprint(sk.Arguments))
+            : 0UL;
+
+        return CombineDeepHash(includeFp, skipFp);
+    }
+
+    // FieldDirective's constructor always routes arguments through Helpers.SortArgumentValue into a
+    // case-insensitive SortedDictionary (see FieldDirective.NormalizeArguments) or leaves Arguments
+    // null for an empty/absent dictionary — there is no public construction path that produces any
+    // other concrete type, so the cast below is unconditionally safe.
+    private static ulong ArgumentsFingerprint(IReadOnlyDictionary<string, object?>? arguments)
+        => Helpers.ComputeArgumentFingerprint((SortedDictionary<string, object?>?)arguments);
 
     private static ulong DeepChildrenFingerprint(FieldChildren? children)
     {
@@ -213,9 +331,16 @@ internal static class FieldDefinitionExtensions
         return false;
     }
 
+    // Un-memoized counterpart of SubtreeHasAnyArguments, used at the "child missing from the other
+    // side entirely" leaf checks in IsIncomingChildCompatible/IsExistingExtraCompatible. Must apply
+    // the exact same significance rule (arguments OR conditional directives OR a significant
+    // descendant) — a child differing only by @include/@skip, with no arguments anywhere in its
+    // subtree, must not be treated as "absent, therefore compatible" any more than an
+    // argument-bearing child would be.
     private static bool HasAnyArguments(FieldDefinition field)
     {
         if (field._arguments is { Count: > 0 }) return true;
+        if (HasConditionalDirectives(field)) return true;
         if (field._children is null) return false;
         foreach (var child in field._children.AsSpan())
         {
@@ -271,6 +396,13 @@ internal static class FieldDefinitionExtensions
         var clone = new InlineFragmentDefinition(source.TypeName);
         CloneFragmentBody(source._fields, source._fragments, source._spreadFragments,
             out clone._fields, out clone._fragments, out clone._spreadFragments);
+
+        // FieldDirective is an immutable record — sharing entries is safe; only the LIST needs to
+        // be a fresh instance so mutating the clone's directives can never reach back into source.
+        clone._directives = source._directives is { Count: > 0 }
+            ? new List<FieldDirective>(source._directives)
+            : null;
+
         return clone;
     }
 
@@ -397,6 +529,14 @@ internal static class FieldDefinitionExtensions
         }
 
         MergeSpreadListInPlace(ref existing._spreadFragments, incoming._spreadFragments);
+
+        if (incoming._directives is { Count: > 0 } incomingDirectives)
+        {
+            foreach (var directive in incomingDirectives)
+            {
+                existing.AddDirective(directive);
+            }
+        }
     }
 
     private static void MergeSpreadsInPlace(FieldDefinition existing, List<string>? incomingSpreads)
@@ -455,43 +595,28 @@ internal static class FieldDefinitionExtensions
         }
     }
 
-    // Appends incoming directives in order. FieldDirective is an immutable record, so the shared
-    // reference is safe — no clone needed. A structurally-identical directive already present is
-    // skipped: merging two queries that each place the SAME directive on a same-path field must not
-    // emit it twice (e.g. `@include(if:$x) @include(if:$x)`), which non-repeatable directives like
-    // @include/@skip make spec-invalid. Dedup is STRUCTURAL — record equality compares Arguments by
-    // reference, so two independent `@include(if:$x)` instances are never record-equal. Directives
-    // that differ (different name, or different args) are all kept.
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "ContainsStructurallyEqual is the filter AND List.Add the side effect; a Where(!Contains) would hide the mutation and allocate an enumerator on the merge path.")]
+    // Appends incoming directives in order via FieldDefinition.AddDirective — the same entry point
+    // IncludeIf/SkipIf/Directive use, so merge gets the identical dedup AND last-call-wins collapse
+    // rules for free: a structurally-identical directive already present is skipped (merging two
+    // queries that each place the SAME directive on a same-path field must not emit it twice), and
+    // for the two non-repeatable, spec-constrained names (`include`/`skip`) a differing incoming
+    // directive REPLACES the existing one in place rather than appending — never emitting the
+    // spec-invalid `@include(if:$x) @include(if:$x)` shape. Under MergeByFieldPath this branch is
+    // only reached once CanMergeFields has already confirmed both sides carry the SAME conditional
+    // state (see CanMergeFields's directive-identity check), so the replace path is unreachable
+    // there in practice; under MergeByDefault, which merges same-name fields unconditionally, a
+    // differing incoming @include/@skip legitimately overwrites the existing one — consistent with
+    // how MergeByDefault already lets incoming field arguments silently override existing ones.
+    // FieldDirective is an immutable record, so the shared reference is safe to hand to AddDirective
+    // without cloning.
     private static void MergeDirectivesInPlace(FieldDefinition existing, List<FieldDirective>? incomingDirectives)
     {
         if (incomingDirectives is not { Count: > 0 }) return;
 
-        existing._directives ??= new List<FieldDirective>();
         foreach (var incoming in incomingDirectives)
         {
-            if (!ContainsStructurallyEqual(existing._directives, incoming))
-            {
-                existing._directives.Add(incoming);
-            }
+            existing.AddDirective(incoming);
         }
-    }
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "A Where(IsStructurallyEqualTo).Any() would allocate an enumerator on the merge hot path; the plain loop short-circuits without allocation.")]
-    private static bool ContainsStructurallyEqual(List<FieldDirective> directives, FieldDirective candidate)
-    {
-        foreach (var existing in directives)
-        {
-            if (existing.IsStructurallyEqualTo(candidate))
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static void ThrowIfTypesConflict(FieldDefinition existing, FieldDefinition incoming)
