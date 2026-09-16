@@ -16,7 +16,7 @@ internal sealed class QueryTextBuilder
     private QueryTextBuilder() => _stringBuilder = new StringBuilder();
 
     private const int IndentSize = 4;
-    private const int MaxBuilderCapacity = 256 * 1024;  // 256KB threshold before reset
+    private const int MaxBuilderCapacity = 256 * 1024; // UTF-16 characters, not bytes
 
     // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
     private static readonly string[] PaddingCache = new string[20];
@@ -75,9 +75,8 @@ internal sealed class QueryTextBuilder
     /// </summary>
     internal static void ReturnToPool(QueryTextBuilder builder)
     {
-        builder._stringBuilder.Clear();
-
-        // Don't repool builders that have grown too large (prevents memory leak)
+        // Reject before Clear: clearing a multi-chunk builder can allocate a large
+        // contiguous buffer that would immediately be discarded.
         if (builder._stringBuilder.Capacity > MaxBuilderCapacity)
         {
             return;
@@ -86,6 +85,7 @@ internal sealed class QueryTextBuilder
         var stack = SharedBuilderStack.Value!;
         if (stack.Count < MaxPooledBuilders)
         {
+            builder._stringBuilder.Clear();
             stack.Push(builder);
         }
         // If pool is full, let GC handle it
@@ -330,6 +330,11 @@ internal sealed class QueryTextBuilder
         // field(s). Rent, copy, render, clear and return all key off this single snapshot's length.
         var span = children.AsSpan();
         var count = span.Length;
+        if (count <= 1)
+        {
+            RenderFields(span, indent);
+            return;
+        }
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
         try
         {
@@ -372,11 +377,15 @@ internal sealed class QueryTextBuilder
     private void RenderSortedFields(FieldDefinition[] arr, int count, int indent)
     {
         Array.Sort(arr, 0, count, FieldSortComparer);
+        RenderFields(arr.AsSpan(0, count), indent);
+    }
+
+    private void RenderFields(ReadOnlySpan<FieldDefinition> fields, int indent)
+    {
         var padding = GetPadding(indent);
 
-        for (int j = 0; j < count; j++)
+        foreach (var field in fields)
         {
-            var field = arr[j];
             _stringBuilder.Append(padding);
 
             if (field.Alias != null)

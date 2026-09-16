@@ -203,15 +203,29 @@ internal static class ValueFormatter
 
     /// <summary>Formats <paramref name="value"/> with invariant culture. Used for
     /// float/double/decimal — none of those produce strings longer than the BCL guarantees.</summary>
-    private static void AppendFormattable(StringBuilder builder, IFormattable value)
-        => builder.Append(value.ToString(null, CultureInfo.InvariantCulture));
+    private static void AppendFormattable<T>(StringBuilder builder, T value, ReadOnlySpan<char> format = default)
+        where T : ISpanFormattable
+    {
+        // Enough for the supported numeric types and DateFormat. The fallback keeps this
+        // helper safe if another format or value type is introduced later.
+        Span<char> buffer = stackalloc char[64];
+        if (value.TryFormat(buffer, out var written, format, CultureInfo.InvariantCulture))
+        {
+            builder.Append(buffer[..written]);
+        }
+        else
+        {
+            builder.Append(value.ToString(format.IsEmpty ? null : format.ToString(), CultureInfo.InvariantCulture));
+        }
+    }
 
     /// <summary>Formats <paramref name="value"/> with the NGql DateFormat and quotes it.
     /// Used for DateTime/DateTimeOffset.</summary>
-    private static void AppendQuotedFormattable(StringBuilder builder, IFormattable value)
+    private static void AppendQuotedFormattable<T>(StringBuilder builder, T value)
+        where T : ISpanFormattable
     {
         builder.Append('"');
-        builder.Append(value.ToString(DateFormat, CultureInfo.InvariantCulture));
+        AppendFormattable(builder, value, DateFormat);
         builder.Append('"');
     }
 }
