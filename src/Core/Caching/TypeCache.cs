@@ -88,6 +88,9 @@ internal static class TypeMetadataCache
     /// </summary>
     internal static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
 
+    internal static PropertyInfo[] GetObjectProperties(Type type)
+        => ObjectPropertyCache.GetOrAdd(type, static t => t.GetProperties());
+
     /// <summary>
     /// Caches the public-instance property metadata used by navigation-property expansion, so
     /// repeated <c>PreserveFromExpression&lt;T&gt;</c> calls don't re-walk the same type. The entry

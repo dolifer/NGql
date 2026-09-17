@@ -78,13 +78,83 @@ BenchmarkDotNet ShortRun results on .NET 9.0.9:
 | 1,000 unrelated preservation paths | 501.3 µs | 40.3 µs | 97,188 | 73,192 |
 | 1,000 signed integers | 10.7 µs | 14.7 µs | 12,032 | 12,032 |
 
-The integer path is slower because it now guarantees GraphQL's ASCII minus sign
-under cultures with a custom negative sign. It creates no additional managed
+The invariant integer implementation measured slower in this run and guarantees
+GraphQL's ASCII minus sign under cultures with a custom negative sign. This is
+an observed implementation cost, not proof that invariant formatting must be slower.
+It creates no additional managed
 allocations. Root-variable lookup is now logarithmic per variable instead of
 scanning every argument value. Preservation probes only dotted ancestors; .NET 9
-and later use allocation-free alternate hash-set lookups. The .NET 8 fallback
-measured 66.5 µs and 208,368 bytes for 1,000 paths, versus 481.0 µs and 97,184
-bytes before; its temporary prefix strings trade memory for a large CPU reduction.
+and later use allocation-free alternate hash-set lookups.
+
+A corrected .NET 8.0.23 measurement of the committed preservation implementation
+gives 35.2 µs and 73,192 bytes for 1,000 paths, versus 481.0 µs and 97,184 bytes
+before. At 10 paths it gives 308.5 ns and 800 bytes, versus 254.0 ns and 1,032
+bytes before. The earlier report's 66.5 µs / 208,368-byte result belonged to an
+intermediate implementation and has been replaced. The committed minimum-path-
+length check avoids prefix allocations for this sibling-path workload; mixed
+depths can still allocate lookup strings on .NET 8. The corrected run used three
+warmup and three measurement iterations, with raw reports in
+`/tmp/ngql-preservation-verified-net8`.
+
+## UTF-8 and argument allocation pass
+
+Baseline: `b837e1f`. Three additional changes:
+
+- UTF-8 output uses `Encoding.UTF8.GetBytes` directly when the rendered text is
+  contained in one builder chunk, avoiding an encoder allocation. Multiple chunks
+  still share a stateful encoder so split surrogate pairs are preserved.
+- Variable extraction, object normalization, structural comparison and rendering
+  share the existing property-metadata cache. Property values are still read on
+  every operation. This saves repeated metadata-array allocations, at the cost of
+  retaining one metadata entry per encountered type; cold cache and collectible
+  assembly behavior are not measured here.
+- List normalization reserves capacity when the input exposes its count without
+  enumeration. Unknown-length inputs retain the growing-list behavior. The change
+  removes intermediate backing arrays and their copies.
+
+Measured on the same Apple M4 and .NET 9.0.9 with BenchmarkDotNet 0.15.7,
+five warmups and eight measurement iterations. Tests and benchmarks ran separately.
+The UTF-8 benchmarks reuse a caller-owned output buffer; setup and cache warmup
+are excluded. The large case contains a 10,000-character argument. Reported
+allocations cover the entire benchmark operation, not just the changed helper.
+
+| Scenario | Before mean | After, first run | After, repeat | Bytes/op before → after |
+| --- | ---: | ---: | ---: | ---: |
+| Small UTF-8 query | 101.4 ns | 106.8 ns | 97.6 ns | 48 → 0 |
+| Large UTF-8 query | 5.081 µs | 7.533 µs | 5.347 µs | 176 → 128 |
+| Object-argument query construction | 886.8 ns | 1,023.9 ns | 768.1 ns | 2,488 → 2,376 |
+
+Both after runs produced the same allocations. CPU results varied substantially
+between runs, including changes in direction, so these two optimizations are
+accepted for their demonstrated allocation reductions; a CPU speedup is not
+established. In particular, no throughput improvement is claimed for large UTF-8
+queries. The 48-byte saving depends on builder chunk shape; multi-chunk output
+still needs its encoder.
+
+| List normalization | Before mean | After mean | Bytes/op before → after |
+| --- | ---: | ---: | ---: |
+| 10 items | 225.2 ns | 194.1 ns | 624 → 432 |
+| 1,000 items | 7.669 µs | 6.743 µs | 16,896 → 8,352 |
+
+List allocation decreased 31% and 51%, respectively. Observed mean time decreased
+14% and 12%, though the 99.9% timing confidence intervals overlap. Allocation
+savings are stronger evidence than the timing percentages. These measurements do
+not establish a reduction in whole-process retained heap or service CPU usage.
+
+Validation: 2,067 unit tests and 91 integration tests pass on each of .NET 8,
+.NET 9 and .NET 10. New coverage checks unpaired-surrogate replacement encoding
+and verifies that metadata reuse does not cache mutable object values or variables.
+
+```sh
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*AllocationHotspotBenchmark*' --job short --warmupCount 5 --iterationCount 8 --inProcess --artifacts /tmp/ngql-hotspots
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*ListArgumentBenchmark*' --job short --warmupCount 5 --iterationCount 8 --inProcess --artifacts /tmp/ngql-lists
+```
+
+To reproduce the baseline, copy the two new benchmark source files into a checkout
+of `b837e1f` and run the same commands. Raw reports for this pass are under
+`/tmp/ngql-hotspots-before-net9`, `/tmp/ngql-hotspots-after-net9`,
+`/tmp/ngql-hotspots-repeat-net9`, `/tmp/ngql-lists-before-net9` and
+`/tmp/ngql-lists-after-net9`.
 
 ## Further opportunities and tradeoffs
 
@@ -96,9 +166,6 @@ These are source-level findings, not measured improvements in this change:
 - **Merge-index invalidation:** a static, process-wide merge-memo epoch invalidates
   fingerprint buckets in unrelated query definitions. Per-definition versioning
   could reduce cross-query cache churn and atomic traffic under concurrency.
-- **Argument reflection:** variable extraction and argument normalization call
-  `Type.GetProperties()` separately for arbitrary objects. Sharing cached metadata
-  would reduce reflection work without changing the legacy inclusion API.
 - **Root selection rendering:** root dictionaries containing one field still rent,
   populate, clear and return a sort buffer. A direct single-entry path can mirror
   the nested-field optimization already implemented.

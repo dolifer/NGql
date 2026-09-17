@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 using NGql.Core.Abstractions;
+using NGql.Core.Caching;
 
 namespace NGql.Core.Extensions;
 
@@ -81,7 +82,7 @@ internal static class Helpers
     {
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(obj)) return; // cycle detected
-        var properties = obj.GetType().GetProperties();
+        var properties = TypeMetadataCache.GetObjectProperties(obj.GetType());
         foreach (var property in properties)
         {
             var propertyValue = property.GetValue(obj);
@@ -292,7 +293,7 @@ internal static class Helpers
         // SortedDictionary orders by its comparer on insert — pre-sorting the properties or
         // staging them in an intermediate Dictionary is wasted work.
         var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in obj.GetType().GetProperties())
+        foreach (var property in TypeMetadataCache.GetObjectProperties(obj.GetType()))
         {
             // Add (not the indexer): property names colliding under OrdinalIgnoreCase must
             // throw — reflection order is unspecified, so last-wins would be nondeterministic.
@@ -308,7 +309,7 @@ internal static class Helpers
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static List<object?> SortListItems(IEnumerable<object> list)
     {
-        var result = new List<object?>();
+        var result = new List<object?>(list.TryGetNonEnumeratedCount(out var count) ? count : 0);
         foreach (var item in list)
         {
             result.Add(SortArgumentValue(item));
@@ -506,7 +507,7 @@ internal static class Helpers
     private static bool AreObjectsStructurallyEqual(object obj1, object obj2)
     {
         var type = obj1.GetType();
-        var properties = type.GetProperties();
+        var properties = TypeMetadataCache.GetObjectProperties(type);
 
         foreach (var property in properties)
         {

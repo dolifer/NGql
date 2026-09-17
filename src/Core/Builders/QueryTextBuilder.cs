@@ -201,19 +201,32 @@ internal sealed class QueryTextBuilder
     // stateful encoder — flushing only on the final chunk — reassembles the pair correctly.
     private void WriteBuilderToUtf8(IBufferWriter<byte> bufferWriter)
     {
+        var chunks = _stringBuilder.GetChunks();
+        if (!chunks.MoveNext()) return;
+
+        var first = chunks.Current;
+        if (!chunks.MoveNext())
+        {
+            var destination = bufferWriter.GetSpan(Encoding.UTF8.GetMaxByteCount(first.Length));
+            var written = Encoding.UTF8.GetBytes(first.Span, destination);
+            bufferWriter.Advance(written);
+            return;
+        }
+
         var encoder = Encoding.UTF8.GetEncoder();
 
         // GetChunks exposes no count, so track the last chunk by comparing against the total length
         // consumed. Flush must happen exactly once, on the final Convert call, so any trailing
         // high-surrogate left dangling by malformed input is emitted rather than silently swallowed.
-        var remaining = _stringBuilder.Length;
-        foreach (var chunk in _stringBuilder.GetChunks())
+        var remaining = _stringBuilder.Length - first.Length;
+        EncodeChunk(encoder, first.Span, false, bufferWriter);
+        do
         {
-            var chars = chunk.Span;
+            var chars = chunks.Current.Span;
             remaining -= chars.Length;
             var isLast = remaining == 0;
             EncodeChunk(encoder, chars, isLast, bufferWriter);
-        }
+        } while (chunks.MoveNext());
     }
 
     private static void EncodeChunk(Encoder encoder, ReadOnlySpan<char> chars, bool flush, IBufferWriter<byte> bufferWriter)
@@ -727,7 +740,7 @@ internal sealed class QueryTextBuilder
 
     private static void WriteObjectReflection(StringBuilder builder, object value, Type valueType)
     {
-        var props = TypeMetadataCache.ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
+        var props = TypeMetadataCache.GetObjectProperties(valueType);
         builder.Append('{');
         bool first = true;
         foreach (var prop in props)
