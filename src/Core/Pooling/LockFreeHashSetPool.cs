@@ -8,11 +8,12 @@ namespace NGql.Core.Pooling;
 internal static class LockFreeHashSetPool
 {
     private const int MaxSize = 128; // Prevent memory bloat from large sets
+    private const int MaxCapacity = 256;
 
     private static readonly ThreadLocalPool<HashSet<string>> _pool = new(
         factory: () => new HashSet<string>(StringComparer.OrdinalIgnoreCase),
         reset: set => set.Clear(),
-        validateForReturn: set => set.Count <= MaxSize, // Skip very large sets to prevent memory bloat
+        validateForReturn: set => set.Count <= MaxSize && set.EnsureCapacity(0) <= MaxCapacity,
         poolName: "hashset"
     );
 

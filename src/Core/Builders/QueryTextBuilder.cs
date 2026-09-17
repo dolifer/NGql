@@ -817,40 +817,51 @@ internal sealed class QueryTextBuilder
 
     private void AddArguments(QueryBlock queryBlock, bool isRootElement)
     {
-        // GetArguments allocates a fresh SortedDictionary; skip it entirely when nothing can
-        // render — no explicit arguments, and no root variables that would be injected.
-        // Whenever it IS called, the result is non-empty: explicit arguments are copied over,
-        // and root variables are injected for any names not already present.
         if (queryBlock.Arguments.Count == 0 && (!isRootElement || queryBlock.Variables.Count == 0))
         {
             return;
         }
 
         var arguments = queryBlock.GetArguments(isRootElement);
-
         _stringBuilder.Append('(');
-
-        bool first = true;
-        foreach (var (key, value) in arguments)
+        if (arguments.Count == 1)
         {
-            if (!first)
+            foreach (var (key, value) in arguments) AppendArgument(key, value, isRootElement);
+            _stringBuilder.Append(')');
+            return;
+        }
+
+        var keys = ArrayPool<string>.Shared.Rent(arguments.Count);
+        try
+        {
+            arguments.Keys.CopyTo(keys, 0);
+            Array.Sort(keys, 0, arguments.Count, StringComparer.Ordinal);
+            for (var i = 0; i < arguments.Count; i++)
             {
-                _stringBuilder.Append(", ");
+                if (i > 0) _stringBuilder.Append(", ");
+                var key = keys[i];
+                AppendArgument(key, arguments[key], isRootElement);
             }
-
-            first = false;
-            if (value is Variable variable)
-            {
-                variable.Print(_stringBuilder, key, isRootElement);
-                continue;
-            }
-
-            _stringBuilder.Append(key);
-            _stringBuilder.Append(':');
-
-            WriteObject(_stringBuilder, value);
+        }
+        finally
+        {
+            Array.Clear(keys, 0, arguments.Count);
+            ArrayPool<string>.Shared.Return(keys, clearArray: false);
         }
 
         _stringBuilder.Append(')');
+    }
+
+    private void AppendArgument(string key, object value, bool isRootElement)
+    {
+        if (value is Variable variable)
+        {
+            variable.Print(_stringBuilder, key, isRootElement);
+            return;
+        }
+
+        _stringBuilder.Append(key);
+        _stringBuilder.Append(':');
+        WriteObject(_stringBuilder, value);
     }
 }

@@ -6,9 +6,10 @@ namespace NGql.Core.Extensions;
 
 internal static class QueryBlockObjectExtensions
 {
-    internal static SortedDictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
+    internal static Dictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
     {
-        var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
+        var capacity = queryBlock.Arguments.Count + (isRootElement ? queryBlock.Variables.Count : 0);
+        var arguments = new Dictionary<string, object>(capacity, StringComparer.Ordinal);
         CopyArguments(queryBlock, isRootElement, arguments);
 
         if (isRootElement)
@@ -18,7 +19,7 @@ internal static class QueryBlockObjectExtensions
         return arguments;
     }
 
-    private static void CopyArguments(QueryBlock queryBlock, bool isRootElement, SortedDictionary<string, object> arguments)
+    private static void CopyArguments(QueryBlock queryBlock, bool isRootElement, Dictionary<string, object> arguments)
     {
         foreach (var kvp in queryBlock.Arguments)
         {
@@ -30,7 +31,7 @@ internal static class QueryBlockObjectExtensions
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
         Justification = "Render hot path — a plain foreach avoids the closure + enumerator allocations of Where on every block render.")]
-    private static void AddMissingRootVariables(QueryBlock queryBlock, SortedDictionary<string, object> arguments)
+    private static void AddMissingRootVariables(QueryBlock queryBlock, Dictionary<string, object> arguments)
     {
         foreach (var variable in queryBlock.Variables)
         {

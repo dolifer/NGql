@@ -156,28 +156,103 @@ of `b837e1f` and run the same commands. Raw reports for this pass are under
 `/tmp/ngql-hotspots-repeat-net9`, `/tmp/ngql-lists-before-net9` and
 `/tmp/ngql-lists-after-net9`.
 
-## Further opportunities and tradeoffs
+## Follow-up loop: argument insertion, rendering, type lookup and retention
+
+Baseline for this pass: `b598a2b`. Public signatures and the legacy `Include`
+reflection path remain unchanged. All changes are internal:
+
+- Check the argument tree for membership before scanning for original key casing.
+  New keys no longer enumerate every existing key (including its traversal-stack
+  allocations). Existing-key updates and case-collision rejection keep their rules.
+- Collect rendered arguments in a pre-sized ordinal hash dictionary, then sort
+  a pooled key array. This preserves variable precedence and ordinal wire order
+  without allocating a tree node per rendered argument. Single-entry dictionaries
+  render directly; pooled keys are cleared and returned even when rendering throws.
+- On .NET 9/10, look up custom types using the existing span before allocating a
+  string. Cache misses retain the concurrent `GetOrAdd` path; .NET 8 retains its
+  previous string lookup. Cache lifetime/eviction policy is unchanged.
+- Reject hash sets with backing capacity above 256 as well as live count above
+  128. The capacity allowance accommodates normal bucket rounding for 128 items.
+
+BenchmarkDotNet 0.15.7, .NET 9.0.9, Apple M4, Release, in-process, three warmups
+and five measurement iterations. Inputs are prepared outside measured operations;
+rendering reuses queries, while insertion and field creation construct new queries.
+Benchmarks and test suites were run separately. Allocation figures include returned
+query objects/strings and represent managed allocations per operation, not RSS.
+
+| Workload | Before | After | Allocated before → after |
+| --- | ---: | ---: | ---: |
+| Insert 10 arguments individually | 1.292 µs | 1.079 µs | 1.67 → 0.80 KiB |
+| Insert 1,000 arguments individually | 4,173.3 µs | 387.1 µs | 234.48 → 54.95 KiB |
+| Insert batch of 10 arguments | 1.187 µs | 1.063 µs | 2.39 → 1.82 KiB |
+| Insert batch of 1,000 arguments | 314.5 µs | 298.3 µs | 196.84 → 142.13 KiB |
+| Render 1 scalar argument | 116.3 ns | 114.4 ns | 552 → 528 B |
+| Render 1 variable | 113.4 ns | 114.6 ns | 480 → 456 B |
+| Render 10 scalar arguments | 885.1 ns | 558.5 ns | 1,408 → 1,160 B |
+| Render 10 variables | 1,133.9 ns | 653.8 ns | 1,672 → 1,424 B |
+| Render 1,000 scalar arguments | 270.2 µs | 81.5 µs | 92,497 → 67,289 B |
+| Render 1,000 variables | 350.3 µs | 94.2 µs | 126,610 → 101,401 B |
+| Create field with cached custom type | 163.5 ns | 153.3 ns | 1,040 → 976 B |
+| Create field with common String type | 132.7 ns | 132.3 ns | 976 → 976 B |
+
+The 1,000-scalar baseline was noisy (99.9% interval ±112.3 µs); even its lower
+bound exceeds the final result's upper bound (81.5 ±4.5 µs). Treat the speedup
+ratio as approximate. Single-entry render and common-type timings are effectively
+unchanged. Custom-type creation improved about 6%, removing 64 B per operation.
+
+Two experiments were corrected or rejected during the loop:
+
+- A direct single-root-selection renderer measured 270.4 → 270.6 ns for the
+  16-level single-child chain, with unchanged 2,256 B allocation. Reverted because
+  the refactoring did not establish a benefit.
+- The first hash-dictionary renderer rented keys even for one entry, slowing the
+  scalar case to 141.5 ns and the variable case to 140.2 ns. The direct-entry path
+  restored baseline timing and reduced allocation by 24 B. Larger cases reproduced
+  the gains (initial 1,000-variable result 92.6 µs; final 94.2 µs).
+
+Retention validation is separate from throughput benchmarking: regression tests
+grow a pooled set beyond 2,000 backing slots, clear or remove its items, and return
+it. Both tests failed before the guard because the next rental was the same large
+set. Afterward, rentals have at most 256 slots and normal 128-item sets are still
+reused. Current production callers do not clear/remove items before return, so
+this hardens the pool contract; it is not a demonstrated current-workload RSS gain.
+
+Validation: 2,075 unit tests and 91 integration tests pass on each of .NET 8, 9 and
+10. Added coverage checks
+ordinal root/nested rendering, variable precedence, mutations between renders,
+large-block collision atomicity, sliced/case-sensitive/concurrent type lookups,
+and pool high-water retention. No exposed method signature was changed.
+
+```sh
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*ArgumentInsertionBenchmark*' '*BlockArgumentRenderingBenchmark*' '*TypeCacheBenchmark*' --job short --warmupCount 3 --iterationCount 5 --inProcess --artifacts /tmp/ngql-followup-loop
+```
+
+For the baseline, copy the three benchmark files into a checkout of `b598a2b`.
+Raw reports: `/tmp/ngql-insertion-before`, `/tmp/ngql-insertion-after`,
+`/tmp/ngql-block-arguments-before`, `/tmp/ngql-block-arguments-after`,
+`/tmp/ngql-type-cache-before`, and `/tmp/ngql-loop-final-net9`.
+
+## Remaining profile-dependent opportunities and tradeoffs
 
 These are source-level findings, not measured improvements in this change:
 
-- **Root argument rendering:** the classic `QueryBlock` path still creates a
-  `SortedDictionary` on every render. A direct merge of its already-sorted
-  arguments and variables could remove the remaining tree-node allocations.
+- **Root argument rendering:** tree-node allocations are removed. The temporary
+  hash dictionary remains; removing it needs a merge that preserves ordinal order,
+  case-distinct variable names, remapped argument keys and collision precedence.
 - **Merge-index invalidation:** a static, process-wide merge-memo epoch invalidates
   fingerprint buckets in unrelated query definitions. Per-definition versioning
   could reduce cross-query cache churn and atomic traffic under concurrency.
-- **Root selection rendering:** root dictionaries containing one field still rent,
-  populate, clear and return a sort buffer. A direct single-entry path can mirror
-  the nested-field optimization already implemented.
+- **Root selection rendering:** the direct single-entry experiment above did not
+  establish a benefit and was reverted.
 - **Type caches:** `TypeCache.CustomTypes` and the reflection metadata dictionaries
-  have no eviction. Custom type lookups also materialize a string before checking
-  the cache. Stable schemas bound this naturally; dynamic schemas or collectible
+  have no eviction. Span lookups now avoid temporary custom-type strings on .NET
+  9/10. Stable schemas bound cache growth naturally; dynamic schemas or collectible
   types warrant a retained-heap profile before choosing limits or weak references.
 - **Pool retention:** rendering can retain four builders per active thread, each
   up to roughly 512 KiB of character storage. Lower limits could reduce idle memory
-  but increase allocations for medium-sized queries. The hash-set pool validates
-  `Count`, which does not bound backing capacity after removals or a caller clear.
-  Measure high-water capacity and thread counts before retuning these pools.
+  but increase allocations for medium-sized queries. The hash-set pool now bounds
+  capacity as well as count. Measure builder high-water capacity and thread counts
+  before retuning its limits.
 - **Existing optimizations:** field children already use spans and a lazy index;
   merge candidates use name/fingerprint buckets; path lookups are cached; sinks
   avoid a final string allocation. Keep their invalidation and concurrency guards:

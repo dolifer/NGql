@@ -11,7 +11,7 @@ namespace NGql.Core.Caching;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class TypeCache
 {
-    private static readonly ConcurrentDictionary<string, string> CustomTypes = new();
+    private static readonly ConcurrentDictionary<string, string> CustomTypes = new(StringComparer.Ordinal);
 
     // Pre-intern the most common GraphQL types (ordered by frequency)
     private static readonly string[] CommonTypes =
@@ -50,7 +50,13 @@ internal static class TypeCache
             }
         }
 
-        // Standard path for other types
+#if NET9_0_OR_GREATER
+        if (CustomTypes.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(type, out var cached))
+        {
+            return cached;
+        }
+#endif
+
         var typeString = type.ToString();
         return CustomTypes.GetOrAdd(typeString, typeString);
     }
