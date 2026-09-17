@@ -34,23 +34,11 @@ internal static class QueryBlockObjectExtensions
     {
         foreach (var variable in queryBlock.Variables)
         {
-            if (!ContainsVariableNamed(arguments, variable.Name))
+            if (!arguments.TryGetValue(variable.Name, out var value) || value is not Variable)
             {
                 arguments[variable.Name] = variable;
             }
         }
-    }
-
-    private static bool ContainsVariableNamed(SortedDictionary<string, object> arguments, string name)
-    {
-        foreach (var value in arguments.Values)
-        {
-            if (value is Variable existing && existing.Name == name)
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     /// <summary>
@@ -261,4 +249,3 @@ internal static class QueryBlockObjectExtensions
             SimpleTypes.Contains(type) ||
             Convert.GetTypeCode(type) != TypeCode.Object;
 }
-

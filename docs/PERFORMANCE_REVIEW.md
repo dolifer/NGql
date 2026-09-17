@@ -63,21 +63,45 @@ Strengthened the oversized-builder pool test to verify rejection and an empty,
 bounded replacement, then reran it on all three frameworks. Existing sorting,
 fragment, escaping, sink, and concurrent-render regression tests also pass.
 
+## Follow-up fixes
+
+The follow-up review corrected invariant formatting for signed integers and
+removed linear scans from root-variable lookup and preservation-path pruning.
+The expanded suite passes 2,064 unit tests and 91 integration tests per target
+framework.
+
+BenchmarkDotNet ShortRun results on .NET 9.0.9:
+
+| Scenario | Before mean | After mean | Before bytes/op | After bytes/op |
+| --- | ---: | ---: | ---: | ---: |
+| 1,000 root variables | 4,434.9 µs | 373.7 µs | 294,245 | 110,402 |
+| 1,000 unrelated preservation paths | 501.3 µs | 40.3 µs | 97,188 | 73,192 |
+| 1,000 signed integers | 10.7 µs | 14.7 µs | 12,032 | 12,032 |
+
+The integer path is slower because it now guarantees GraphQL's ASCII minus sign
+under cultures with a custom negative sign. It creates no additional managed
+allocations. Root-variable lookup is now logarithmic per variable instead of
+scanning every argument value. Preservation probes only dotted ancestors; .NET 9
+and later use allocation-free alternate hash-set lookups. The .NET 8 fallback
+measured 66.5 µs and 208,368 bytes for 1,000 paths, versus 481.0 µs and 97,184
+bytes before; its temporary prefix strings trade memory for a large CPU reduction.
+
 ## Further opportunities and tradeoffs
 
 These are source-level findings, not measured improvements in this change:
 
-- **Preservation batches:** `PreservationBuilder.PreserveOne` scans the existing
-  path set for each insertion, giving quadratic work for many unrelated paths.
-  `PreserveAtPath` also searches every root. Profile representative large batches;
-  root-scoped calls already exist when the caller knows the root. A prefix index
-  could reduce scans, but adds memory and must preserve order-sensitive pruning.
-- **Legacy object inclusion:** `QueryBlockObjectExtensions.GetSelectableProperties`
-  repeats reflection, builds a dictionary and sorts on every include. Caching the
-  immutable property selection could save CPU for repeated types. A weak-key cache
-  deserves consideration if collectible assemblies matter; another permanent
-  static dictionary would increase retained memory. Object values must still be
-  read on every call, and shadowed/indexer property behavior must remain intact.
+- **Root argument rendering:** the classic `QueryBlock` path still creates a
+  `SortedDictionary` on every render. A direct merge of its already-sorted
+  arguments and variables could remove the remaining tree-node allocations.
+- **Merge-index invalidation:** a static, process-wide merge-memo epoch invalidates
+  fingerprint buckets in unrelated query definitions. Per-definition versioning
+  could reduce cross-query cache churn and atomic traffic under concurrency.
+- **Argument reflection:** variable extraction and argument normalization call
+  `Type.GetProperties()` separately for arbitrary objects. Sharing cached metadata
+  would reduce reflection work without changing the legacy inclusion API.
+- **Root selection rendering:** root dictionaries containing one field still rent,
+  populate, clear and return a sort buffer. A direct single-entry path can mirror
+  the nested-field optimization already implemented.
 - **Type caches:** `TypeCache.CustomTypes` and the reflection metadata dictionaries
   have no eviction. Custom type lookups also materialize a string before checking
   the cache. Stable schemas bound this naturally; dynamic schemas or collectible

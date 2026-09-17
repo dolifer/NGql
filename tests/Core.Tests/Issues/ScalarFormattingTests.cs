@@ -13,6 +13,8 @@ public class ScalarFormattingTests
     {
         foreach (var value in new object[]
         {
+            sbyte.MinValue, sbyte.MaxValue, short.MinValue, short.MaxValue,
+            int.MinValue, int.MaxValue, long.MinValue, long.MaxValue,
             float.MinValue, float.MaxValue, float.Epsilon, -0.0f,
             double.MinValue, double.MaxValue, double.Epsilon, -0.0d,
             decimal.MinValue, decimal.MaxValue, 1.2300m,
@@ -33,7 +35,9 @@ public class ScalarFormattingTests
         var originalCulture = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
+            var culture = (CultureInfo)CultureInfo.GetCultureInfo("fr-FR").Clone();
+            culture.NumberFormat.NegativeSign = "~";
+            CultureInfo.CurrentCulture = culture;
             var isDate = value is DateTime or DateTimeOffset;
             var expected = ((IFormattable)value).ToString(
                 isDate ? ValueFormatter.DateFormat : null, CultureInfo.InvariantCulture);

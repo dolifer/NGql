@@ -153,10 +153,10 @@ internal static class ValueFormatter
     {
         switch (value)
         {
-            case int v: builder.Append(v); return true;
-            case long v: builder.Append(v); return true;
-            case short v: builder.Append(v); return true;
-            case sbyte v: builder.Append(v); return true;
+            case int v: AppendFormattable(builder, v); return true;
+            case long v: AppendFormattable(builder, v); return true;
+            case short v: AppendFormattable(builder, (int)v); return true;
+            case sbyte v: AppendFormattable(builder, (int)v); return true;
             default: return false;
         }
     }

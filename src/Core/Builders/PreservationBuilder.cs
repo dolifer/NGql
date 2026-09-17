@@ -21,6 +21,7 @@ public sealed class PreservationBuilder
 {
     private readonly QueryBuilder _sourceQuery;
     private readonly HashSet<string> _pathsToPreserve;
+    private int _minimumAddedPathLength = int.MaxValue;
 
     private PreservationBuilder(QueryBuilder sourceQuery)
     {
@@ -60,40 +61,27 @@ public sealed class PreservationBuilder
     /// a single-element <c>params string[]</c> just to add one path.
     /// </summary>
     /// <param name="path">Dot-separated field path to preserve. Null/whitespace is a no-op.</param>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Plain foreach scan detects whether any parent needs pruning without allocating a Where enumerator or a RemoveWhere closure/delegate; removal itself is deferred to a second pass only taken when a match was found.")]
     private void PreserveOne(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
 
-        // Remove parent paths when adding more specific child. The check is equivalent to
-        // path.StartsWith(existing + ".") without allocating the concatenated prefix.
-        if (_pathsToPreserve.Count > 0)
+        var remaining = path.AsSpan();
+        while (_pathsToPreserve.Count > 0)
         {
-            var hasMatch = false;
-            foreach (var existing in _pathsToPreserve)
-            {
-                if (IsDotDelimitedAncestor(path, existing))
-                {
-                    hasMatch = true;
-                    break;
-                }
-            }
+            var dot = remaining.LastIndexOf('.');
+            if (dot < _minimumAddedPathLength) break;
 
-            if (hasMatch)
-            {
-                _pathsToPreserve.RemoveWhere(existing => IsDotDelimitedAncestor(path, existing));
-            }
+            remaining = remaining[..dot];
+#if NET9_0_OR_GREATER
+            _pathsToPreserve.GetAlternateLookup<ReadOnlySpan<char>>().Remove(remaining);
+#else
+            _pathsToPreserve.Remove(remaining.ToString());
+#endif
         }
 
         _pathsToPreserve.Add(path);
+        _minimumAddedPathLength = Math.Min(_minimumAddedPathLength, path.Length);
     }
-
-    private static bool IsDotDelimitedAncestor(string path, string existing)
-        => path.Length > existing.Length
-           && path[existing.Length] == '.'
-           && path.AsSpan(0, existing.Length).Equals(existing, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Preserves <paramref name="fieldPath"/> within the subtree at <paramref name="nodePath"/>.
