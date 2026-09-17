@@ -289,8 +289,8 @@ reflection remain unchanged.
 
 Validation: 2,085 unit tests and 91 integration tests pass on each of .NET 8, 9
 and 10. Final source review and `git diff --check` found no additional issues in
-this change. The architectural candidates below remain unproven opportunities,
-not fixes claimed complete by these microbenchmarks.
+this change. At that pass, the architectural candidates were unproven; their
+subsequent measurements and resolution follow below.
 
 ```sh
 dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*BlockArgumentRenderingBenchmark*' '*EmptyArgumentBenchmark*' '*AliasCollisionBenchmark*' --job short --warmupCount 3 --iterationCount 5 --inProcess --artifacts /tmp/ngql-small-paths
@@ -302,29 +302,211 @@ reports: `/tmp/ngql-single-entry-before`, `/tmp/ngql-empty-before-single-after`,
 names reflect the sequential loop: singleton changes preceded empty-container
 changes, which preceded alias changes; each baseline ran before its own change.
 
+## Task-by-task resolution of remaining findings
+
+Tasks and status are tracked in `PERFORMANCE_TASKS.md`. Baseline: `9e3edfa`.
+Measurements use the same .NET 9/M4 setup, three warmups and five measurements,
+without concurrent test/benchmark processes. Timing variability remains material.
+
+### T1 — Root argument rendering
+
+Replaced the temporary dictionary with pooled `(key, value, original order)`
+entries. Ordinal key sorting and original-order tie-breaking reproduce explicit
+argument last-write precedence followed by first missing-variable precedence.
+All populated entries are cleared in `finally`. Singleton paths remain unchanged.
+Randomized root/nested output comparisons against the former dictionary algorithm
+pass on .NET 8/9/10, including remapped keys and case-distinct variables.
+
+| Entries | Scalar time before → after | Scalar bytes | Variable time before → after | Variable bytes |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 172.1 → 181.5 ns | 208 → 208 | 225.7 → 192.2 ns | 208 → 208 |
+| 10 | 1,093 → 970 ns | 1,160 → 696 | 1,209 → 888 ns | 1,424 → 960 |
+| 1,000 | 201.1 → 155.9 µs | 67,289 → 36,249 | 265.9 → 159.9 µs | 101,402 → 70,361 |
+
+Timing confidence intervals overlap, so allocation savings are the firm result.
+Artifacts: `/tmp/ngql-t1-before`, `/tmp/ngql-t1-after`; benchmark:
+`BlockArgumentRenderingBenchmark`. No public surface change.
+
+### T2 — Merge-index invalidation
+
+Replaced the process-wide epoch with an index-local version observed by tracked
+root fields. Record copies share their tracker, deep clones start untracked,
+and genuinely shared roots notify all observing indexes. Secondary observers use
+weak references so fields do not retain dead indexes. Detached root builders
+establish their tracker before copying can separate their references. Ancestor
+memo clearing, count resynchronization and live-fingerprint checks remain intact.
+
+| Workload | Before → after | Bytes before → after |
+| --- | ---: | ---: |
+| Warm merge, 10 candidates | 258.2 → 287.5 ns | 272 → 272 |
+| Unrelated mutation then merge, 10 | 863.1 → 269.3 ns | 2,920 → 296 |
+| Warm merge, 1,000 candidates | 272.6 → 280.0 ns | 272 → 272 |
+| Unrelated mutation then merge, 1,000 | 81,608 → 289.8 ns | 268,728 → 296 |
+
+The large interleaved case is about 282× faster and allocates 99.9% less per call;
+warm-control timing intervals overlap. This removes repeated cache reconstruction,
+not the work of the unrelated mutation itself. Tradeoff: trackers add one reference
+per field, a small object for observed/root-builder fields, and one version object
+per index. Shared observers allocate additional bookkeeping only when needed.
+Simple typed-field construction increased from 976 B before T2 to 1,024 B after
+T2: this is a deliberate construction-cost tradeoff, not a universal allocation
+reduction.
+
+The existing full unit suite passed on all frameworks after the redesign, including
+detached builders, argument widening and stale-fingerprint regressions. New tests
+cover unrelated mutation, shared roots/record copies, deep-clone isolation and
+concurrent observer registration. Artifacts: `/tmp/ngql-t2-before`,
+`/tmp/ngql-t2-after`; benchmark: `MergeIsolationBenchmark`.
+
+### T3 — Root selection rendering
+
+The final singleton path renders a reference-backed one-element `ReadOnlySpan`
+through the existing renderer. It avoids renting/copying/sorting/clearing an array,
+does not allocate an inline collection, and leaves multi-field ordering unchanged.
+
+| Fields | Write before → after | String render before → after |
+| --- | ---: | ---: |
+| 1 | 44.50 → 32.79 ns | 48.04 → 38.35 ns |
+| 10 | 182.02 → 183.34 ns | 193.40 → 193.32 ns |
+| 1,000 | 75.04 → 74.83 µs | 76.54 → 76.46 µs |
+
+Allocations are unchanged (zero for the singleton writer; 64 B for its returned
+string). The first collection-expression experiment improved the singleton too
+but slowed 10-field writes/renders to 203.8/216.2 ns; it was replaced, not retained.
+The final reference-span implementation removes that regression. All work stays
+in the common renderer, including aliases, directives and fragments.
+Artifacts: `/tmp/ngql-t3-before`, `/tmp/ngql-t3-after` (rejected intermediate),
+`/tmp/ngql-t3-ref-span` (accepted); benchmark: `RootSelectionBenchmark`.
+
+### T4 — Type caches
+
+All five retention regressions failed before the fix: each metadata cache rooted
+its collectible type, all 20,000 generated custom names survived collection, and
+a 10,000-character custom name stayed cached. After the fix, collectible types
+are released in all three cases, exactly 4,096 generated names survive, and the
+oversized name is not retained. Tests pass on .NET 8/9/10.
+
+Metadata uses `ConditionalWeakTable`: values remain reusable while their Type is
+live without preventing unloading. The custom-name cache uses bounded FIFO
+admission (4,096 names, at most 256 characters each); normal hits stay lock-free,
+misses serialize eviction/admission. Longer names still work, but are not cached.
+This bounds cached name characters to 1,048,576 (about 2 MiB of UTF-16 payload,
+excluding dictionary/queue/object overhead). It is not a total process heap bound.
+
+| Hot workload | Before → after | Allocations |
+| --- | ---: | ---: |
+| Custom-type field creation | 162.4 → 161.2 ns | 1,024 B, unchanged |
+| Common-type field creation | 136.4 → 135.5 ns | 1,024 B, unchanged |
+| Reflected object arguments | 491.8 → 506.0 ns | 2.37 KiB, unchanged |
+
+All timing intervals overlap. FIFO intentionally trades re-creation after eviction
+for bounded retention: schemas cycling through more than 4,096 custom names, or
+names longer than 256 characters, can allocate more strings than an unbounded
+cache. Cold-miss contention was not claimed improved. Values and public signatures
+are unchanged; permanent string-reference identity is not a public contract.
+
+Artifacts: `/tmp/ngql-t4-before`, `/tmp/ngql-t4-after`; benchmarks:
+`TypeCacheBenchmark`, `AllocationHotspotBenchmark.ObjectArguments`.
+`CacheRetentionTests` reports retained names and collectible-type reachability
+after forced collection; these are retention checks, not RSS measurements.
+
+### T5 — Pool retention
+
+The builder pool now applies its 262,144-character allowance to the sum of retained
+builders on a thread, not just each individual builder. It still retains up to four
+builders when their combined capacity fits; oversized/full/budget-exceeding returns
+are rejected before `Clear`. The common empty-stack return avoids the capacity scan.
+
+High-water tests borrowed four 200,000-character builders per thread. Before:
+800,000 characters retained per thread, on both the one-thread and four-thread
+runs. After: 200,000 per thread, a 75% reduction. Across four threads this is
+6.4 MB → 1.6 MB of character payload (decimal bytes, excluding object overhead).
+The configured worst-case retained payload is now 512 KiB/thread instead of 2 MiB.
+Four 32,768-character builders are still reused without replacement. All pool and
+renderer tests pass across .NET 8/9/10.
+
+| Repeated workload | Before → after | Allocations |
+| --- | ---: | ---: |
+| Small UTF-8 output | 51.61 → 51.56 ns | 0 B, unchanged |
+| 1,024-character argument | 414.7 → 438.5 ns | 128 B, unchanged |
+| 32,768-character argument | 11.32 → 11.27 µs | 128 B, unchanged |
+| 131,072-character argument | 45.10 → 47.48 µs | 128 B, unchanged |
+
+Timing intervals overlap; this is a retained-capacity improvement, not a CPU
+speedup claim. Repeated reentrant bursts exceeding the aggregate budget may
+reallocate discarded large builders; ordinary sequential medium renders retain
+their builder. The measurements do not imply every application saves 75% RSS.
+Artifacts: `/tmp/ngql-t5-before`, `/tmp/ngql-t5-after`; benchmarks:
+`MediumRenderBenchmark`, `AllocationHotspotBenchmark.SmallUtf8`; retention tests:
+`BuilderPoolBudgetTests` (one/four threads and normal-size reuse).
+
+### T6 — Existing optimizations and final verification
+
+The final sweep exposed a 64-byte comparison adapter allocated by comparer-based
+array sorting. Cached comparison delegates passed directly to span sorting remove
+it from root/nested field sorting and argument sorting without changing ordering.
+New warmed allocation regressions assert zero allocated bytes for sorted root and
+nested writer calls on .NET 8/9/10. Snapshot and invalidation guards are unchanged.
+The obsolete production argument-dictionary helper was removed; differential tests
+retain the former algorithm as their independent reference implementation.
+
+| Workload | Before → after | Bytes before → after |
+| --- | ---: | ---: |
+| Write 10 root fields | 184.33 → 186.56 ns | 64 → 0 |
+| Render 10 root fields to string | 221.66 → 191.80 ns | 328 → 264 |
+| Write 1,000 root fields | 75.06 → 73.00 µs | 65 → 1 |
+| UTF-8 guardrail | 5.23 → 4.92 µs | 64 → 0 |
+| Cached path | 16.35 → 16.15 ns | 0 → 0 |
+| Preserve selected paths | 2.57 → 2.62 µs | 4,448 → 4,448 |
+| Merge 100 fragments | 55.67 → 46.28 µs | 144,824 → 144,824 |
+| Build 100 paths | 16.66 → 17.32 µs | 47,008 → 47,008 |
+
+These are paired T6 measurements, not comparisons to the initial branch baseline.
+The 1 B result is the benchmark's amortized allocation reading, not a one-byte
+object. Timing intervals overlap for most controls; no broad CPU speedup is
+claimed. The initially slower unchanged path-building control was repeated alone
+with five warmups/eight iterations: 15.88 ± 0.144 µs, still 47,008 B. Its apparent
+4% regression did not reproduce; host/run variation prevents attributing a path
+speedup or slowdown to the sorting change.
+
+Final 1,000-entry scalar/variable argument renders measured 59.18/58.83 µs and
+36,184/70,296 B. Compared with T1's original 67,289/101,402 B, this saves about
+31 KB per render. Do not infer a CPU ratio across those runs: unchanged singleton
+timings also shifted substantially between T1 and T6.
+
+Artifacts: `/tmp/ngql-t6-before`, `/tmp/ngql-t6-after`,
+`/tmp/ngql-t6-path-repeat`. BenchmarkDotNet 0.15.7, .NET 9.0.9, Apple M4;
+three warmups/five iterations, in-process, unless noted above. Benchmarks were
+run sequentially, without concurrent test runs.
+
+```sh
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*GuardrailBenchmark*' '*RootSelectionBenchmark*' '*BlockArgumentRenderingBenchmark*' --job short --warmupCount 3 --iterationCount 5 --inProcess --artifacts /tmp/ngql-final-check
+dotnet test tests/Core.Tests/Core.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
+dotnet test tests/Core.IntegrationTests/Core.IntegrationTests.csproj -c Release --no-restore -p:NuGetAudit=false
+```
+
+Final validation: 2,101 unit tests and 91 integration tests pass on each of .NET
+8, 9 and 10. Public method signatures and legacy reflection-based `Include` are
+unchanged. The command-local audit override addresses the existing dependency
+audit failure; no dependency versions or repository audit settings were changed.
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
-These are source-level findings, not measured improvements in this change:
+All six findings are now measured and resolved in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).
+The remaining considerations are workload tradeoffs, not unimplemented fixes:
 
-- **Root argument rendering:** tree-node allocations are removed, and lone entries
-  bypass the temporary dictionary. For mixed/larger cases, removing that dictionary
-  needs a merge that preserves ordinal order,
-  case-distinct variable names, remapped argument keys and collision precedence.
-- **Merge-index invalidation:** a static, process-wide merge-memo epoch invalidates
-  fingerprint buckets in unrelated query definitions. Per-definition versioning
-  could reduce cross-query cache churn and atomic traffic under concurrency.
-- **Root selection rendering:** the direct single-entry experiment above did not
-  establish a benefit and was reverted.
-- **Type caches:** `TypeCache.CustomTypes` and the reflection metadata dictionaries
-  have no eviction. Span lookups now avoid temporary custom-type strings on .NET
-  9/10. Stable schemas bound cache growth naturally; dynamic schemas or collectible
-  types warrant a retained-heap profile before choosing limits or weak references.
-- **Pool retention:** rendering can retain four builders per active thread, each
-  up to roughly 512 KiB of character storage. Lower limits could reduce idle memory
-  but increase allocations for medium-sized queries. The hash-set pool now bounds
-  capacity as well as count. Measure builder high-water capacity and thread counts
-  before retuning its limits.
-- **Existing optimizations:** field children already use spans and a lazy index;
-  merge candidates use name/fingerprint buckets; path lookups are cached; sinks
-  avoid a final string allocation. Keep their invalidation and concurrency guards:
-  removing them for speed risks stale merges or dropped fields.
+- **Root arguments (T1):** pooled sorting removes the temporary dictionary;
+  returned strings and boxed variables still allocate.
+- **Merge invalidation (T2):** unrelated queries no longer invalidate each other;
+  root trackers add construction/storage overhead in exchange for avoiding rebuilds.
+- **Root selection (T3):** the accepted reference-span shortcut improves singleton
+  dispatch; the slower collection-expression experiment was discarded.
+- **Type caches (T4):** custom names have bounded FIFO retention and collectible
+  metadata can unload. Cache churn can allocate more; metadata for permanently
+  live types remains cached. Cold-miss contention is not claimed improved.
+- **Pool retention (T5):** the aggregate per-thread character budget is bounded;
+  repeated large reentrant bursts can reallocate discarded buffers. Measurements
+  quantify retained character capacity, not application RSS.
+- **Existing optimizations (T6):** sorting adapters are eliminated; traversal,
+  merge, path-cache and sink controls retain their correctness guards. Application
+  profiles are still needed before claiming end-to-end throughput improvements.

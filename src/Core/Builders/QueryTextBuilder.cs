@@ -31,8 +31,8 @@ internal sealed class QueryTextBuilder
     // Alias tiebreakers (ordinal) turn the comparison into a total order derived purely from each
     // field's own data, so equal effective keys resolve to one well-defined order with no extra
     // allocation and no insertion-index threading. Primary key semantics are unchanged.
-    private static readonly IComparer<FieldDefinition> FieldSortComparer =
-        Comparer<FieldDefinition>.Create(static (a, b) =>
+    private static readonly Comparison<FieldDefinition> FieldSortComparer =
+        static (a, b) =>
         {
             var effectiveNameComparison =
                 StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name);
@@ -42,7 +42,7 @@ internal sealed class QueryTextBuilder
             if (nameComparison != 0) return nameComparison;
 
             return string.CompareOrdinal(a.Alias, b.Alias);
-        });
+        };
 
     // SHARED thread-local builder pool used by both QueryBlock and QueryDefinition
     // This consolidates the pooling strategy and prevents duplicate ThreadLocal instances
@@ -85,6 +85,12 @@ internal sealed class QueryTextBuilder
         var stack = SharedBuilderStack.Value!;
         if (stack.Count < MaxPooledBuilders)
         {
+            if (stack.Count > 0)
+            {
+                var retainedCapacity = builder._stringBuilder.Capacity;
+                foreach (var pooled in stack) retainedCapacity += pooled._stringBuilder.Capacity;
+                if (retainedCapacity > MaxBuilderCapacity) return;
+            }
             builder._stringBuilder.Clear();
             stack.Push(builder);
         }
@@ -365,6 +371,11 @@ internal sealed class QueryTextBuilder
     {
         var count = fields.Count;
         if (count == 0) return;
+        if (count == 1)
+        {
+            foreach (var field in fields.Values) RenderFields(new ReadOnlySpan<FieldDefinition>(in field), indent);
+            return;
+        }
 
         // Dictionary<TKey,TValue> is insertion-ordered, not alphabetical. Copy values to a
         // pooled buffer so RenderSortedFields can sort once and render with a stable order.
@@ -389,7 +400,7 @@ internal sealed class QueryTextBuilder
     /// </summary>
     private void RenderSortedFields(FieldDefinition[] arr, int count, int indent)
     {
-        Array.Sort(arr, 0, count, FieldSortComparer);
+        arr.AsSpan(0, count).Sort(FieldSortComparer);
         RenderFields(arr.AsSpan(0, count), indent);
     }
 
@@ -728,9 +739,7 @@ internal sealed class QueryTextBuilder
 
         // KeyValuePair<,> is a sealed BCL struct that always exposes Key and Value properties —
         // GetProperty cannot return null here, so cache the pair without nullable wrapping.
-        var (keyProp, valueProp) = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
-            valueType,
-            static t => (t.GetProperty("Key")!, t.GetProperty("Value")!));
+        var (keyProp, valueProp) = TypeMetadataCache.GetKeyValueProperties(valueType);
 
         builder.Append(keyProp.GetValue(value));
         builder.Append(':');
@@ -756,12 +765,12 @@ internal sealed class QueryTextBuilder
 
     // Stable sort key for QueryBlock field lists: effective name first, original index as the
     // tiebreaker so equal names keep insertion order (matching LINQ OrderBy's stability).
-    private static readonly Comparer<(string Key, int Index, object Item)> BlockFieldComparer =
-        Comparer<(string Key, int Index, object Item)>.Create(static (a, b) =>
+    private static readonly Comparison<(string Key, int Index, object Item)> BlockFieldComparer =
+        static (a, b) =>
         {
             var nameComparison = StringComparer.OrdinalIgnoreCase.Compare(a.Key, b.Key);
             return nameComparison != 0 ? nameComparison : a.Index.CompareTo(b.Index);
-        });
+        };
 
     private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
     {
@@ -788,7 +797,7 @@ internal sealed class QueryTextBuilder
                 entries[i] = (key, i, field);
             }
 
-            Array.Sort(entries, 0, count, BlockFieldComparer);
+            entries.AsSpan(0, count).Sort(BlockFieldComparer);
 
             for (int i = 0; i < count; i++)
             {
@@ -837,34 +846,58 @@ internal sealed class QueryTextBuilder
             return;
         }
 
-        var arguments = queryBlock.GetArguments(isRootElement);
-        if (arguments.Count == 1)
-        {
-            foreach (var (key, value) in arguments) AppendArgument(key, value, isRootElement);
-            _stringBuilder.Append(')');
-            return;
-        }
-
-        var keys = ArrayPool<string>.Shared.Rent(arguments.Count);
+        var explicitCount = queryBlock.Arguments.Count;
+        var count = explicitCount + (isRootElement ? queryBlock.Variables.Count : 0);
+        var entries = ArrayPool<ArgumentEntry>.Shared.Rent(count);
         try
         {
-            arguments.Keys.CopyTo(keys, 0);
-            Array.Sort(keys, 0, arguments.Count, StringComparer.Ordinal);
-            for (var i = 0; i < arguments.Count; i++)
+            var index = 0;
+            foreach (var (key, value) in queryBlock.Arguments)
             {
-                if (i > 0) _stringBuilder.Append(", ");
-                var key = keys[i];
-                AppendArgument(key, arguments[key], isRootElement);
+                var renderedKey = isRootElement && value is Variable variable ? variable.Name : key;
+                entries[index] = new ArgumentEntry(renderedKey, value, index);
+                index++;
+            }
+            if (isRootElement)
+            {
+                foreach (var variable in queryBlock.Variables)
+                {
+                    entries[index] = new ArgumentEntry(variable.Name, variable, index);
+                    index++;
+                }
+            }
+
+            entries.AsSpan(0, count).Sort(ArgumentEntryComparer);
+            var i = 0;
+            while (i < count)
+            {
+                if (i != 0) _stringBuilder.Append(", ");
+                var entry = entries[i++];
+                while (i < count && string.Equals(entry.Key, entries[i].Key, StringComparison.Ordinal))
+                {
+                    var next = entries[i++];
+                    if (next.Order < explicitCount || entry.Value is not Variable) entry = next;
+                }
+                AppendArgument(entry.Key, entry.Value, isRootElement);
             }
         }
         finally
         {
-            Array.Clear(keys, 0, arguments.Count);
-            ArrayPool<string>.Shared.Return(keys, clearArray: false);
+            Array.Clear(entries, 0, count);
+            ArrayPool<ArgumentEntry>.Shared.Return(entries, clearArray: false);
         }
 
         _stringBuilder.Append(')');
     }
+
+    private readonly record struct ArgumentEntry(string Key, object Value, int Order);
+
+    private static readonly Comparison<ArgumentEntry> ArgumentEntryComparer =
+        static (left, right) =>
+        {
+            var keyComparison = string.CompareOrdinal(left.Key, right.Key);
+            return keyComparison != 0 ? keyComparison : left.Order.CompareTo(right.Order);
+        };
 
     private void AppendArgument(string key, object value, bool isRootElement)
     {

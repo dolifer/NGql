@@ -12,6 +12,10 @@ namespace NGql.Core.Caching;
 internal static class TypeCache
 {
     private static readonly ConcurrentDictionary<string, string> CustomTypes = new(StringComparer.Ordinal);
+    private static readonly Queue<string> CustomTypeOrder = new();
+    private static readonly object CustomTypeGate = new();
+    private const int MaxCustomTypes = 4096;
+    private const int MaxCachedTypeLength = 256;
 
     // Pre-intern the most common GraphQL types (ordered by frequency)
     private static readonly string[] CommonTypes =
@@ -50,6 +54,8 @@ internal static class TypeCache
             }
         }
 
+        if (type.Length > MaxCachedTypeLength) return type.ToString();
+
 #if NET9_0_OR_GREATER
         if (CustomTypes.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(type, out var cached))
         {
@@ -58,7 +64,16 @@ internal static class TypeCache
 #endif
 
         var typeString = type.ToString();
-        return CustomTypes.GetOrAdd(typeString, typeString);
+        if (CustomTypes.TryGetValue(typeString, out var existing)) return existing;
+        lock (CustomTypeGate)
+        {
+            if (CustomTypes.TryGetValue(typeString, out existing)) return existing;
+            if (CustomTypeOrder.Count == MaxCustomTypes)
+                CustomTypes.TryRemove(CustomTypeOrder.Dequeue(), out _);
+            CustomTypes[typeString] = typeString;
+            CustomTypeOrder.Enqueue(typeString);
+            return typeString;
+        }
     }
 
     // Lazy-initialized combined array to avoid allocation at static init time
@@ -87,15 +102,23 @@ internal static class TypeMetadataCache
     /// Caller must guarantee the cached type is a closed KeyValuePair&lt;TKey,TValue&gt; — those
     /// always expose Key and Value properties, so the cached pair is non-nullable.
     /// </summary>
-    internal static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)> KvpPropertyCache = new();
+    private static readonly ConditionalWeakTable<Type, KeyValueProperties> KvpPropertyCache = new();
+
+    internal static (PropertyInfo Key, PropertyInfo Value) GetKeyValueProperties(Type type)
+    {
+        var properties = KvpPropertyCache.GetValue(type, static t => new(t.GetProperty("Key")!, t.GetProperty("Value")!));
+        return (properties.Key, properties.Value);
+    }
+
+    private sealed record KeyValueProperties(PropertyInfo Key, PropertyInfo Value);
 
     /// <summary>
     /// Caches PropertyInfo[] per object type for the default WriteObject reflection branch.
     /// </summary>
-    internal static readonly ConcurrentDictionary<Type, PropertyInfo[]> ObjectPropertyCache = new();
+    private static readonly ConditionalWeakTable<Type, PropertyInfo[]> ObjectPropertyCache = new();
 
     internal static PropertyInfo[] GetObjectProperties(Type type)
-        => ObjectPropertyCache.GetOrAdd(type, static t => t.GetProperties());
+        => ObjectPropertyCache.GetValue(type, static t => t.GetProperties());
 
     /// <summary>
     /// Caches the public-instance property metadata used by navigation-property expansion, so
@@ -105,14 +128,14 @@ internal static class TypeMetadataCache
     /// <c>GetProperty(name, Public | Instance)</c> semantics, including the ambiguous-match throw
     /// when a name is shadowed by a <c>new</c> property.
     /// </summary>
-    internal static readonly ConcurrentDictionary<Type, NavigationPropertyMetadata> NavigationPropertyCache = new();
+    private static readonly ConditionalWeakTable<Type, NavigationPropertyMetadata> NavigationPropertyCache = new();
 
     /// <summary>
     /// Returns the cached navigation-property metadata for <paramref name="type"/>, building it on
     /// first access via <c>GetProperties(Public | Instance)</c>.
     /// </summary>
     internal static NavigationPropertyMetadata GetNavigationProperties(Type type)
-        => NavigationPropertyCache.GetOrAdd(type, static t => NavigationPropertyMetadata.Build(t));
+        => NavigationPropertyCache.GetValue(type, static t => NavigationPropertyMetadata.Build(t));
 }
 
 /// <summary>

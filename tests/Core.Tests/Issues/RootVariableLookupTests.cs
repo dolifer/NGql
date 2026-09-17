@@ -1,6 +1,5 @@
 using FluentAssertions;
 using NGql.Core.Abstractions;
-using NGql.Core.Extensions;
 using Xunit;
 
 namespace NGql.Core.Tests.Issues;
@@ -14,7 +13,7 @@ public class RootVariableLookupTests
         block.AddArgument("$id", 42);
         block.AddVariable("$id", "Int");
 
-        block.GetArguments(true)["$id"].Should().Be(new Variable("$id", "Int"));
+        block.ToString().Should().StartWith("Q($id:Int)");
     }
 
     [Fact]
@@ -25,9 +24,6 @@ public class RootVariableLookupTests
         block.AddVariable("$id", "Int");
         block.AddVariable("$ID", "Boolean");
 
-        var arguments = block.GetArguments(true);
-        arguments.Should().HaveCount(2);
-        arguments["$id"].Should().Be(new Variable("$id", "String"));
-        arguments["$ID"].Should().Be(new Variable("$ID", "Boolean"));
+        block.ToString().Should().StartWith("Q($ID:Boolean, $id:String)");
     }
 }

@@ -21,66 +21,6 @@ namespace NGql.Core.Features;
 /// is the O(1)-average entry point <c>QueryMerger.FindMergeTarget</c> uses to exploit this.
 /// </para>
 ///
-/// <para>
-/// <b>Why the fingerprint sub-bucket cannot simply cache a value computed once.</b> A root-level
-/// field's LIVE deep fingerprint can change after it was indexed, two different ways, and both are
-/// handled — neither can ever be allowed to silently leave a stale bucket assignment in place,
-/// since that risks the one truly forbidden outcome: a false split that skips a genuine merge
-/// candidate.
-/// <list type="bullet">
-/// <item><b>Through <see cref="QueryMerger"/> itself</b> — <see cref="FieldDefinitionExtensions.MergeFieldsInPlace"/>
-/// nulls the target's memoized <see cref="FieldDefinition._deepArgumentFingerprint"/> without
-/// changing its object reference. <see cref="QueryMerger"/> is the only caller of that method and
-/// explicitly calls <see cref="ReindexFingerprint"/> immediately afterwards, so the field is
-/// re-bucketed under its new live fingerprint right away — an O(1) targeted fix, since the caller
-/// already knows exactly which key changed.</item>
-/// <item><b>Out-of-band</b> — any mutation that invalidates a field's memoized fingerprint WITHOUT
-/// going through <see cref="QueryMerger"/> (plain <c>AddField</c> replacing a root dictionary VALUE
-/// at an existing key with a new <see cref="FieldDefinition"/> instance; a nested
-/// <c>Action&lt;FieldBuilder&gt;</c> clearing an ancestor's memo; a direct <c>Where()</c> call).
-/// None of these change the root dictionary's <c>Count</c> (so <see cref="EnsureSynced"/>'s
-/// count-based check does not catch them), and none of them know this index exists. These are
-/// instead caught by <see cref="FieldDefinition"/>'s global merge-memo epoch (see
-/// <see cref="FieldDefinition.BumpMergeMemoEpoch"/>): every mutation site that clears a fingerprint
-/// memo outside <see cref="FieldDefinitionExtensions.MergeFieldsInPlace"/>'s call graph bumps that epoch, and
-/// <see cref="GetMergeCandidatesByFingerprint"/> checks it on every call, invalidating every
-/// fingerprint sub-bucket wholesale (cheap — O(1)) the instant it has moved since last trusted.
-/// Coarser than a per-key fix, but correctness-critical: the alternative (self-healing only the
-/// specific bucket a caller happens to query) provably misses a field that moved to a fingerprint
-/// nobody has asked about yet, sitting stale under its OLD bucket where nothing will ever look for
-/// it again — exactly the false-split hazard this design must rule out.</item>
-/// </list>
-/// Additionally, on every successful lookup, each visited candidate's live fingerprint is
-/// recomputed via <see cref="FieldDefinitionExtensions.ComputeDeepFingerprint"/> and checked
-/// against the bucket it is sitting in (see <c>HealBucketInPlace</c> below); any
-/// entry that still disagrees (impossible in practice once the epoch check above is in place, but
-/// kept as a second, independent guard) is relocated on the spot rather than trusted blindly. A
-/// fingerprint match is therefore always confirmed against the LIVE field, never assumed from
-/// bucket membership alone.
-/// </para>
-///
-/// <para>
-/// <b>Iteration order.</b> Entries are appended to a fingerprint bucket in the order they are
-/// first placed into it (via <see cref="IndexAdd"/>, a resync, or a re-bucket after becoming
-/// stale), which for the overwhelmingly common case (no out-of-band mutation) is exactly the
-/// original root-dictionary insertion order — identical to a linear Name-only scan filtered down
-/// to the same fingerprint. Only a field whose live fingerprint just changed is
-/// appended at the end of its new bucket instead of preserving its original relative position — the
-/// correct behavior, since after a genuine mutation it is, for merge-matching purposes, effectively
-/// a new candidate as of that mutation.
-/// </para>
-///
-/// The index also tracks every key currently in the root dictionary plus a per-base-name suffix
-/// counter, so <see cref="KeyGenerator"/> can hand out the next unique key directly instead of
-/// rebuilding a <see cref="HashSet{T}"/> from every key on every call.
-///
-/// The index is maintained incrementally by every root-dictionary insertion made through
-/// <see cref="QueryMerger"/> (the only consumer), so a chain of <c>Include()</c> calls never pays
-/// a rebuild. Any out-of-band mutation of the root dictionary's KEY SET (plain <c>AddField</c>
-/// adding a brand-new root field, <c>Preserve</c> building a fresh definition, etc. — anything
-/// that does not go through <see cref="QueryMerger"/>) is detected cheaply via a field-count
-/// comparison and triggers one full resync — a stale index is the worst failure mode here (a
-/// silent wrong merge), so staleness is actively detected rather than assumed away.
 /// </summary>
 internal sealed class FieldMergeIndex
 {
@@ -124,18 +64,8 @@ internal sealed class FieldMergeIndex
     // call mixed into the same builder as Include() calls).
     private int _syncedCount;
 
-    // Snapshot of FieldDefinition's global merge-memo epoch (see FieldDefinition.BumpMergeMemoEpoch)
-    // as of the last time the fingerprint sub-buckets were known to be fully consistent with the
-    // live field tree. Compared against the live epoch
-    // on every GetMergeCandidatesByFingerprint call — an O(1) staleness check that catches any
-    // out-of-band mutation that changed a field's deep fingerprint WITHOUT changing the root
-    // dictionary's key set (so EnsureSynced's Count-based check would miss it) and without going
-    // through QueryMerger.ReindexFingerprint (so this index was never told directly). A mismatch
-    // invalidates every fingerprint sub-bucket wholesale (cheap — O(1), just drops the two
-    // collections) rather than trying to determine which specific entries moved; buckets rebuild
-    // lazily, per name, on next use. See FieldDefinition.BumpMergeMemoEpoch's remarks for why this
-    // must be global rather than scoped to one field or one name.
     private long _syncedMergeMemoEpoch = -1;
+    private readonly MergeMemoScope _memoScope = new();
 
     /// <summary>
     /// Registers a newly inserted root-level field's KEY so future
@@ -159,6 +89,7 @@ internal sealed class FieldMergeIndex
         // so the outer dictionary lookup below is guaranteed to hit.
         if (_fingerprintBucketsBuilt.Contains(field.Name))
         {
+            field.EnsureMergeMemoTracker().Attach(_memoScope);
             var fingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(field);
             GetOrCreateFingerprintBucket(_byNameFingerprint[field.Name], fingerprint).Add(key);
             SetKeyFingerprint(field.Name, key, fingerprint);
@@ -283,6 +214,7 @@ internal sealed class FieldMergeIndex
         if (!_byNameFingerprint.TryGetValue(name, out var byFingerprint)) return;
         if (!fields.TryGetValue(key, out var liveField)) return;
 
+        liveField.EnsureMergeMemoTracker().Attach(_memoScope);
         var liveFingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(liveField);
 
         // Remove the key from whichever bucket currently holds it. _keyFingerprint[name] records
@@ -310,14 +242,9 @@ internal sealed class FieldMergeIndex
         SetKeyFingerprint(name, key, liveFingerprint);
     }
 
-    // Invalidates every fingerprint sub-bucket wholesale when FieldDefinition's global merge-memo epoch has
-    // advanced since they were last trusted — see _syncedMergeMemoEpoch's remarks. Cheap: O(1),
-    // just drops the two collections; each name's sub-buckets rebuild lazily (O(that name's bucket
-    // size), same cost EnsureFingerprintBucketsBuilt always pays on first use for a name) the next
-    // time GetMergeCandidatesByFingerprint is asked about it.
     private void EnsureFingerprintEpochCurrent()
     {
-        var liveEpoch = FieldDefinition.ReadMergeMemoEpoch();
+        var liveEpoch = _memoScope.Version;
         if (liveEpoch == _syncedMergeMemoEpoch) return;
 
         _byNameFingerprint.Clear();
@@ -344,6 +271,7 @@ internal sealed class FieldMergeIndex
             foreach (var key in keys)
             {
                 if (!fields.TryGetValue(key, out var field)) continue;
+                field.EnsureMergeMemoTracker().Attach(_memoScope);
                 var fingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(field);
 
                 GetOrCreateFingerprintBucket(byFingerprint, fingerprint).Add(key);
@@ -404,6 +332,6 @@ internal sealed class FieldMergeIndex
         // The fingerprint sub-buckets were just cleared and will rebuild lazily against the
         // now-current field tree — resync the epoch snapshot too, so EnsureFingerprintEpochCurrent
         // does not immediately consider that fresh rebuild stale on the very next check.
-        _syncedMergeMemoEpoch = FieldDefinition.ReadMergeMemoEpoch();
+        _syncedMergeMemoEpoch = _memoScope.Version;
     }
 }

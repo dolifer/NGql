@@ -33,6 +33,7 @@ public sealed class FieldBuilder
     private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null, SortedSet<Variable>? variableSink = null)
     {
         _fieldDefinition = fieldDefinition;
+        if (parent is null) fieldDefinition.EnsureMergeMemoTracker();
         _parent = parent;
         _variableSink = variableSink ?? parent?._variableSink;
     }
@@ -678,10 +679,7 @@ public sealed class FieldBuilder
         // equally stale and must be cleared explicitly here.
         ClearAncestorMergeMemos();
 
-        // This field may be sitting in FieldMergeIndex's fingerprint sub-buckets (directly, if it
-        // is a root field, or as the reason an ancestor's deep fingerprint is stale) without
-        // QueryMerger ever being told — see FieldDefinition's merge-memo-epoch remarks.
-        FieldDefinition.BumpMergeMemoEpoch();
+        _fieldDefinition.InvalidateMergeIndex();
 
         return this;
     }
@@ -965,14 +963,6 @@ public sealed class FieldBuilder
     private static bool IsBooleanType(string type)
         => type.Equals("Boolean", StringComparison.Ordinal) || type.Equals("Boolean!", StringComparison.Ordinal);
 
-    // @include/@skip are now merge-identity-relevant (see FieldDefinitionExtensions.CanMergeFields'
-    // conditional-directive check), so attaching/replacing one is exactly the same class of mutation
-    // as Where()'s argument change: it can invalidate this field's OWN memoized deep fingerprint and
-    // every ancestor's, and the field may already be sitting in FieldMergeIndex's fingerprint
-    // sub-buckets under its now-stale value. Mirrors Where()'s three-step invalidation (own memo,
-    // ancestor memos via the possibly-detached-builder chain, global epoch bump) exactly. Gated on
-    // the directive actually being include/skip so a custom Directive("format", …) call — which is
-    // never merge-identity-relevant — pays nothing extra on the hot path.
     private void InvalidateMergeMemoIfConditional(string directiveName)
     {
         if (!directiveName.Equals("include", StringComparison.Ordinal)
@@ -984,6 +974,6 @@ public sealed class FieldBuilder
         _fieldDefinition._deepArgumentFingerprint = null;
         _fieldDefinition._subtreeHasAnyArguments = null;
         ClearAncestorMergeMemos();
-        FieldDefinition.BumpMergeMemoEpoch();
+        _fieldDefinition.InvalidateMergeIndex();
     }
 }

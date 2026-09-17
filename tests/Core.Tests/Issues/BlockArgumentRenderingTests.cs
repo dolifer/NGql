@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Text;
 using FluentAssertions;
 using NGql.Core.Abstractions;
 using Xunit;
@@ -7,6 +9,57 @@ namespace NGql.Core.Tests.Issues;
 
 public class BlockArgumentRenderingTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PooledArguments_MatchDictionaryPrecedence(bool root)
+    {
+        var random = new Random(531);
+        for (var run = 0; run < 100; run++)
+        {
+            var block = new QueryBlock("Q");
+            for (var i = 0; i < 20; i++)
+            {
+                var key = i < 5 ? $"$v{i}" : $"argument{i}";
+                block.AddArgument(key, random.Next(2) == 0 ? random.Next(100) : new Variable($"$v{random.Next(5)}", "String"));
+            }
+            block.AddVariable("$V0", "Boolean");
+            block.AddVariable("$v0", "Int");
+            var expected = new StringBuilder("Q(");
+            foreach (var (key, value) in ReferenceArguments(block, root))
+            {
+                if (expected.Length > 2) expected.Append(", ");
+                if (value is Variable variable) variable.Print(expected, key, root);
+                else expected.Append(key).Append(':').Append(value);
+            }
+            expected.Append(')');
+            var rendered = block.ToString();
+            if (!root)
+            {
+                var parent = new QueryBlock("Parent");
+                parent.AddField(block);
+                rendered = parent.ToString();
+            }
+            rendered.Should().Contain(expected.ToString());
+        }
+    }
+
+    private static SortedDictionary<string, object> ReferenceArguments(QueryBlock block, bool root)
+    {
+        var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
+        foreach (var (key, value) in block.Arguments)
+            arguments[root && value is Variable variable ? variable.Name : key] = value;
+        if (root)
+        {
+            foreach (var variable in block.Variables)
+            {
+                if (!arguments.TryGetValue(variable.Name, out var value) || value is not Variable)
+                    arguments[variable.Name] = variable;
+            }
+        }
+        return arguments;
+    }
+
     [Fact]
     public void SingleNestedVariable_RendersReferenceAndRootDeclaration()
     {

@@ -812,23 +812,12 @@ internal static class FieldDefinitionExtensions
         }
     }
 
-    // Every caller replaces existingField's slot in a root dictionary/FieldChildren at an
-    // EXISTING key with the returned instance (see FieldFactory.UpdateExistingField,
-    // FieldFactory.CreateOrMergeField, SpanExtensions.MergeArgumentsAndMetadata) — the
-    // out-of-band mutation shape FieldMergeIndex's class remarks call out by name ("plain
-    // AddField replacing a root dictionary VALUE at an existing key"). That leaves the new
-    // instance's cleared fingerprint memo un-observed by FieldMergeIndex, which still has the
-    // OLD instance's fingerprint bucketed under the OLD key — so this must bump the global
-    // merge-memo epoch, exactly like ClearMergeMemo, or a later Include can silently miss the
-    // merge candidate (false split). Both branches change _arguments and therefore the deep
-    // fingerprint (going from FnvOffsetBasis to a non-empty argument hash, or from one non-empty
-    // hash to another), so both need the bump — not just the branch that looks more "structural".
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition MergeFieldArguments(this FieldDefinition existingField, IDictionary<string, object?>? newArguments)
     {
         if (newArguments is not { Count: > 0 }) return existingField;
 
-        FieldDefinition.BumpMergeMemoEpoch();
+        existingField.InvalidateMergeIndex();
 
         if (existingField._arguments is null || existingField._arguments.Count == 0)
         {

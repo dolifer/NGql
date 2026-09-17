@@ -37,39 +37,12 @@ public sealed record FieldDefinition
     /// </summary>
     internal ulong? _deepArgumentFingerprint;
 
-    /// <summary>
-    /// Process-wide counter bumped every time ANY <see cref="FieldDefinition"/>'s
-    /// <see cref="_deepArgumentFingerprint"/> is invalidated outside of
-    /// <see cref="Features.FieldMergeIndex"/>'s own bookkeeping (i.e. by <see cref="ClearMergeMemo"/>
-    /// or <see cref="Builders.FieldBuilder.Where"/>'s direct writes). <see cref="Features.FieldMergeIndex"/>
-    /// compares this against a snapshot taken when it last trusted its fingerprint sub-buckets: any
-    /// change proves a mutation happened somewhere it was not explicitly told about (out-of-band
-    /// <c>AddField</c>, a nested <c>Action&lt;FieldBuilder&gt;</c>, direct <c>Where()</c> calls, …),
-    /// and the sub-buckets are invalidated wholesale rather than trusted. Deliberately process-wide
-    /// rather than per-field or per-name: the mutation sites that must bump it are scattered across
-    /// <see cref="Builders.FieldFactory"/> and <see cref="Builders.FieldBuilder"/> by design (each
-    /// ancestor on the path to a mutation clears its own memo independently), so there is no single
-    /// field or root dictionary to scope a counter to without re-threading every one of those call
-    /// sites with index-awareness they should not need. A global counter costs one extra volatile
-    /// read per <c>FindMergeTarget</c> call and, in the overwhelming common case (a chain of
-    /// <c>Include()</c>s with no interleaved out-of-band mutation), never actually changes mid-chain
-    /// — so the fingerprint sub-buckets stay warm across the whole chain regardless.
-    /// </summary>
-    private static long _mergeMemoEpoch;
+    internal Features.MergeMemoTracker? _mergeMemoTracker;
 
-    /// <summary>
-    /// Bumps <see cref="_mergeMemoEpoch"/>. Called from <see cref="ClearMergeMemo"/> and from
-    /// <see cref="Builders.FieldBuilder.Where"/>'s direct fingerprint-memo writes — the two places
-    /// a field's deep fingerprint can be invalidated outside <see cref="Features.FieldMergeIndex"/>'s
-    /// own bookkeeping.
-    /// </summary>
-    internal static void BumpMergeMemoEpoch() => System.Threading.Interlocked.Increment(ref _mergeMemoEpoch);
+    internal Features.MergeMemoTracker EnsureMergeMemoTracker()
+        => LazyInitializer.EnsureInitialized(ref _mergeMemoTracker, static () => new Features.MergeMemoTracker());
 
-    /// <summary>
-    /// Reads the current value of <see cref="_mergeMemoEpoch"/>, for <see cref="Features.FieldMergeIndex"/>
-    /// to compare against its own last-synced snapshot.
-    /// </summary>
-    internal static long ReadMergeMemoEpoch() => System.Threading.Interlocked.Read(ref _mergeMemoEpoch);
+    internal void InvalidateMergeIndex() => _mergeMemoTracker?.Invalidate();
 
     private bool? _isArray;
     private bool? _isNullable;
@@ -383,7 +356,7 @@ public sealed record FieldDefinition
     {
         _deepArgumentFingerprint = null;
         _subtreeHasAnyArguments = null;
-        BumpMergeMemoEpoch();
+        InvalidateMergeIndex();
     }
 
     // Methods

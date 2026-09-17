@@ -6,42 +6,6 @@ namespace NGql.Core.Extensions;
 
 internal static class QueryBlockObjectExtensions
 {
-    internal static Dictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
-    {
-        var capacity = queryBlock.Arguments.Count + (isRootElement ? queryBlock.Variables.Count : 0);
-        var arguments = new Dictionary<string, object>(capacity, StringComparer.Ordinal);
-        CopyArguments(queryBlock, isRootElement, arguments);
-
-        if (isRootElement)
-        {
-            AddMissingRootVariables(queryBlock, arguments);
-        }
-        return arguments;
-    }
-
-    private static void CopyArguments(QueryBlock queryBlock, bool isRootElement, Dictionary<string, object> arguments)
-    {
-        foreach (var kvp in queryBlock.Arguments)
-        {
-            var key = kvp.Value is Variable variable && isRootElement ? variable.Name : kvp.Key;
-            arguments[key] = kvp.Value;
-        }
-    }
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Render hot path — a plain foreach avoids the closure + enumerator allocations of Where on every block render.")]
-    private static void AddMissingRootVariables(QueryBlock queryBlock, Dictionary<string, object> arguments)
-    {
-        foreach (var variable in queryBlock.Variables)
-        {
-            if (!arguments.TryGetValue(variable.Name, out var value) || value is not Variable)
-            {
-                arguments[variable.Name] = variable;
-            }
-        }
-    }
-
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
