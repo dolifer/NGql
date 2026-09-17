@@ -48,6 +48,7 @@ internal static class Helpers
 
     private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        if (dict.Count == 0) return;
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(dict)) return; // cycle detected
         
@@ -59,6 +60,7 @@ internal static class Helpers
 
     private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        if (list.Count == 0) return;
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(list)) return; // cycle detected
         

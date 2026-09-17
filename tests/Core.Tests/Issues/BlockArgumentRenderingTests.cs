@@ -8,6 +8,27 @@ namespace NGql.Core.Tests.Issues;
 public class BlockArgumentRenderingTests
 {
     [Fact]
+    public void SingleNestedVariable_RendersReferenceAndRootDeclaration()
+    {
+        var root = new QueryBlock("Q");
+        var nested = new QueryBlock("item");
+        nested.AddArgument("id", new Variable("$value", "Int"));
+        root.AddField(nested);
+
+        root.ToString().Should().StartWith("Q($value:Int)").And.Contain("item(id:$value)");
+    }
+
+    [Fact]
+    public void SingleArgument_RendersNullAndReadsReplacement()
+    {
+        var root = new QueryBlock("Q");
+        root.AddArgument("value", null!);
+        root.ToString().Should().StartWith("Q(value:null)");
+        root.AddArgument("value", 42);
+        root.ToString().Should().StartWith("Q(value:42)");
+    }
+
+    [Fact]
     public void Rendering_UsesOrdinalOrderAtRootAndInNestedBlocks()
     {
         var root = new QueryBlock("Q");

@@ -1,3 +1,4 @@
+using System.Buffers;
 using NGql.Core.Abstractions;
 using NGql.Core.Pooling;
 
@@ -61,24 +62,33 @@ internal static class KeyGenerator
     private static string GenerateUniqueKeyCore(string baseKey, HashSet<string> existingKeySet)
     {
         // 16 chars holds "_" plus a 15-digit counter — counter is int, max ~10 digits.
-        Span<char> buffer = stackalloc char[baseKey.Length + 16];
-        baseKey.AsSpan().CopyTo(buffer);
-        buffer[baseKey.Length] = '_';
-
-        // Loop terminates as soon as the formatted candidate isn't in the existingKeySet.
-        // existingKeySet has finite capacity bounded by the number of fields in the merged tree,
-        // so a not-present key is always reachable; counter is int, more than enough headroom.
-#pragma warning disable S1994
-        for (int counter = 1; ; counter++)
-#pragma warning restore S1994
+        var length = checked(baseKey.Length + 16);
+        char[]? rented = length > 512 ? ArrayPool<char>.Shared.Rent(length) : null;
+        Span<char> buffer = rented is null ? stackalloc char[length] : rented;
+        try
         {
-            counter.TryFormat(buffer[(baseKey.Length + 1)..], out var charsWritten);
-            var uniqueKey = new string(buffer[..(baseKey.Length + 1 + charsWritten)]);
-
-            if (!existingKeySet.Contains(uniqueKey))
+            baseKey.AsSpan().CopyTo(buffer);
+            buffer[baseKey.Length] = '_';
+#if NET9_0_OR_GREATER
+            var lookup = existingKeySet.GetAlternateLookup<ReadOnlySpan<char>>();
+#endif
+#pragma warning disable S1994
+            for (int counter = 1; ; counter++)
+#pragma warning restore S1994
             {
-                return uniqueKey;
+                counter.TryFormat(buffer[(baseKey.Length + 1)..], out var charsWritten);
+                var candidate = buffer[..(baseKey.Length + 1 + charsWritten)];
+#if NET9_0_OR_GREATER
+                if (!lookup.Contains(candidate)) return new string(candidate);
+#else
+                var uniqueKey = new string(candidate);
+                if (!existingKeySet.Contains(uniqueKey)) return uniqueKey;
+#endif
             }
+        }
+        finally
+        {
+            if (rented is not null) ArrayPool<char>.Shared.Return(rented, clearArray: true);
         }
     }
 }

@@ -232,12 +232,83 @@ Raw reports: `/tmp/ngql-insertion-before`, `/tmp/ngql-insertion-after`,
 `/tmp/ngql-block-arguments-before`, `/tmp/ngql-block-arguments-after`,
 `/tmp/ngql-type-cache-before`, and `/tmp/ngql-loop-final-net9`.
 
+## Follow-up loop: small arguments and alias collisions
+
+Baseline: `49c7bc0`. Three further internal changes passed measurement review:
+
+- Render a lone explicit argument or a lone root variable directly from its source
+  collection, avoiding the temporary argument dictionary. Mixed arguments and
+  variables continue through the existing precedence/ordering logic.
+- Stop variable discovery immediately for empty dictionaries/lists. Non-empty
+  collections retain reference-based cycle detection; a later call still sees
+  mutations to a previously empty collection.
+- On .NET 9/10, test alias suffix candidates as spans and allocate only the chosen
+  string. .NET 8 retains string lookup. Alias formatting now bounds stack storage
+  to 512 characters and rents/clears/returns a buffer for longer names instead of
+  making an input-sized stack allocation.
+
+Same .NET 9/M4 benchmark configuration as the preceding loop (three warmups,
+five measurements). The host was substantially slower/noisier during this pass:
+compare paired runs below, not absolute timings with earlier sections. These are
+managed bytes allocated per operation, not measurements of process retained heap.
+
+| Workload | Before → after | Allocation before → after |
+| --- | ---: | ---: |
+| Render one scalar argument | 262.2 → 233.6 ns | 528 → 208 B |
+| Render one variable | 249.1 → 154.6 ns | 456 → 208 B |
+| QueryBlock: add empty list argument | 287.6 → 133.4 ns | 528 → 352 B |
+| QueryBlock: add empty dictionary argument | 197.1 → 136.9 ns | 608 → 432 B |
+| QueryBuilder: empty list within arguments | 694.7 → 652.9 ns | 1,856 → 1,856 B |
+| QueryBuilder: empty dictionary within arguments | 798.2 → 624.6 ns | 1,936 → 1,936 B |
+| Generate alias with 10 occupied names | 772.3 → 529.3 ns | 496 → 136 B |
+| Generate alias with 1,000 occupied names | 88.5 → 59.8 µs | 113,264 → 73,304 B |
+
+The alias microbenchmark binds a delegate to the internal enumerable overload once
+in setup; reflection is not in the timed operation. Its suffix-generation core is
+also used by nested field alias conflict resolution. This is not an end-to-end
+merge speedup claim. The small alias timing confidence intervals overlap, as do
+the scalar singleton intervals; allocation reductions are the stronger evidence.
+The 1,000-name alias intervals do not overlap (88.5 ±9.9 vs 59.8 ±10.5 µs).
+
+Larger argument-render controls retained allocations (1,160/1,424 B for 10 scalar/
+variable entries; approximately 67,289/101,401 B for 1,000). Timings varied in both
+directions: 10 scalar entries 1,229 → 1,360 ns, 10 variables 1,565 → 1,529 ns,
+1,000 scalars 245.0 → 175.9 µs, 1,000 variables 197.8 → 207.6 µs. Their paired
+99.9% confidence intervals overlap; no large-render improvement is claimed here.
+
+The empty QueryBuilder cases still need cycle tracking for their enclosing argument
+dictionary, so they show no allocation reduction. The direct QueryBlock cases
+avoid that state entirely, saving 176 B each. No broad CPU percentage is inferred
+from these small-workload results.
+
+New regression coverage checks lone nested variable references versus root
+declarations, null/replaced scalar arguments, empty-then-mutated cyclic containers,
+case-insensitive suffix gaps, effective field aliases, and names around the stack
+threshold and at 100,000 characters. Public signatures and legacy `Include`
+reflection remain unchanged.
+
+Validation: 2,085 unit tests and 91 integration tests pass on each of .NET 8, 9
+and 10. Final source review and `git diff --check` found no additional issues in
+this change. The architectural candidates below remain unproven opportunities,
+not fixes claimed complete by these microbenchmarks.
+
+```sh
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*BlockArgumentRenderingBenchmark*' '*EmptyArgumentBenchmark*' '*AliasCollisionBenchmark*' --job short --warmupCount 3 --iterationCount 5 --inProcess --artifacts /tmp/ngql-small-paths
+```
+
+Copy the two new benchmark files into `49c7bc0` to reproduce the baseline. Raw
+reports: `/tmp/ngql-single-entry-before`, `/tmp/ngql-empty-before-single-after`,
+`/tmp/ngql-alias-before-empty-after`, and `/tmp/ngql-alias-after`. The mixed artifact
+names reflect the sequential loop: singleton changes preceded empty-container
+changes, which preceded alias changes; each baseline ran before its own change.
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
 These are source-level findings, not measured improvements in this change:
 
-- **Root argument rendering:** tree-node allocations are removed. The temporary
-  hash dictionary remains; removing it needs a merge that preserves ordinal order,
+- **Root argument rendering:** tree-node allocations are removed, and lone entries
+  bypass the temporary dictionary. For mixed/larger cases, removing that dictionary
+  needs a merge that preserves ordinal order,
   case-distinct variable names, remapped argument keys and collision precedence.
 - **Merge-index invalidation:** a static, process-wide merge-memo epoch invalidates
   fingerprint buckets in unrelated query definitions. Per-definition versioning

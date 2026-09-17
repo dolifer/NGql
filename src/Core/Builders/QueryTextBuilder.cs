@@ -822,8 +822,22 @@ internal sealed class QueryTextBuilder
             return;
         }
 
-        var arguments = queryBlock.GetArguments(isRootElement);
         _stringBuilder.Append('(');
+        if (queryBlock.Arguments.Count == 1 && (!isRootElement || queryBlock.Variables.Count == 0))
+        {
+            foreach (var (key, value) in queryBlock.Arguments) AppendArgument(key, value, isRootElement);
+            _stringBuilder.Append(')');
+            return;
+        }
+
+        if (isRootElement && queryBlock.Arguments.Count == 0 && queryBlock.Variables.Count == 1)
+        {
+            foreach (var variable in queryBlock.Variables) variable.Print(_stringBuilder, variable.Name, true);
+            _stringBuilder.Append(')');
+            return;
+        }
+
+        var arguments = queryBlock.GetArguments(isRootElement);
         if (arguments.Count == 1)
         {
             foreach (var (key, value) in arguments) AppendArgument(key, value, isRootElement);
