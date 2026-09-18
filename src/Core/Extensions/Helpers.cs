@@ -564,29 +564,33 @@ internal static class Helpers
 
     /// <summary>
     /// Creates a new FieldDefinition with sorted arguments for consistent behavior.
-    /// Arguments are passed by reference to avoid unnecessary copying of potentially large dictionaries.
+    /// Normalizes argument values into an independent sorted dictionary.
     /// <param name="name">Field name</param>
     /// <param name="type">Field type</param>
     /// <param name="alias">Optional field alias</param>
-    /// <param name="arguments">Field arguments (passed by reference for performance)</param>
+    /// <param name="arguments">Field arguments to normalize</param>
     /// <param name="path">Field path for caching</param>
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
     /// </summary>
     internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
-    {
-        // Use type interning for memory efficiency
-        var nameStr = name.ToString();
-        var typeStr = Caching.TypeCache.GetInternedType(type);
-        var aliasStr = alias.IsEmpty ? null : alias.ToString();
-        var pathStr = path.ToString();
+        => CreateFieldDefinitionCore(name.ToString(), TypeCache.GetInternedType(type),
+            alias.IsEmpty ? null : alias.ToString(), arguments, path.ToString(), metadata);
 
+    // Merge inputs already own immutable name/path/alias strings. Reuse those strings while
+    // retaining exactly the same type and recursive argument normalization as parsed fields.
+    internal static FieldDefinition CreateFieldDefinition(string name, ReadOnlySpan<char> type, string? alias, IDictionary<string, object?>? arguments, string path, Dictionary<string, object?>? metadata = null)
+        => CreateFieldDefinitionCore(name, TypeCache.GetInternedType(type),
+            string.IsNullOrEmpty(alias) ? null : alias, arguments, path, metadata);
+
+    private static FieldDefinition CreateFieldDefinitionCore(string name, string type, string? alias, IDictionary<string, object?>? arguments, string path, Dictionary<string, object?>? metadata)
+    {
         // FAST PATH: Skip dictionary operations when arguments are empty or null
         if (arguments?.Count == 0 || arguments == null)
         {
-            return new FieldDefinition(nameStr, typeStr, aliasStr, null)
+            return new FieldDefinition(name, type, alias, null)
             {
-                Path = pathStr,
+                Path = path,
                 _metadata = metadata
             };
         }
@@ -598,9 +602,9 @@ internal static class Helpers
             sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
         }
 
-        return new FieldDefinition(nameStr, typeStr, aliasStr, sortedArguments)
+        return new FieldDefinition(name, type, alias, sortedArguments)
         {
-            Path = pathStr,
+            Path = path,
             _metadata = metadata
         };
     }

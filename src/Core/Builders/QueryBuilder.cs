@@ -36,7 +36,7 @@ public sealed class QueryBuilder
     /// Two-level path cache: <c>rootPath → (nodePath → segments)</c>. The two-level structure avoids
     /// allocating a concatenated <c>"{root}.{node}"</c> string on every <c>GetPathTo</c> cache hit.
     /// </summary>
-    private readonly Dictionary<string, Dictionary<string, string[]>> _pathIndex = new();
+    private Dictionary<string, Dictionary<string, string[]>>? _pathIndex;
 
     private QueryBuilder(QueryDefinition queryDefinition) => _definition = queryDefinition;
 
@@ -531,7 +531,7 @@ public sealed class QueryBuilder
     /// </summary>
     private void InvalidateLookupCaches()
     {
-        _pathIndex.Clear();
+        _pathIndex?.Clear();
     }
 
     /// <summary>
@@ -557,7 +557,10 @@ public sealed class QueryBuilder
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
     public string[] GetPathTo(string queryName, string? nodePath = null)
-        => QueryMapInstance.GetPathTo(queryName, nodePath, _definition, _pathIndex);
+    {
+        _pathIndex ??= new();
+        return QueryMapInstance.GetPathTo(queryName, nodePath, _definition, _pathIndex);
+    }
 
     /// <summary>
     /// Gets the count of fields in the QueryDefinition.

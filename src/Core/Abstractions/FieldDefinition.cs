@@ -26,7 +26,16 @@ public sealed record FieldDefinition
     /// Cached result of "does this field's subtree contain any arguments?".
     /// Null = not yet computed. Reset to null whenever the subtree mutates.
     /// </summary>
-    internal bool? _subtreeHasAnyArguments;
+    internal bool? _subtreeHasAnyArguments
+    {
+        get => _subtreeArgumentState == CachedBoolean.Unknown ? null : _subtreeArgumentState == CachedBoolean.True;
+        set => _subtreeArgumentState = value switch
+        {
+            true => CachedBoolean.True,
+            false => CachedBoolean.False,
+            null => CachedBoolean.Unknown
+        };
+    }
 
     /// <summary>
     /// Cached conservative fingerprint over this field's own arguments plus, recursively, every
@@ -35,7 +44,29 @@ public sealed record FieldDefinition
     /// computed. Reset to null at exactly the same two sites as <see cref="_subtreeHasAnyArguments"/>
     /// whenever the subtree mutates — the two caches share an invalidation contract by design.
     /// </summary>
-    internal ulong? _deepArgumentFingerprint;
+    internal ulong? _deepArgumentFingerprint
+    {
+        get => _hasDeepArgumentFingerprint ? _deepArgumentFingerprintValue : null;
+        set
+        {
+            if (value.HasValue)
+            {
+                _deepArgumentFingerprintValue = value.GetValueOrDefault();
+                _hasDeepArgumentFingerprint = true;
+            }
+            else
+            {
+                _hasDeepArgumentFingerprint = false;
+            }
+        }
+    }
+
+    // Keep cache state in independent bytes. Packing unrelated caches into shared bit flags
+    // would let concurrent readers lose one another's updates. Splitting the fingerprint's
+    // payload from its presence flag also avoids Nullable<ulong>'s alignment padding.
+    private ulong _deepArgumentFingerprintValue;
+    private volatile bool _hasDeepArgumentFingerprint;
+    private CachedBoolean _subtreeArgumentState;
 
     internal Features.MergeMemoTracker? _mergeMemoTracker;
 
@@ -44,8 +75,15 @@ public sealed record FieldDefinition
 
     internal void InvalidateMergeIndex() => _mergeMemoTracker?.Invalidate();
 
-    private bool? _isArray;
-    private bool? _isNullable;
+    private CachedBoolean _isArray;
+    private CachedBoolean _isNullable;
+
+    private enum CachedBoolean : byte
+    {
+        Unknown,
+        False,
+        True
+    }
 
     /// <summary>
     /// Creates a field definition with a name and optional type and alias.
@@ -297,13 +335,29 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => _isArray ??= _type.IsArrayType();
+    public bool IsArray
+    {
+        get
+        {
+            if (_isArray == CachedBoolean.Unknown)
+                _isArray = _type.IsArrayType() ? CachedBoolean.True : CachedBoolean.False;
+            return _isArray == CachedBoolean.True;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => _isNullable ??= _type.IsNullableType();
+    public bool IsNullable
+    {
+        get
+        {
+            if (_isNullable == CachedBoolean.Unknown)
+                _isNullable = _type.IsNullableType() ? CachedBoolean.True : CachedBoolean.False;
+            return _isNullable == CachedBoolean.True;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether this field has child fields.

@@ -792,18 +792,15 @@ internal static class FieldFactory
         return newField;
     }
 
-    // FieldDefinition._type is always set to a non-empty value by all constructors (defaulting
-    // to Constants.DefaultFieldType), so the type-empty branch was a dead defensive check.
     private static FieldDefinition CloneFieldDefinitionForMerge(FieldDefinition fieldDefinition)
     {
-        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
         return Helpers.CreateFieldDefinition(
-            fieldDefinition.Name.AsSpan(),
+            fieldDefinition.Name,
             fieldDefinition._type.AsSpan(),
-            fieldAlias,
+            fieldDefinition._alias,
             fieldDefinition._arguments,
-            fieldDefinition.Path.AsSpan(),
-            fieldDefinition.Metadata);
+            fieldDefinition.Path,
+            fieldDefinition._metadata);
     }
 
     private static void ExtractDottedSegment(ReadOnlySpan<char> fieldPath, int pathStart, out SpanSegment segment, out int nextStart)

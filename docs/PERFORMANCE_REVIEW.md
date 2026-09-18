@@ -740,6 +740,106 @@ Substitute `before` or `published` for paired runs. `ProfileVersion` is passed i
 the environment for separate-process jobs so generated child builds use the
 same assembly. The audit override remains command-local.
 
+## Field state and merge-clone allocation pass — 2026-09-19
+
+Baseline: the construction fix above (preserved assembly SHA256 `42160fa8…`).
+Three further internal changes; public signatures, field equality and the legacy
+reflection `Include` path are unchanged:
+
+- `FieldDefinition` stores its three memoized booleans as one-byte tri-state values
+  and splits the deep-fingerprint cache into a `ulong` payload plus a volatile
+  presence byte. This removes `Nullable<T>` padding: the instance shrinks from
+  144 to 128 B. Each cache keeps its own byte, so concurrent memoization cannot
+  lose another cache's update, as shared bit flags could.
+- Merge clones reuse the source field's existing name, alias and path strings
+  and pass its metadata reference directly. Type interning and recursive argument
+  normalization are the same as for parsed fields.
+- `QueryBuilder` creates its path index on the first `GetPathTo` call. Builders
+  that never look up paths no longer allocate the dictionary.
+
+Same harness family as the preceding section: BenchmarkDotNet 0.15.7, .NET 9.0.9,
+Apple M4, in-process ShortRun, three warmups, five iterations of 200 ms. All 41
+cases paired; runs were sequential. The baseline run was taken on 2026-09-18 and
+the after run on 2026-09-19, so absolute timings also include host variation.
+
+| Workload | Time before → after | Bytes before → after |
+| --- | ---: | ---: |
+| Complex merging | 1,439.3 → 1,274.8 ns | 6,871 → 5,202 |
+| Simple query | 335.7 → 326.7 ns | 1,638 → 1,516 |
+| Bulk building, 100 queries | 50.66 → 50.00 µs | 236,001 → 219,996 |
+| 200 dotted paths | 68.78 → 67.92 µs | 260,936 → 251,259 |
+| 500 flat fields | 64.56 → 64.49 µs | 153,405 → 145,285 |
+| Merge 100 fragments (guardrail) | 45.90 → 47.93 µs | 144,826 → 139,962 |
+| Arguments pool stress | 7.48 → 7.25 µs | 43,008 → 39,649 |
+| Cold directives build | 861.2 → 879.0 ns | 4,328 → 4,200 |
+| Cold inline fragments build | 911.3 → 937.3 ns | 4,728 → 4,520 |
+
+Allocation falls or is unchanged in 40 of 41 cases (classic nesting, merge
+isolation and pure rendering are unchanged); the 617 KB oversized render reads
+11 B higher, which is within that benchmark's amortized measurement noise. Complex merging allocates **24%
+less** and is the only case whose timing interval separates in the faster
+direction (−11.4%). It now allocates less than NGql.Core 2.1.0 measured in the
+preceding section (6,360 B). Simple query is also below its 2.1.0 figure
+(1,600 B). The 200-dotted-path and 500-flat-field workloads remain above theirs
+(236,944 and 129,448 B): the release-relative construction increase is reduced,
+not removed. Byte values come from BenchmarkDotNet's rounded KB column.
+
+Three cases had non-overlapping slower intervals in the first pairing, and
+`ToStringPerCall` (10) measured +12.9% with overlapping intervals. All four were
+rerun in before/after/after/before order with five warmups and ten iterations:
+
+| Case | Before (runs 1, 4) | After (runs 2, 3) |
+| --- | ---: | ---: |
+| Scalar-argument render | 579.7 / 587.8 ns | 603.7 / 595.5 ns |
+| Oversized render | 132.12 / 131.18 µs | 132.17 / 132.31 µs |
+| Expression preservation, 10 | 10.64 / 12.22 µs | 11.74 / 11.90 µs |
+| ToString, 10 | 3.223 / 3.187 µs | 3.180 / 3.267 µs |
+
+Oversized render, preservation and ToString did not reproduce a slowdown.
+Scalar-argument rendering stays about 2.7% slower (roughly 16 ns) with unchanged
+536 B. The renderer does not read any of the changed cache fields, so the cause
+is not established; object layout or code alignment are candidates. Treat it as
+a possible small cost, not as noise.
+
+### Retained managed heap
+
+The retained-heap harness holds 10,000 complex-merge workloads and reports live
+managed heap per query after a compacting full GC (three repeats, identical
+values in every repeat). This is a managed-heap estimate, not RSS.
+
+| Held graph | 2.1.0 | Before | After |
+| --- | ---: | ---: | ---: |
+| Merged builder only | 3,008 B | 3,360 B | 2,576 B |
+| Both fragments and merged builder | 5,752 B | 6,520 B | 4,848 B |
+| Construction allocation per workload | — | 6,520 B | 4,848 B |
+
+Retained heap falls 23% and 26% against the baseline and is now 14–16% below
+the released package for this workload. Output SHA256 is unchanged
+(`2F440BAE…3AAB6`) for all three assemblies.
+
+### Correctness and reproduction
+
+**2,113 unit tests and 91 integration tests pass on each of .NET 8, 9 and 10.**
+Nine new cases in `FieldDefinitionCacheTests` cover fingerprint values 0, 1 and
+`ulong.MaxValue` surviving record copies and clearing, argument-merge copies
+recomputing caches without touching their source, deep-clone independence with
+equal identity and hash, and concurrent read-only memoization for the four
+array/nullable type shapes. The first build of this pass failed Sonar rule S1121
+on the inline lazy assignment in `GetPathTo`; the assignment is now a separate
+statement and the results above come from the corrected build (assembly SHA256
+`02fc0fa6…`, identical to the tested binary).
+
+Harness, snapshots and raw reports are under the git-ignored
+`artifacts/benchmarks/complex-merge-opt/`: `bdn-before`, `bdn-after`,
+`bdn-before-vs-bdn-after.md`, `recheck-1-before` … `recheck-4-before`,
+`heap-before-final.txt`, `heap-after.txt` and `heap-published.txt`.
+
+```sh
+dotnet run --project artifacts/benchmarks/complex-merge-opt/bdn -c Release -p:ProfileVersion=after -- --filter '*' --job short --inProcess --warmupCount 3 --iterationCount 5 --iterationTime 200 --artifacts artifacts/benchmarks/complex-merge-opt/bdn-after
+python3 artifacts/benchmarks/complex-merge-opt/compare.py bdn-before bdn-after
+dotnet run --project artifacts/benchmarks/complex-merge-opt/heap -c Release -p:ProfileVersion=after -- --count 10000 --repeats 3 --mode both
+```
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
 All six findings are now measured and resolved in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).
