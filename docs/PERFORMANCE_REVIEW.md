@@ -910,6 +910,24 @@ each kind of optional state without changing their source, a copy gaining a
 second kind while the source keeps its own, one-time attachment of the mutable
 metadata dictionary, and the effective name following the alias across copies.
 
+### Release timing check
+
+The complex-merging slowdown against NGql.Core 2.1.0 (+5.2% at `815ea8b`) was
+rerun on this assembly in published / local / local / published order, five
+warmups and ten 200 ms iterations, in-process:
+
+| Workload | 2.1.0 (runs 1, 4) | Local (runs 2, 3) | Bytes 2.1.0 → local |
+| --- | ---: | ---: | ---: |
+| Complex merging | 1,462.4 / 1,455.5 ns | 1,217.4 / 1,202.9 ns | 6,359 → 4,721 |
+| Simple query | 365.0 / 360.4 ns | 320.9 / 318.5 ns | 1,597 → 1,413 |
+
+Every 99.9% interval is below ±18 ns and the versions do not overlap: complex
+merging is about 17% faster and simple query about 12% faster than the release,
+with 26% and 12% less allocation. These are two microbenchmarks on one host, not
+an application throughput claim. Raw reports: `release-check-1-published` …
+`release-check-4-published`. All measures for these passes are tabulated in the
+[PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md) measurement ledger.
+
 Artifacts under `artifacts/benchmarks/complex-merge-opt/`: snapshot `layout96/`
 (SHA256 `9fbcb83a…`), `bdn-layout96`, `bdn-after-vs-bdn-layout96.md`,
 `recheck96-1-after` … `recheck96-4-after`, `heap-layout96.txt`. Reproduce with
