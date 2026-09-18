@@ -368,11 +368,6 @@ internal static class FieldDefinitionExtensions
             IsNeverMerge = source.IsNeverMerge,
         };
 
-        if (source._metadata is { Count: > 0 })
-        {
-            foreach (var kvp in source._metadata) clone.Metadata[kvp.Key] = kvp.Value;
-        }
-
         if (source._children is { Count: > 0 })
         {
             clone._children = new FieldChildren(source._children.Count);
@@ -380,13 +375,11 @@ internal static class FieldDefinitionExtensions
                 clone._children.Append(child.DeepClone());
         }
 
-        clone._fragments = DeepCloneFragments(source._fragments);
-        clone._spreadFragments = source._spreadFragments is { Count: > 0 }
-            ? new List<string>(source._spreadFragments)
-            : null;
-        clone._directives = source._directives is { Count: > 0 }
-            ? new List<FieldDirective>(source._directives)
-            : null;
+        clone.SetOptionalState(
+            DeepCloneFragments(source._fragments),
+            source._spreadFragments is { Count: > 0 } ? new List<string>(source._spreadFragments) : null,
+            source._directives is { Count: > 0 } ? new List<FieldDirective>(source._directives) : null,
+            source._metadata is { Count: > 0 } ? new Dictionary<string, object?>(source._metadata) : null);
 
         return clone;
     }

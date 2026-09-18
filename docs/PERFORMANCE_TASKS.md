@@ -58,6 +58,9 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
   and simple query 365.0 / 320.9 / 318.5 / 360.4 ns (about 12% faster). All 99.9%
   intervals are below ±18 ns and do not overlap between versions. The earlier
   release-relative complex-merging slowdown (+5.2% at `815ea8b`) is reversed.
+- T9 review follow-up: holder replacement is compare-and-swap, `DeepClone` builds
+  one holder. Allocation unchanged in six paired cases; feature-bearing cold builds
+  cost 1–3% more time. 2,125 / 91 tests. Source: `cas-check-1-layout96` … `-4-`.
 
 ## Measurement ledger (T7–T10)
 

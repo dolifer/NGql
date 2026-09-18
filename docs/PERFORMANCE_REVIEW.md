@@ -910,6 +910,36 @@ each kind of optional state without changing their source, a copy gaining a
 second kind while the source keeps its own, one-time attachment of the mutable
 metadata dictionary, and the effective name following the alias across copies.
 
+### Review follow-up: atomic holder replacement
+
+Code review found that the shared holder let a `Metadata` read (which attaches a
+dictionary) race a builder adding a directive, spread or fragment: both rebuilt
+the holder from the same snapshot and one member was lost. Four independent
+fields could not do that. Holder replacement is now a compare-and-swap loop, the
+lazy metadata attach keeps the winner's dictionary, and `DeepClone` builds its
+holder once instead of up to four times. The `HasMetadata` XML comment, displaced
+onto a private helper, is restored. Mutating the same collection from several
+threads remains unsupported, as before.
+
+Paired before/after/after/before runs (five warmups, ten iterations) show
+identical allocation in all six cases and a 1–3% timing cost on feature-bearing
+cold builds:
+
+| Case | Before (runs 1, 4) | After (runs 2, 3) | Bytes |
+| --- | ---: | ---: | ---: |
+| Cold directives build | 867.7 / 860.8 ns | 875.1 / 871.3 ns | unchanged |
+| Cold inline fragments build | 953.2 / 946.3 ns | 982.5 / 961.2 ns | unchanged |
+| Cold named fragments build | 591.3 / 587.1 ns | 605.7 / 611.7 ns | unchanged |
+| Cold metadata build | 456.0 / 442.9 ns | 464.5 / 450.8 ns | unchanged |
+| Merge 100 fragments | 45.14 / 44.87 µs | 45.36 / 45.17 µs | unchanged |
+| Complex merging | 1.217 / 1.181 µs | 1.257 / 1.216 µs | unchanged |
+
+No benchmark clones a field carrying several optional members, so the
+`DeepClone` holder saving (up to 144 B per such field) is reasoned from the code,
+not measured. Two new tests cover the race (200 iterations of four concurrent
+writers) and deep-clone independence: 2,125 unit and 91 integration tests pass on
+.NET 8, 9 and 10. Raw reports: `cas-check-1-layout96` … `cas-check-4-layout96`.
+
 ### Release timing check
 
 The complex-merging slowdown against NGql.Core 2.1.0 (+5.2% at `815ea8b`) was

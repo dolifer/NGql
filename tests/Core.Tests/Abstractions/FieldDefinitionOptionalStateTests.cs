@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using FluentAssertions;
 using NGql.Core.Abstractions;
+using NGql.Core.Extensions;
 using Xunit;
 
 namespace NGql.Core.Tests.Abstractions;
@@ -56,6 +58,47 @@ public class FieldDefinitionOptionalStateTests
         field.HasMetadata.Should().BeTrue();
         field.HasDirectives.Should().BeFalse();
         field.HasInlineFragments.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Metadata_ReadRacingOtherOptionalState_KeepsEveryMember()
+    {
+        for (var iteration = 0; iteration < 200; iteration++)
+        {
+            var field = new FieldDefinition("user", "User");
+
+            Parallel.Invoke(
+                () => field.Metadata["key"] = 1,
+                () => field.AddDirective(new FieldDirective("live", null)),
+                () => field.AddSpreadFragment("Identity"),
+                () => field.GetOrAddInlineFragment("Admin"));
+
+            field.Metadata.Should().ContainKey("key");
+            field.Directives.Should().ContainSingle();
+            field.SpreadFragments.Should().ContainSingle();
+            field.InlineFragments.Should().ContainKey("Admin");
+        }
+    }
+
+    [Fact]
+    public void DeepClone_FieldWithEveryOptionalMember_CopiesIndependentCollections()
+    {
+        var source = new FieldDefinition("user", "User");
+        source.Metadata["key"] = 1;
+        source.AddDirective(new FieldDirective("live", null));
+        source.AddSpreadFragment("Identity");
+        source.GetOrAddInlineFragment("Admin");
+
+        var clone = source.DeepClone();
+        clone.Metadata["added"] = 2;
+        clone.AddSpreadFragment("Other");
+        clone.GetOrAddInlineFragment("Guest");
+
+        source.Metadata.Should().ContainSingle();
+        source.SpreadFragments.Should().ContainSingle();
+        source.InlineFragments.Should().ContainSingle();
+        clone.Directives.Should().ContainSingle();
+        clone.Metadata.Should().HaveCount(2);
     }
 
     [Theory]

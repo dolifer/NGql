@@ -24,19 +24,19 @@ public sealed record FieldDefinition
     internal Dictionary<string, InlineFragmentDefinition>? _fragments
     {
         get => _optional?.Fragments;
-        set => _optional = OptionalState.Create(value, _optional?.SpreadFragments, _optional?.Directives, _optional?.Metadata);
+        set => ReplaceOptional(static (current, fragments) => OptionalState.Create(fragments, current?.SpreadFragments, current?.Directives, current?.Metadata), value);
     }
 
     internal List<string>? _spreadFragments
     {
         get => _optional?.SpreadFragments;
-        set => _optional = OptionalState.Create(_optional?.Fragments, value, _optional?.Directives, _optional?.Metadata);
+        set => ReplaceOptional(static (current, spreads) => OptionalState.Create(current?.Fragments, spreads, current?.Directives, current?.Metadata), value);
     }
 
     internal List<FieldDirective>? _directives
     {
         get => _optional?.Directives;
-        set => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, value, _optional?.Metadata);
+        set => ReplaceOptional(static (current, directives) => OptionalState.Create(current?.Fragments, current?.SpreadFragments, directives, current?.Metadata), value);
     }
 
     internal Dictionary<string, object?>? _metadata
@@ -44,6 +44,24 @@ public sealed record FieldDefinition
         get => _optional?.Metadata;
         init => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, _optional?.Directives, value);
     }
+
+    // Reading Metadata attaches a dictionary, so a reader can race a builder adding a directive
+    // or fragment. Compare-and-swap keeps either replacement from discarding the other's member.
+    private void ReplaceOptional<T>(Func<OptionalState?, T, OptionalState?> replace, T value)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _optional);
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _optional, replace(current, value), current), current)) return;
+        }
+    }
+
+    /// <summary>
+    /// Assigns all optional members with a single holder allocation (none when all are null).
+    /// </summary>
+    internal void SetOptionalState(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+        List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+        => Volatile.Write(ref _optional, OptionalState.Create(fragments, spreadFragments, directives, metadata));
 
     internal string _effectiveName => !string.IsNullOrEmpty(_alias) ? _alias : Name;
 
@@ -377,25 +395,24 @@ public sealed record FieldDefinition
         get
         {
             var metadata = _metadata;
-            if (metadata is null)
-            {
-                metadata = [];
-                SetMetadata(metadata);
-            }
+            if (metadata is not null) return metadata;
 
-            return metadata;
+            ReplaceOptional(static (current, created) => current?.Metadata is not null
+                ? current
+                : OptionalState.Create(current?.Fragments, current?.SpreadFragments, current?.Directives, created), new Dictionary<string, object?>());
+            return _metadata!;
         }
         set => SetMetadata(value);
     }
+
+    private void SetMetadata(Dictionary<string, object?>? metadata)
+        => ReplaceOptional(static (current, value) => OptionalState.Create(current?.Fragments, current?.SpreadFragments, current?.Directives, value), metadata);
 
     /// <summary>
     /// Gets a value indicating whether this field carries any metadata. Unlike reading
     /// <see cref="Metadata"/>, this check does not allocate or attach an empty dictionary
     /// to metadata-less fields — prefer it as the guard when scanning field trees.
     /// </summary>
-    private void SetMetadata(Dictionary<string, object?>? metadata)
-        => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, _optional?.Directives, metadata);
-
     [JsonIgnore]
     public bool HasMetadata => _metadata is { Count: > 0 };
 
