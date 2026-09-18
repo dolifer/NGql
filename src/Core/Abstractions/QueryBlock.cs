@@ -26,6 +26,22 @@ public sealed class QueryBlock
     /// </summary>
     public IReadOnlyDictionary<string, object> Arguments => _arguments;
 
+    // Arguments are never removed, so while exactly one exists it is the first key written, in
+    // its original casing. Rendering reads it directly: enumerating a SortedDictionary allocates
+    // a traversal stack, and doing so through the interface also boxes the enumerator.
+    private string? _firstArgumentKey;
+
+    internal SortedDictionary<string, object> ArgumentsInternal => _arguments;
+
+    internal SortedSet<Variable> VariablesInternal => _variables;
+
+    internal bool TryGetSingleArgument([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out object? value)
+    {
+        key = _firstArgumentKey;
+        value = null;
+        return _arguments.Count == 1 && key is not null && _arguments.TryGetValue(key, out value);
+    }
+
     /// <summary>
     /// The collection of variables related to <see cref="FieldsList"/> or <see cref="Arguments"/>.
     /// </summary>
@@ -152,6 +168,7 @@ public sealed class QueryBlock
         foreach (var (key, sortedValue) in staged)
         {
             Helpers.ExtractVariablesFromValue(sortedValue, _variables);
+            if (_arguments.Count == 0) _firstArgumentKey = key;
             _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
         }
     }
@@ -363,6 +380,7 @@ public sealed class QueryBlock
 
         Helpers.ExtractVariablesFromValue(value, _variables);
         var sortedValue = Helpers.SortArgumentValue(value);
+        if (_arguments.Count == 0) _firstArgumentKey = key;
         _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 

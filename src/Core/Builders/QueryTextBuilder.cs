@@ -871,16 +871,17 @@ internal sealed class QueryTextBuilder
         }
 
         _stringBuilder.Append('(');
-        if (queryBlock.Arguments.Count == 1 && (!isRootElement || queryBlock.Variables.Count == 0))
+        if ((!isRootElement || queryBlock.Variables.Count == 0) && queryBlock.TryGetSingleArgument(out var singleKey, out var singleValue))
         {
-            foreach (var (key, value) in queryBlock.Arguments) AppendArgument(key, value, isRootElement);
+            AppendArgument(singleKey, singleValue, isRootElement);
             _stringBuilder.Append(')');
             return;
         }
 
         if (isRootElement && queryBlock.Arguments.Count == 0 && queryBlock.Variables.Count == 1)
         {
-            foreach (var variable in queryBlock.Variables) variable.Print(_stringBuilder, variable.Name, true);
+            var variable = queryBlock.VariablesInternal.Min!;
+            variable.Print(_stringBuilder, variable.Name, true);
             _stringBuilder.Append(')');
             return;
         }
@@ -891,15 +892,20 @@ internal sealed class QueryTextBuilder
         try
         {
             var index = 0;
-            foreach (var (key, value) in queryBlock.Arguments)
+            // An empty SortedDictionary still allocates its traversal stack when enumerated.
+            if (explicitCount > 0)
             {
-                var renderedKey = isRootElement && value is Variable variable ? variable.Name : key;
-                entries[index] = new ArgumentEntry(renderedKey, value, index);
-                index++;
+                foreach (var (key, value) in queryBlock.ArgumentsInternal)
+                {
+                    var renderedKey = isRootElement && value is Variable variable ? variable.Name : key;
+                    entries[index] = new ArgumentEntry(renderedKey, value, index);
+                    index++;
+                }
             }
-            if (isRootElement)
+
+            if (isRootElement && count > explicitCount)
             {
-                foreach (var variable in queryBlock.Variables)
+                foreach (var variable in queryBlock.VariablesInternal)
                 {
                     entries[index] = new ArgumentEntry(variable.Name, variable, index);
                     index++;
