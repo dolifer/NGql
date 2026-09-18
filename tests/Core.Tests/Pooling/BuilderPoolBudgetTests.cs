@@ -59,6 +59,43 @@ public class BuilderPoolBudgetTests(ITestOutputHelper output)
         }
     }
 
+    [Theory]
+    [InlineData(80000, 200000)]
+    [InlineData(200000, 80000)]
+    public void NestedRender_OverBudget_RetainsLargerBuilderOnTop(int firstReturned, int secondReturned)
+    {
+        Exception? error = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var builders = Borrow(1024);
+                SetCapacity(builders[0], firstReturned);
+                SetCapacity(builders[1], secondReturned);
+                var larger = firstReturned > secondReturned ? builders[0] : builders[1];
+
+                QueryTextBuilder.ReturnToPool(builders[0]);
+                QueryTextBuilder.ReturnToPool(builders[1]);
+
+                RetainedCapacity().Should().Be(200000);
+                QueryTextBuilder.GetFromPool().Should().BeSameAs(larger);
+            }
+            catch (Exception caught) { error = caught; }
+        });
+        thread.Start();
+        thread.Join();
+
+        error.Should().BeNull();
+    }
+
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3011",
+        Justification = "Test-only capacity measurement preserves the production API.")]
+    private static void SetCapacity(QueryTextBuilder builder, int capacity)
+    {
+        var field = typeof(QueryTextBuilder).GetField("_stringBuilder", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        ((StringBuilder)field.GetValue(builder)!).Capacity = capacity;
+    }
+
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Major Code Smell", "S3011",
         Justification = "Test-only capacity measurement preserves the production API.")]
     private static QueryTextBuilder[] Borrow(int capacity)

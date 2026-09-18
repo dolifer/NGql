@@ -89,12 +89,44 @@ internal sealed class QueryTextBuilder
             {
                 var retainedCapacity = builder._stringBuilder.Capacity;
                 foreach (var pooled in stack) retainedCapacity += pooled._stringBuilder.Capacity;
-                if (retainedCapacity > MaxBuilderCapacity) return;
+                if (retainedCapacity > MaxBuilderCapacity)
+                {
+                    RetainLargestWithinBudget(stack, builder);
+                    return;
+                }
             }
             builder._stringBuilder.Clear();
             stack.Push(builder);
         }
         // If pool is full, let GC handle it
+    }
+
+    // Over budget: keep the largest builders that fit, because those are the costly ones to regrow.
+    // Rejecting the incoming builder unconditionally let a small pooled builder block a large one
+    // on every nested render. The largest ends on top, where the outermost render rents it.
+    private static void RetainLargestWithinBudget(Stack<QueryTextBuilder> stack, QueryTextBuilder incoming)
+    {
+        var candidates = new QueryTextBuilder[stack.Count + 1];
+        stack.CopyTo(candidates, 0);
+        candidates[^1] = incoming;
+        Array.Sort(candidates, static (left, right) => right._stringBuilder.Capacity.CompareTo(left._stringBuilder.Capacity));
+
+        stack.Clear();
+        var retainedCapacity = 0;
+        var kept = 0;
+        foreach (var candidate in candidates)
+        {
+            var capacity = candidate._stringBuilder.Capacity;
+            if (retainedCapacity + capacity > MaxBuilderCapacity) continue;
+            retainedCapacity += capacity;
+            candidates[kept++] = candidate;
+        }
+
+        for (var i = kept - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(candidates[i], incoming)) incoming._stringBuilder.Clear();
+            stack.Push(candidates[i]);
+        }
     }
 
     /// <summary>
