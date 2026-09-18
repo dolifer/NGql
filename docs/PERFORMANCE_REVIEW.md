@@ -490,6 +490,256 @@ Final validation: 2,101 unit tests and 91 integration tests pass on each of .NET
 unchanged. The command-local audit override addresses the existing dependency
 audit failure; no dependency versions or repository audit settings were changed.
 
+## Released-package comparison — 2026-09-17
+
+Ran the complete `VersionComparisonBenchmark` against working-copy commit
+`815ea8b` and **NGql.Core 2.1.0**, the latest stable release verified against the
+[live NuGet version index](https://api.nuget.org/v3-flatcontainer/ngql.core/index.json).
+Newer previews were excluded. Both runners compile the same linked benchmark
+source on .NET 9.0.9 / Apple M4 / SDK 10.0.102 / BenchmarkDotNet 0.15.7.
+
+The primary comparison uses three warmups/five measured iterations in-process.
+The benchmark's built-in configuration also adds an out-of-process ShortRun with
+three measured iterations. All 24 shared cases completed in both modes; all six
+local-only cases also completed in both modes. Runs were sequential. The first
+local ShortRun build failed on the existing NU1902 audit error; rerunning with
+process-local `NuGetAudit=false` allowed generated child builds to complete.
+No library source, dependencies or repository audit settings were changed.
+
+Primary results (time and managed allocation per benchmark invocation):
+
+| Scenario | Released → local time | Released → local allocation | Time change | Allocation change |
+| --- | ---: | ---: | ---: | ---: |
+| Simple query | 393.4 → 375.2 ns | 1.56 → 1.72 KiB | −4.6% | +10.3% |
+| Complex query with merging | 1.445 → 1.520 µs | 6.23 → 6.91 KiB | +5.2% | +10.9% |
+| Classic nesting, depth 10 | 6.538 → 3.019 µs | 53.18 → 12.96 KiB | −53.8% | −75.6% |
+| Classic nesting, depth 30 | 38.468 → 9.694 µs | 669.27 → 54.99 KiB | −74.8% | −91.8% |
+| Dictionary arguments, 50 repetitions | 60.187 → 50.339 µs | 203.91 → 191.80 KiB | −16.4% | −5.9% |
+| Expression preservation, 50 repetitions | 55.176 → 51.534 µs | 176.64 → 148.40 KiB | −6.6% | −16.0% |
+| ToString, 50 repetitions | 16.061 → 12.361 µs | 41.03 → 32.27 KiB | −23.0% | −21.4% |
+| ToString + UTF-8, 50 repetitions | 17.475 → 13.774 µs | 55.88 → 47.11 KiB | −21.2% | −15.7% |
+| Bulk building, 100 queries | 58.711 → 57.108 µs | 220.31 → 246.09 KiB | −2.7% | +11.7% |
+| Dotted paths, 200 fields | 73.177 → 74.144 µs | 231.43 → 270.45 KiB | +1.3% | +16.9% |
+| Flat selection, 500 fields | 64.520 → 64.978 µs | 126.42 → 149.81 KiB | +0.7% | +18.5% |
+
+This is **not a universal reduction against the release**. The cross-check
+reproduces the builder-heavy allocation increases and the large nesting/rendering
+savings. Complex merging averages 8.8% slower out-of-process too, although its
+ShortRun timing intervals overlap (the primary intervals do not). Simple-query,
+large-selection and 50-repetition preservation timing intervals overlap in the
+primary run; do not treat those small timing differences as proven improvements
+or regressions. Allocation percentages use rounded CSV values. These are
+allocation measurements, not retained-heap/RSS measurements or total CPU usage.
+
+The construction allocation increases and complex-merge timing are next profiling
+targets; this comparison does not isolate their cause or implement new fixes.
+The six previously completed tasks remain scoped findings, not a claim that all
+release-relative workloads are faster or smaller.
+
+Full 24-case tables for both modes, uncertainty checks, six local-only results,
+commands and raw reports are under
+`artifacts/benchmarks/version-815ea8b/` (git-ignored), starting with
+[comparison.md](../artifacts/benchmarks/version-815ea8b/comparison.md).
+The published runner's compile guard excludes the six local-only cases; they are
+not included in release-relative ratios. High-priority scheduling was unavailable
+in both runners. Repeated randomized A/B runs would better isolate small timing
+differences from host/run variation.
+
+## Complex merging profile — 2026-09-17
+
+Profiled `VersionComparisonBenchmark.ComplexQueryWithMerging` against the actual
+NGql.Core 2.1.0 package (repository commit `58c697d`) and working copy `815ea8b`.
+The operation builds two four-field fragments, creates a destination, includes
+both fragments, and renders the result. It measures construction and rendering
+as well as merging. No production implementation was changed in this pass.
+
+### Exact allocation by phase
+
+A standalone .NET 9.0.9 Release harness brackets each phase with
+`GC.GetAllocatedBytesForCurrentThread`. Totals storage is outside the operation;
+measured instrumentation allocation outside the brackets is zero. After at least
+two seconds of warmup, 100,000 operations produce the following bytes/op. Both
+process runs reproduce the phase totals (sub-byte runtime noise rounded away).
+
+| Phase | 2.1.0 bytes | Local bytes | Difference |
+| --- | ---: | ---: | ---: |
+| Build both fragments | 2,904 | 3,416 | +512 |
+| Create destination root | 184 | 200 | +16 |
+| First Include | 1,784 | 1,976 | +192 |
+| Second Include | 944 | 1,088 | +144 |
+| Render | 544 | 352 | −192 |
+| Total instrumented operation | 6,360 | 7,032 | +672 |
+
+Construction/inclusion adds **864 B/op**, partially offset by **192 B/op** saved
+in rendering. About 61% of the gross increase occurs before either Include call.
+This is principally a builder/state allocation investigation, not evidence that
+the merge-candidate search itself regressed.
+
+The benchmark uses `MergeByDefault`, which does not consult the fingerprint
+candidate index (`QueryMerger.ApplyFieldMerge`). Raw instance-size probes using
+`RuntimeHelpers.GetUninitializedObject` measure `FieldDefinition` at 96 → 144 B,
+`QueryDefinition` at 64 → 80 B, `FieldBuilder` at 24 → 40 B, and `QueryBuilder`
+unchanged at 40 B. A local `MergeMemoTracker` occupies 40 B. These sizes exclude
+referenced objects and constructor work. The first Include clones four fields;
+the second adds three beneath the shared user root. Their 192 B and 144 B
+increases match **seven fields × 48 B**, respectively. Destination-root growth
+matches the extra 16 B in `QueryDefinition`.
+
+Field growth includes storage for directives, fragment spreads, deep argument
+fingerprints, and tracker references, even when those features are unused.
+Therefore, the release-relative increase is not solely the cost of the recent
+scoped-invalidation fix. Fragment construction also creates tracking state via
+discarded temporary builders; that phase has other differences and is not fully
+reconciled object-by-object here.
+
+The uninstrumented custom harness measures 6,360 → 7,072 B/op. The local 40-byte
+difference from the phase-instrumented method persists after longer warmup; a
+control with tiered compilation disabled measures 7,032 B/op in both methods.
+This is consistent with JIT/code-shape-dependent allocation, but its exact
+elimination/materialization site has not been established. Do not present phase
+totals as an exact decomposition of the original BenchmarkDotNet totals: those
+were about 6.23 → 6.91 KiB/op, and the harness changes optimization context.
+
+### Timing cross-check
+
+Each cell below is the median of seven batches of 100,000 operations. Each mode
+warms for at least two seconds. Runs are sequential, first local then published,
+then published followed by local to reverse order. These diagnostic loops do not
+replace BenchmarkDotNet confidence intervals.
+
+| Workload | First pair, release → local (ns/op) | Reverse-order repeat (ns/op) |
+| --- | ---: | ---: |
+| Full original operation | 1,333.5 → 1,382.0 | 1,329.0 → 1,396.2 |
+| Build both fragments only | 610.9 → 659.0 | 605.1 → 660.1 |
+| Fresh root + Includes, prepared fragments | 419.3 → 443.7 | 423.7 → 454.0 |
+| Render a prepared merged query | 198.6 → 160.0 | 199.2 → 164.1 |
+
+Full-operation slowdown reproduces at 3.6–5.1%. Both construction and inclusion
+are slower in these paired runs; rendering is faster. Prepared-fragment Include
+avoids first-use setup on the source fragments, so isolated times/allocations
+must not be summed to reconstruct a full operation.
+
+### Trace evidence and next target
+
+Captured separate 15-second EventPipe traces with runtime GC allocation ticks
+and SampleProfiler. The local trace contains `MergeMemoTracker` allocations;
+the release trace does not. Both allocate heavily through field creation.
+The released renderer allocates `Comparison<FieldDefinition>` delegates, absent
+from the local trace, consistent with the measured rendering savings.
+
+Allocation-tick weights are estimates, not object counts or precise type totals.
+SampleProfiler records thread stacks, including the harness attachment sleep;
+its samples concentrate in `FieldChildren.Append` in both versions. These traces
+do **not** establish exclusive CPU percentages or identify a single CPU cause
+for the regression. Exact phase allocation and repeated untraced timing provide
+the stronger comparison.
+
+Source comparison identifies larger field/query state and tracker creation in
+the temporary `FieldBuilder` path as optimization candidates. In particular,
+dotted `AddField` calls create a `FieldBuilder` whose return value is discarded,
+but its constructor still ensures a merge-memo tracker. Investigate bypassing
+that temporary builder/tracker for this path while preserving invalidation for
+captured builders, shared roots and argument-bearing merges. Measure that narrow
+change before considering a broader field-layout redesign. Do not remove scoped
+invalidation wholesale: its benefit for unrelated-query mutation was measured
+in T2 above.
+
+Validation: full and instrumented queries have identical text in both versions
+(SHA256 `2F440BAEC37FE5A82EDC1090719C73F7868C0CEFFB1680EF896F1DB16BC3AAB6`).
+Repeated prepared-fragment Includes preserve both source fragments and reproduce
+the full-operation output. No production/test code changed, so the full test
+suite was not rerun. The first sandboxed builds stalled and were stopped; final
+timing runs were sequential and separate from trace collection.
+
+Harness, commands, exact logs and raw traces are in the git-ignored directory
+[`artifacts/benchmarks/complex-merge-profile/`](../artifacts/benchmarks/complex-merge-profile/README.md).
+`local-warm.txt`, `published-warm.txt`, `local-repeat.txt`, and
+`published-repeat.txt` contain the final timing/allocation runs. Trace reports
+are `local-trace.txt` and `published-trace.txt`; their original "CPU samples"
+label should be read as thread-stack samples. Preserved collector source under
+`trace-tool/` corrects that label.
+
+## Complex merging construction fix — 2026-09-18
+
+Implemented the narrow follow-up in `QueryBuilder.AddFieldFastPath`: non-simple
+argument-free field paths now call `FieldFactory.GetOrAddField` directly. The
+discarded `FieldBuilder` previously created a merge tracker despite never being
+returned to a caller. Parsing still uses the same factory; lookup-cache
+invalidation remains in place. Actual captured builders and merge indexes still
+create/attach trackers. Field layout, public signatures and the legacy reflection
+Include path are unchanged by this patch.
+
+Preserved pre-fix `815ea8b`, fixed, and released 2.1.0 assemblies in separate
+directories. The fixed assembly's SHA256 matches the assembly used by the final
+unit run. BenchmarkDotNet 0.15.7 / .NET 9.0.9 / Apple M4, five warmups and eight
+measured iterations; all workloads ran sequentially without concurrent tests or
+profilers. Four wrapper benchmarks call the existing shared workload methods.
+The wrappers avoid the shared class's built-in job configuration, so these runs
+have exactly one requested job. Priority elevation was unavailable. The isolated
+harness build emitted the existing BenchmarkDotNet analyzer AD0001 language-version
+warnings; all requested benchmarks built and completed.
+
+### Before/fixed/released comparison
+
+In-process means and bytes per operation (bytes derived from raw GC totals,
+rounded to the nearest byte rather than from the rounded KiB display):
+
+| Workload | Before time | Fixed time | 2.1.0 time | Bytes before → fixed → 2.1.0 |
+| --- | ---: | ---: | ---: | ---: |
+| Complex merging | 1,455.9 ns | 1,448.2 ns | 1,429.3 ns | 7,072 → 6,872 → 6,360 |
+| Simple query with dotted fields | 353.2 ns | 330.8 ns | 357.7 ns | 1,760 → 1,640 → 1,600 |
+| 200 dotted paths | 70.572 µs | 67.413 µs | 71.720 µs | 276,936 → 260,896 → 236,944 |
+| 500 flat fields, unchanged-path control | 64.275 µs | 64.006 µs | 63.435 µs | 153,400 → 153,400 → 129,448 |
+
+Complex merging saves **200 B/op (2.8%)**. Its in-process timing intervals overlap
+(before ±7.92 ns, fixed ±24.46 ns), so that run does not establish a speedup.
+Simple-query time decreases 6.3% and allocation 6.8%; dotted-path time decreases
+4.5% and allocation 5.8%, with non-overlapping timing intervals in these runs.
+The flat control retains allocations and has overlapping timing intervals.
+
+The phase harness localizes the saving to construction: each fragment saves
+80 B, while root creation, both Includes and rendering retain their prior phase
+allocations. Instrumented and uninstrumented fixed operations now both measure
+6,872 B/op; the former local 40 B difference between those methods disappears.
+Output SHA256 is unchanged and prepared-fragment source-immutability checks pass.
+
+A separate-process complex-merge cross-check, run in fixed/before/released order,
+measures **1.373 ±0.007 µs / 1.395 ±0.006 µs / 1.333 ±0.011 µs** (99.9% interval
+half-widths). The fixed build is 1.6% faster than before in that run; both modes
+reproduce 7,072 → 6,872 B/op. This is a small construction improvement, not a
+claim that the broader release-relative regression is eliminated. The fixed
+workload still allocates **512 B/op (8.1%) more than 2.1.0**, and the separate-
+process run remains about 3% slower than the release. Larger field/query state,
+including the previously measured 48 B per cloned field, remains unchanged.
+Original suite and wrapper allocation figures differ slightly with JIT context;
+use the paired values in this section for this patch.
+
+### Correctness and reproduction
+
+All **2,104 unit tests and 91 integration tests pass on each of .NET 8, 9 and 10**.
+Three new cases initialize a plain dotted/typed/aliased path, later capture a
+nested builder, warm the merge index, mutate an argument, and verify a matching
+Include still merges into one root. The initial test setup incorrectly relied
+on detached-builder mutation updating the query; it was corrected before the
+final successful run. The 2,101 existing cases passed in both runs.
+
+Raw reports, preserved binaries, wrapper source and TRX results are under
+[`artifacts/benchmarks/complex-merge-fix/`](../artifacts/benchmarks/complex-merge-fix/README.md).
+The focused phase/output harness result is `after-profile.txt`. The source change
+is limited to the non-simple branch of `AddFieldFastPath`; no object-layout
+redesign or merge-index invalidation rollback was introduced.
+
+```sh
+dotnet test tests/Core.Tests/Core.Tests.csproj -c Release --no-restore -p:NuGetAudit=false
+dotnet test tests/Core.IntegrationTests/Core.IntegrationTests.csproj -c Release --no-restore -p:NuGetAudit=false
+dotnet run --project artifacts/benchmarks/complex-merge-fix/bdn -c Release -p:ProfileVersion=after -p:NuGetAudit=false -- --filter '*ComplexMergeFixBenchmark*' --job short --inProcess --warmupCount 5 --iterationCount 8 --artifacts artifacts/benchmarks/complex-merge-fix/bdn-after
+ProfileVersion=after NuGetAudit=false dotnet run --project artifacts/benchmarks/complex-merge-fix/bdn -c Release -- --filter '*ComplexMergeFixBenchmark.ComplexQueryWithMerging' --job short --warmupCount 5 --iterationCount 8 --artifacts artifacts/benchmarks/complex-merge-fix/oop-after
+```
+
+Substitute `before` or `published` for paired runs. `ProfileVersion` is passed in
+the environment for separate-process jobs so generated child builds use the
+same assembly. The audit override remains command-local.
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
 All six findings are now measured and resolved in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).

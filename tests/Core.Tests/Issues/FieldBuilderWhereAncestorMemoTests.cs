@@ -12,6 +12,29 @@ public class FieldBuilderWhereAncestorMemoTests
 {
     private static Dictionary<string, object?> Currency(string code) => new() { ["cur"] = code };
 
+    [Theory]
+    [InlineData("metrics.deposits")]
+    [InlineData("String metrics.deposits")]
+    [InlineData("String metrics.d:deposits")]
+    public void Where_OnBuilderCapturedAfterPlainPathAddition_InvalidatesWarmedMergeIndex(string path)
+    {
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path);
+        target.AddField(path, Currency("USD"));
+        FieldBuilder? captured = null;
+        var leaf = path.Contains("d:deposits") ? "d:deposits" : "deposits";
+        target.AddField("metrics", metrics => metrics.AddField(leaf, field => captured = field));
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD")));
+
+        captured!.Where("cur", "EUR");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("EUR")));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().Contain("cur:\"EUR\"").And.NotContain("metrics_1");
+    }
+
     [Fact]
     public void Where_OnCapturedNestedBuilder_AfterActionReturns_MergesGenuinePostMutationCandidate()
     {

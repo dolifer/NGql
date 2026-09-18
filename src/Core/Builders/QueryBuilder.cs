@@ -390,8 +390,9 @@ public sealed class QueryBuilder
         }
         else
         {
-            // Fallback to standard processing for complex fields
-            FieldBuilder.Create(Definition.FieldsInternal, field, Constants.DefaultFieldType, null, null);
+            // No builder escapes this overload, so avoid allocating its mutation tracker.
+            // FieldFactory preserves the same dotted/typed/aliased path processing.
+            FieldFactory.GetOrAddField(Definition.FieldsInternal, fieldSpan, Constants.DefaultFieldTypeSpan, null);
         }
         
         // Phase 3: Invalidate caches after field addition
