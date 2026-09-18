@@ -213,9 +213,16 @@ internal sealed class QueryTextBuilder
         var first = chunks.Current;
         if (!chunks.MoveNext())
         {
+            // A writer that hands back less than the requested size (bounded or slab-capped
+            // buffers) cannot take the chunk in one call; the encoder loop below fills it in parts.
             var destination = bufferWriter.GetSpan(Encoding.UTF8.GetMaxByteCount(first.Length));
-            var written = Encoding.UTF8.GetBytes(first.Span, destination);
-            bufferWriter.Advance(written);
+            if (Encoding.UTF8.TryGetBytes(first.Span, destination, out var written))
+            {
+                bufferWriter.Advance(written);
+                return;
+            }
+
+            EncodeChunk(Encoding.UTF8.GetEncoder(), first.Span, true, bufferWriter);
             return;
         }
 
