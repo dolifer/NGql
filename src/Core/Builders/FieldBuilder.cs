@@ -495,11 +495,9 @@ public sealed class FieldBuilder
         var argumentsToUse = arguments is { Count: > 0 } ? arguments : null;
 
         // Use FieldFactory for field creation
-        var rootField = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
+        var field = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
 
-        var fieldBuilder = new FieldBuilder(rootField, variableSink: variableSink);
-
-        return fieldBuilder;
+        return new FieldBuilder(field, CreateAncestorChain(fieldDefinitions, field, variableSink), variableSink);
     }
 
     /// <summary>
@@ -508,6 +506,58 @@ public sealed class FieldBuilder
     /// <param name="fieldDefinition">The field definition to create the builder from.</param>
     /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(FieldDefinition fieldDefinition) => new(fieldDefinition);
+
+    // A dotted or complex path resolves to a nested field. Its builder can be captured and mutated
+    // after a merge index has fingerprinted the root, so it needs the same ancestor chain a nested
+    // Action<FieldBuilder> scope gets: Where()/IncludeIf()/SkipIf() clear every ancestor's memo and
+    // reach the root's tracker through it. Root-level fields return null and keep the direct path.
+    private static FieldBuilder? CreateAncestorChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, SortedSet<Variable>? variableSink)
+    {
+        if (fieldDefinitions.TryGetValue(field._effectiveName, out var rootCandidate) && ReferenceEquals(rootCandidate, field))
+        {
+            return null;
+        }
+
+        // Paths normally nest by prefix, which confines the search to one branch. The unpruned
+        // pass covers any path shape that does not, so the chain is found whenever it exists.
+        var ancestors = new List<FieldDefinition>(4);
+        return BuildChain(fieldDefinitions, field, ancestors, variableSink, prunedByPath: true)
+            ?? BuildChain(fieldDefinitions, field, ancestors, variableSink, prunedByPath: false);
+    }
+
+    private static FieldBuilder? BuildChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, List<FieldDefinition> ancestors, SortedSet<Variable>? variableSink, bool prunedByPath)
+    {
+        foreach (var root in fieldDefinitions.Values)
+        {
+            ancestors.Clear();
+            if (!TryFindAncestors(root, field, ancestors, prunedByPath)) continue;
+
+            FieldBuilder? parent = null;
+            foreach (var ancestor in ancestors)
+            {
+                parent = new FieldBuilder(ancestor, parent, variableSink);
+            }
+
+            return parent;
+        }
+
+        return null;
+    }
+
+    private static bool TryFindAncestors(FieldDefinition current, FieldDefinition target, List<FieldDefinition> ancestors, bool prunedByPath)
+    {
+        if (current._children is not { Count: > 0 } children) return false;
+        if (prunedByPath && !target.Path.StartsWith(current.Path, StringComparison.Ordinal)) return false;
+
+        ancestors.Add(current);
+        foreach (var child in children.AsSpan())
+        {
+            if (ReferenceEquals(child, target) || TryFindAncestors(child, target, ancestors, prunedByPath)) return true;
+        }
+
+        ancestors.RemoveAt(ancestors.Count - 1);
+        return false;
+    }
 
     /// <summary>
     /// Builds and returns the final field definition.
