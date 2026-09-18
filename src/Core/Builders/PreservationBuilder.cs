@@ -22,6 +22,11 @@ public sealed class PreservationBuilder
     private readonly QueryBuilder _sourceQuery;
     private readonly HashSet<string> _pathsToPreserve;
     private int _minimumAddedPathLength = int.MaxValue;
+#if !NET9_0_OR_GREATER
+    // .NET 8 has no span lookup on HashSet<string>. Probing these hashes first means a prefix
+    // string is only allocated when a stored path can actually match it.
+    private readonly HashSet<int> _pathHashes = new();
+#endif
 
     private PreservationBuilder(QueryBuilder sourceQuery)
     {
@@ -75,11 +80,17 @@ public sealed class PreservationBuilder
 #if NET9_0_OR_GREATER
             _pathsToPreserve.GetAlternateLookup<ReadOnlySpan<char>>().Remove(remaining);
 #else
-            _pathsToPreserve.Remove(remaining.ToString());
+            if (_pathHashes.Contains(string.GetHashCode(remaining, StringComparison.OrdinalIgnoreCase)))
+            {
+                _pathsToPreserve.Remove(remaining.ToString());
+            }
 #endif
         }
 
         _pathsToPreserve.Add(path);
+#if !NET9_0_OR_GREATER
+        _pathHashes.Add(string.GetHashCode(path.AsSpan(), StringComparison.OrdinalIgnoreCase));
+#endif
         _minimumAddedPathLength = Math.Min(_minimumAddedPathLength, path.Length);
     }
 
