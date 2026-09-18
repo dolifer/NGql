@@ -25,6 +25,11 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
   one copy-on-write reference; computed effective name (128 → 96 B) (`feb2e75`).
 - [x] T10 — Release timing check: paired complex-merging and simple-query timing
   against NGql.Core 2.1.0 on the T9 assembly.
+- [x] T11 — Code review fixes: stale merge index from dotted-path builders, short
+  UTF-8 destination spans, .NET 8 preservation prefix strings, pool budget with
+  nested renders, single argument/variable rendering.
+- [ ] T12 — Open review findings: FIFO type-name cache under churn; eager merge
+  tracker on every root `FieldBuilder`.
 
 ## Execution log
 
@@ -61,6 +66,11 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
 - T9 review follow-up: holder replacement is compare-and-swap, `DeepClone` builds
   one holder. Allocation unchanged in six paired cases; feature-bearing cold builds
   cost 1–3% more time. 2,125 / 91 tests. Source: `cas-check-1-layout96` … `-4-`.
+- T11 complete: four stale-index regressions fail before and pass after; bounded
+  UTF-8 writer no longer throws; .NET 8 preservation 114,576 B of prefix strings
+  → under 16 KB for 512 deep paths; pool keeps the 200,000-character builder in
+  either return order; single argument 63.0 → 44.0 ns and 208 → 80 B, single
+  variable 69.1 → 40.8 ns and 208 → 88 B. 2,140 / 91 tests.
 
 ## Measurement ledger (T7–T10)
 
@@ -102,6 +112,14 @@ Ordered reruns (before / after / after / before), five warmups, ten iterations:
 | Simple query vs 2.1.0, ns | T10 | 365.0 / 360.4 | 320.9 / 318.5 | about 12% faster than release |
 | Preserve guardrail, µs | T9 | 2.419 / 2.454 | 2.494 / 2.406 | not reproduced |
 | UTF-8 guardrail, µs | T9 | 4.934 / 4.785 | 4.929 / 4.838 | not reproduced |
+
+T11 argument rendering (`review-fixes/args-before` → `args-after`):
+
+| Entries | Arguments ns | Arguments B | Variables ns | Variables B |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 63.01 → 44.04 | 208 → 80 | 69.12 → 40.75 | 208 → 88 |
+| 10 | 412.2 → 341.0 | 632 → 472 | 404.5 → 346.3 | 896 → 848 |
+| 1,000 | 58,233 → 54,060 | 36,184 → 36,024 | 58,628 → 55,225 | 70,296 → 70,248 |
 
 Sources: T7 `complex-merge-fix/` (`bdn-before`, `bdn-after`, `bdn-published`,
 `after-profile.txt`); T8 `complex-merge-opt/` (`bdn-before`, `bdn-after`,

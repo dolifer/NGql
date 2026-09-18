@@ -963,6 +963,88 @@ Artifacts under `artifacts/benchmarks/complex-merge-opt/`: snapshot `layout96/`
 `recheck96-1-after` … `recheck96-4-after`, `heap-layout96.txt`. Reproduce with
 the preceding section's commands and `-p:ProfileVersion=layout96`.
 
+## Code review fixes — 2026-09-19
+
+A review of the branch raised ten findings. Findings 1, 5 and 6 (shared optional
+holder) are covered in "Review follow-up: atomic holder replacement" above. Five
+more are fixed here, one commit each; two are left open at the end.
+
+### Stale merge index from a builder captured on a dotted path (`eb96ad2`)
+
+`AddField("metrics.deposits", args, b => captured = b)` handed the action a
+builder for the nested leaf with no parent chain. A later `captured.Where(...)`
+or `IncludeIf(...)` cleared only the leaf's memo: the ancestors' deep
+fingerprints and the warmed merge index stayed stale, and a matching `Include`
+split into `metrics_1`. Four new regression cases (two depths, `Where` and
+`IncludeIf`) failed with `DefinitionsCount` 2 and pass now. The factory now
+rebuilds the ancestor builder chain by reference, searching the branch whose
+paths prefix the leaf's path first and the whole tree only if that misses.
+Root-level fields skip the search. Cost: a dotted `AddField` with an action
+walks one branch of the existing tree; this is not benchmarked.
+
+### UTF-8 fast path with a short destination span (`472977f`)
+
+The single-chunk path called `Encoding.UTF8.GetBytes(span, destination)`, which
+throws when a bounded writer returns less than the requested size. It now uses
+`TryGetBytes` and falls back to the stateful encoder loop. A writer that hands
+out 16-byte spans reproduces the exception without the fix and matches
+`ToString()` with it, including multi-byte and surrogate-pair arguments.
+
+### .NET 8 preservation prefix strings (`f6b0de6`)
+
+Without span lookups, .NET 8 allocated a string per dotted prefix whenever a
+short path such as `id` had been preserved first. A per-builder hash prefilter
+now allocates the prefix only when a stored path can match it. Preserving 512
+five-segment paths after `id` allocated **114,576 B** more than without `id`
+on .NET 8; the difference is now under the test's 16 KB bound. .NET 9 and 10
+were already allocation-free and are unchanged. Cost on .NET 8: one
+`HashSet<int>` per `PreservationBuilder`.
+
+### Pool budget with nested renders (`bbd738e`)
+
+When the 262,144-character per-thread budget was exceeded, the incoming builder
+was always rejected, so a small pooled builder could block a large one on every
+nested render. The pool now keeps the largest builders that fit and leaves the
+largest on top for the outermost render. The bound is unchanged. With an 80,000
+and a 200,000-character builder returned in either order, 200,000 characters are
+retained and the large builder is rented next; previously the first one returned
+won. The smaller nested builder is still reallocated per render: both cannot fit
+the budget. This is a retention-policy change verified by tests, not a
+throughput measurement.
+
+### Single argument and single variable rendering (`fa3d8f5`)
+
+A `SortedDictionary` allocates a traversal stack when enumerated, even when
+empty, and enumerating through the read-only interface also boxes the
+enumerator. A lone argument is now read by its recorded first key, a lone
+variable through `SortedSet.Min`, and empty collections are not enumerated.
+Arguments are never removed and case-colliding keys are rejected, so the first
+key is the only key while the count is one.
+
+`BlockArgumentRenderingBenchmark`, .NET 9.0.9, Apple M4, in-process ShortRun,
+three warmups, five iterations, run back to back:
+
+| Entries | Arguments before → after | Variables before → after |
+| --- | ---: | ---: |
+| 1 | 63.01 → 44.04 ns, 208 → 80 B | 69.12 → 40.75 ns, 208 → 88 B |
+| 10 | 412.2 → 341.0 ns, 632 → 472 B | 404.5 → 346.3 ns, 896 → 848 B |
+| 1,000 | 58.23 → 54.06 µs, 36,184 → 36,024 B | 58.63 → 55.22 µs, 70,296 → 70,248 B |
+
+Single-entry intervals do not overlap (all below ±2 ns); the remaining bytes are
+the returned string. Warmed single-entry writes to `TextWriter.Null` now
+allocate zero bytes, asserted by `SingleArgumentRenderTests`. An intermediate
+build that enumerated the concrete collections unconditionally measured 8 B
+higher for variables; guarding empty collections removed that.
+
+Validation after all five fixes: **2,140 unit tests and 91 integration tests
+pass on each of .NET 8, 9 and 10** (15 new cases). Raw benchmark reports:
+`artifacts/benchmarks/review-fixes/` (`args-before`, `args-after`,
+`vars-interface`).
+
+Open review findings, not changed: the custom type-name cache evicts FIFO and
+serializes misses once more than 4,096 names cycle (documented under T4), and
+every root `FieldBuilder` still creates its merge tracker eagerly.
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
 All six findings are now measured and resolved in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).
