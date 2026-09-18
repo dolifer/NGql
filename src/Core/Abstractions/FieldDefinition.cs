@@ -12,14 +12,63 @@ public sealed record FieldDefinition
 {
     // Fields
     internal FieldChildren? _children;
-    internal Dictionary<string, InlineFragmentDefinition>? _fragments;
-    internal List<string>? _spreadFragments;
-    internal List<FieldDirective>? _directives;
     internal string? _type;
     internal string? _alias;
-    internal string _effectiveName;
     internal SortedDictionary<string, object?>? _arguments;
-    internal Dictionary<string, object?>? _metadata;
+
+    // Fragments, spreads, directives and metadata are absent on most fields. Keeping them behind
+    // one reference saves three object slots per field. The holder is immutable and replaced on
+    // assignment, so record copies that share it never observe one another's reassignments.
+    private OptionalState? _optional;
+
+    internal Dictionary<string, InlineFragmentDefinition>? _fragments
+    {
+        get => _optional?.Fragments;
+        set => _optional = OptionalState.Create(value, _optional?.SpreadFragments, _optional?.Directives, _optional?.Metadata);
+    }
+
+    internal List<string>? _spreadFragments
+    {
+        get => _optional?.SpreadFragments;
+        set => _optional = OptionalState.Create(_optional?.Fragments, value, _optional?.Directives, _optional?.Metadata);
+    }
+
+    internal List<FieldDirective>? _directives
+    {
+        get => _optional?.Directives;
+        set => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, value, _optional?.Metadata);
+    }
+
+    internal Dictionary<string, object?>? _metadata
+    {
+        get => _optional?.Metadata;
+        init => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, _optional?.Directives, value);
+    }
+
+    internal string _effectiveName => !string.IsNullOrEmpty(_alias) ? _alias : Name;
+
+    private sealed class OptionalState
+    {
+        internal readonly Dictionary<string, InlineFragmentDefinition>? Fragments;
+        internal readonly List<string>? SpreadFragments;
+        internal readonly List<FieldDirective>? Directives;
+        internal readonly Dictionary<string, object?>? Metadata;
+
+        private OptionalState(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+            List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+        {
+            Fragments = fragments;
+            SpreadFragments = spreadFragments;
+            Directives = directives;
+            Metadata = metadata;
+        }
+
+        internal static OptionalState? Create(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+            List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+            => fragments is null && spreadFragments is null && directives is null && metadata is null
+                ? null
+                : new OptionalState(fragments, spreadFragments, directives, metadata);
+    }
     internal string Path { get; init; } = string.Empty;
 
     /// <summary>
@@ -113,7 +162,6 @@ public sealed record FieldDefinition
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
         _children = AsChildren(fields);
-        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     /// <summary>
@@ -133,7 +181,6 @@ public sealed record FieldDefinition
         _type = type;
         _arguments = ToSortedArguments(arguments);
         _children = AsChildren(fields);
-        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     private static SortedDictionary<string, object?>? ToSortedArguments(IDictionary<string, object?>? arguments)
@@ -179,11 +226,7 @@ public sealed record FieldDefinition
     public string? Alias
     {
         get => _alias;
-        init
-        {
-            _alias = value;
-            _effectiveName = !string.IsNullOrEmpty(value) ? value : Name;
-        }
+        init => _alias = value;
     }
 
     private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyReadOnlyFields
@@ -243,12 +286,18 @@ public sealed record FieldDefinition
     /// </summary>
     internal void AddSpreadFragment(string name)
     {
-        _spreadFragments ??= new List<string>();
+        var spreads = _spreadFragments;
+        if (spreads is null)
+        {
+            spreads = new List<string>();
+            _spreadFragments = spreads;
+        }
+
         // List<string>.Contains is ordinal by default; avoids the enumerator allocation of the
         // LINQ Contains(value, comparer) overload.
-        if (!_spreadFragments.Contains(name))
+        if (!spreads.Contains(name))
         {
-            _spreadFragments.Add(name);
+            spreads.Add(name);
         }
     }
 
@@ -291,7 +340,13 @@ public sealed record FieldDefinition
     /// called with <c>"include"</c>/<c>"skip"</c> directly — routes through) shares with
     /// <see cref="InlineFragmentDefinition.AddDirective"/>.
     /// </summary>
-    internal void AddDirective(FieldDirective directive) => DirectiveListOps.Add(ref _directives, directive);
+    internal void AddDirective(FieldDirective directive)
+    {
+        var current = _directives;
+        var directives = current;
+        DirectiveListOps.Add(ref directives, directive);
+        if (!ReferenceEquals(directives, current)) _directives = directives;
+    }
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -319,8 +374,18 @@ public sealed record FieldDefinition
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?> Metadata
     {
-        get => _metadata ??= [];
-        set => _metadata = value;
+        get
+        {
+            var metadata = _metadata;
+            if (metadata is null)
+            {
+                metadata = [];
+                SetMetadata(metadata);
+            }
+
+            return metadata;
+        }
+        set => SetMetadata(value);
     }
 
     /// <summary>
@@ -328,6 +393,9 @@ public sealed record FieldDefinition
     /// <see cref="Metadata"/>, this check does not allocate or attach an empty dictionary
     /// to metadata-less fields — prefer it as the guard when scanning field trees.
     /// </summary>
+    private void SetMetadata(Dictionary<string, object?>? metadata)
+        => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, _optional?.Directives, metadata);
+
     [JsonIgnore]
     public bool HasMetadata => _metadata is { Count: > 0 };
 
@@ -378,11 +446,17 @@ public sealed record FieldDefinition
     /// </summary>
     internal InlineFragmentDefinition GetOrAddInlineFragment(string typeName)
     {
-        _fragments ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
-        if (!_fragments.TryGetValue(typeName, out var fragment))
+        var fragments = _fragments;
+        if (fragments is null)
+        {
+            fragments = new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+            _fragments = fragments;
+        }
+
+        if (!fragments.TryGetValue(typeName, out var fragment))
         {
             fragment = new InlineFragmentDefinition(typeName);
-            _fragments[typeName] = fragment;
+            fragments[typeName] = fragment;
         }
         return fragment;
     }

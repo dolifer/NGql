@@ -730,11 +730,6 @@ internal static class FieldFactory
         if (segment.HasAlias && field._alias is null)
         {
             field._alias = segment.Alias.ToString();
-            // Direct-field assignment bypasses the Alias init-only property, so _effectiveName
-            // (this field's identity key in any FieldChildren it's already a member of) must be
-            // kept in sync here too — otherwise a later lookup by the field's true current
-            // identity would miss its own slot.
-            field._effectiveName = field._alias;
         }
         if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
         {

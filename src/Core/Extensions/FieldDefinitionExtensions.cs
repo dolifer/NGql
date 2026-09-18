@@ -540,7 +540,12 @@ internal static class FieldDefinitionExtensions
     }
 
     private static void MergeSpreadsInPlace(FieldDefinition existing, List<string>? incomingSpreads)
-        => MergeSpreadListInPlace(ref existing._spreadFragments, incomingSpreads);
+    {
+        var current = existing._spreadFragments;
+        var spreads = current;
+        MergeSpreadListInPlace(ref spreads, incomingSpreads);
+        if (!ReferenceEquals(spreads, current)) existing._spreadFragments = spreads;
+    }
 
     /// <summary>
     /// Merges <paramref name="incoming"/> inline fragments into <paramref name="target"/> (a fragment

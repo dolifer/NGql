@@ -840,6 +840,81 @@ python3 artifacts/benchmarks/complex-merge-opt/compare.py bdn-before bdn-after
 dotnet run --project artifacts/benchmarks/complex-merge-opt/heap -c Release -p:ProfileVersion=after -- --count 10000 --repeats 3 --mode both
 ```
 
+## Optional field state — 2026-09-19
+
+Baseline: the preceding pass (`6a50a29`, assembly SHA256 `02fc0fa6…`). The
+remaining release-relative construction gap matched 32 B per field: the
+500-flat-field workload allocated 145,285 B against 129,448 B for 2.1.0. Two
+internal changes remove those four object slots; public signatures, equality,
+hashing and JSON shape are unchanged:
+
+- Inline fragments, fragment spreads, directives and metadata live behind one
+  optional reference. Fields that use none of them allocate nothing for it. The
+  holder is immutable and replaced on assignment, so record copies sharing it
+  cannot observe one another's reassignments. The collections themselves are
+  shared by shallow record copies exactly as before.
+- The effective name (alias, else name) is computed instead of stored. The two
+  sites that had to keep the stored copy in sync after a direct alias assignment
+  no longer exist.
+
+Same harness and job as the preceding section (in-process ShortRun, three
+warmups, five 200 ms iterations, 41 paired cases, sequential, same day).
+
+| Workload | Time before → after | Bytes before → after | 2.1.0 bytes |
+| --- | ---: | ---: | ---: |
+| 500 flat fields | 64.49 → 63.61 µs | 145,285 → 129,321 | 129,448 |
+| 200 dotted paths | 67.92 → 65.23 µs | 251,259 → 232,018 | 236,944 |
+| Bulk building, 100 queries | 50.00 → 49.72 µs | 219,996 → 204,001 | 225,597 |
+| Simple query | 326.7 → 315.8 ns | 1,516 → 1,413 | 1,600 |
+| Complex merging | 1,274.8 → 1,223.9 ns | 5,202 → 4,721 | 6,360 |
+| Merge 100 fragments (guardrail) | 47.93 → 45.36 µs | 139,962 → 130,393 | — |
+| Cold directives build | 879.0 → 870.8 ns | 4,200 → 4,200 | — |
+| Cold named fragments build | 608.6 → 592.0 ns | 2,816 → 2,752 | — |
+| Cold inline fragments build | 937.3 → 992.4 ns | 4,520 → 4,360 | — |
+| Cold metadata build | 436.6 → 461.5 ns | 2,304 → 2,384 | — |
+
+The flat-field difference is 31.9 B per field, consistent with a 128 → 96 B
+instance. Every construction workload in the shared suite now allocates at or
+below its NGql.Core 2.1.0 figure; the 2.1.0 column comes from the earlier
+release comparison and the construction-fix section, not from a rerun today
+(bulk building is 220.31 KB converted). Most timing intervals overlap: the
+firm result is allocation.
+
+**Tradeoff.** A field that carries metadata, directives, fragments or spreads
+now pays a 48 B holder, and each first assignment of another kind replaces it.
+Metadata-bearing builds allocate 80 B more in the guardrail. Three flagged
+timings plus the inline-fragment build were rerun in before/after/after/before
+order with five warmups and ten iterations:
+
+| Case | Before (runs 1, 4) | After (runs 2, 3) |
+| --- | ---: | ---: |
+| Cold metadata build | 434.0 / 444.4 ns | 511.2 / 475.0 ns |
+| Cold inline fragments build | 934.6 / 937.5 ns | 1,014.0 / 969.3 ns |
+| Preserve guardrail | 2.419 / 2.454 µs | 2.494 / 2.406 µs |
+| UTF-8 guardrail | 4.934 / 4.785 µs | 4.929 / 4.838 µs |
+
+The preservation and UTF-8 flags did not reproduce. Cold metadata builds are
+about 12% slower and cold inline-fragment builds about 6% slower (roughly
+55 ns each). This is a deliberate exchange: plain fields, the large majority in
+every measured workload, save 32 B each; feature-bearing fields pay a holder.
+Schemas where most fields carry metadata would allocate more than before.
+
+Retained managed heap per held complex-merge workload (10,000 held, three
+identical repeats): merged builder only 2,576 → **2,352 B** (2.1.0: 3,008 B);
+fragments plus merged builder 4,848 → **4,368 B** (2.1.0: 5,752 B). Output
+SHA256 is unchanged.
+
+**2,123 unit tests and 91 integration tests pass on each of .NET 8, 9 and 10.**
+Ten new cases in `FieldDefinitionOptionalStateTests` cover record copies gaining
+each kind of optional state without changing their source, a copy gaining a
+second kind while the source keeps its own, one-time attachment of the mutable
+metadata dictionary, and the effective name following the alias across copies.
+
+Artifacts under `artifacts/benchmarks/complex-merge-opt/`: snapshot `layout96/`
+(SHA256 `9fbcb83a…`), `bdn-layout96`, `bdn-after-vs-bdn-layout96.md`,
+`recheck96-1-after` … `recheck96-4-after`, `heap-layout96.txt`. Reproduce with
+the preceding section's commands and `-p:ProfileVersion=layout96`.
+
 ## Remaining profile-dependent opportunities and tradeoffs
 
 All six findings are now measured and resolved in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).
