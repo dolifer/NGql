@@ -250,8 +250,9 @@ internal sealed class QueryTextBuilder
     // stateful encoder — flushing only on the final chunk — reassembles the pair correctly.
     private void WriteBuilderToUtf8(IBufferWriter<byte> bufferWriter)
     {
+        // A StringBuilder always exposes a first chunk, even when it is empty.
         var chunks = _stringBuilder.GetChunks();
-        if (!chunks.MoveNext()) return;
+        chunks.MoveNext();
 
         var first = chunks.Current;
         if (!chunks.MoveNext())

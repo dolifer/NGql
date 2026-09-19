@@ -10,31 +10,9 @@ namespace NGql.Core.Features;
 internal static class KeyGenerator
 {
     /// <summary>
-    /// Generates a unique key by appending a counter suffix if the base key already exists.
-    /// </summary>
-    /// <param name="baseKey">The base key to make unique</param>
-    /// <param name="existingKeys">Collection of existing keys to check against</param>
-    /// <returns>A unique key that doesn't exist in the collection</returns>
-    internal static string GenerateUniqueKey(string baseKey, IEnumerable<string> existingKeys)
-    {
-        using var pooledSet = LockFreeHashSetPool.GetPooled(existingKeys);
-        var existingKeySet = pooledSet.Set;
-
-        if (!existingKeySet.Contains(baseKey))
-        {
-            return baseKey;
-        }
-
-        return GenerateUniqueKeyCore(baseKey, existingKeySet);
-    }
-
-    /// <summary>
     /// Generates a unique key using a <see cref="FieldMergeIndex"/>'s live key set and
     /// per-base-name suffix counter instead of rebuilding a <see cref="HashSet{T}"/> from every
-    /// existing key. O(1) amortized per call versus the O(N)-per-call cost of the
-    /// <see cref="GenerateUniqueKey(string, IEnumerable{string})"/> overload above, which
-    /// <c>QueryMerger.AddFieldWithUniqueKey</c> used to call once per inserted field — O(N) work
-    /// for each of N insertions, O(N&#0178;) overall for a chain of N <c>Include()</c> calls.
+    /// existing key: O(1) amortized per inserted field across a chain of <c>Include()</c> calls.
     /// </summary>
     internal static string GenerateUniqueKey(FieldMergeIndex mergeIndex, Dictionary<string, FieldDefinition> fields, string baseKey)
         => mergeIndex.NextUniqueKey(fields, baseKey);

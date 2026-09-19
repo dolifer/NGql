@@ -1,7 +1,7 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using BenchmarkDotNet.Attributes;
+using NGql.Core.Abstractions;
 using NGql.Core.Builders;
 
 namespace Benchmarks.Benchmarks;
@@ -9,8 +9,10 @@ namespace Benchmarks.Benchmarks;
 [MemoryDiagnoser]
 public class AliasCollisionBenchmark
 {
-    private Func<string, IEnumerable<string>, string> _generate = null!;
-    private string[] _keys = null!;
+    private delegate string GenerateKey(string baseKey, ReadOnlySpan<FieldDefinition> fields);
+
+    private GenerateKey _generate = null!;
+    private FieldDefinition[] _fields = null!;
 
     [Params(10, 1000)]
     public int Count { get; set; }
@@ -22,13 +24,13 @@ public class AliasCollisionBenchmark
     {
         _generate = typeof(QueryBuilder).Assembly.GetType("NGql.Core.Features.KeyGenerator")!
             .GetMethod("GenerateUniqueKey", BindingFlags.Static | BindingFlags.NonPublic,
-                null, new[] { typeof(string), typeof(IEnumerable<string>) }, null)!
-            .CreateDelegate<Func<string, IEnumerable<string>, string>>();
-        _keys = new string[Count];
-        _keys[0] = "item";
-        for (var i = 1; i < Count; i++) _keys[i] = $"item_{i}";
+                null, new[] { typeof(string), typeof(ReadOnlySpan<FieldDefinition>) }, null)!
+            .CreateDelegate<GenerateKey>();
+        _fields = new FieldDefinition[Count];
+        _fields[0] = new FieldDefinition("item");
+        for (var i = 1; i < Count; i++) _fields[i] = new FieldDefinition("field", alias: $"item_{i}");
     }
 
     [Benchmark]
-    public string Generate() => _generate("item", _keys);
+    public string Generate() => _generate("item", _fields);
 }

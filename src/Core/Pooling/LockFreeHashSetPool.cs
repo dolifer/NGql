@@ -24,30 +24,6 @@ internal static class LockFreeHashSetPool
     internal static PooledHashSet GetPooled() => new(_pool.Get());
 
     /// <summary>
-    /// Gets a pooled HashSet populated from source
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static PooledHashSet GetPooled(HashSet<string> source)
-    {
-        var set = _pool.Get();
-        foreach (var item in source)
-            set.Add(item);
-        return new PooledHashSet(set);
-    }
-
-    /// <summary>
-    /// Gets a pooled HashSet populated from source
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static PooledHashSet GetPooled(IEnumerable<string> source)
-    {
-        var set = _pool.Get();
-        foreach (var item in source)
-            set.Add(item);
-        return new PooledHashSet(set);
-    }
-
-    /// <summary>
     /// Returns HashSet to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

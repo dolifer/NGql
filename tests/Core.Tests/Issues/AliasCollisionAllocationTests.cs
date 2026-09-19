@@ -27,15 +27,18 @@ public class AliasCollisionAllocationTests
     public void GeneratedAlias_HandlesShortAndLongNames(int length)
     {
         var name = new string('x', length);
-        var result = KeyGenerator.GenerateUniqueKey(name, new[] { name, name + "_1" });
+        var result = KeyGenerator.GenerateUniqueKey(name, Aliased(name, name + "_1"));
         result.Should().Be(name + "_2");
     }
 
     [Fact]
     public void GeneratedAlias_UsesFirstFreeSuffixWithCaseInsensitiveLookup()
     {
-        KeyGenerator.GenerateUniqueKey("item", new[] { "ITEM", "item_1", "ITEM_3" })
+        KeyGenerator.GenerateUniqueKey("item", Aliased("ITEM", "item_1", "ITEM_3"))
             .Should().Be("item_2");
-        KeyGenerator.GenerateUniqueKey("item", new[] { "other" }).Should().Be("item");
+        KeyGenerator.GenerateUniqueKey("item", Aliased("other")).Should().Be("item");
     }
+
+    private static ReadOnlySpan<FieldDefinition> Aliased(params string[] aliases)
+        => Array.ConvertAll(aliases, alias => new FieldDefinition("field", alias: alias));
 }
