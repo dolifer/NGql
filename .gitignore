@@ -351,3 +351,6 @@ view_uncovered_source.py
 # Skill source-of-truth lives at .claude/skills/ngql/; release CI copies it to the catalog repo.
 .claude/*
 !.claude/skills/
+
+# Local BenchmarkDotNet output
+benchmark-results/

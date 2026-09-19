@@ -1,24 +1,20 @@
 # NGql.Core performance — final state
 
-Branch `perf/reduce-render-allocations` at `91bf481`, compared with the released
-**NGql.Core 2.1.0** package and with the branch baseline `9502ece`. Public method
-signatures, rendered output and the legacy reflection-based `Include` path are
-unchanged. The pass-by-pass history, rejected experiments and rerun tables are
-in git history up to `91bf481`.
+`main` at `5ba6909`, compared with the released **NGql.Core 2.1.0** package and with the
+baseline `9502ece` that preceded this work. Public method signatures, rendered output and the
+legacy reflection-based `Include` path are unchanged. The pass-by-pass history is in git.
 
 ## How to read the numbers
 
-- BenchmarkDotNet 0.15.7, .NET 9.0.9, Apple M4, macOS 27.0, Release, in-process
-  ShortRun. "Bytes" are managed bytes allocated per benchmark operation, not
-  retained heap or RSS.
-- **Allocation figures were measured on the final build** (`91bf481`, assembly
-  SHA256 `9ba32de6…`) on 2026-09-19 and are deterministic.
-- **Timing figures come from earlier quiet, ordered (A/B/B/A) runs** and are
-  labeled with the build they were taken on. The final-build timing rerun ran
-  under host load (load average 13; the same assembly differed by up to 25%
-  between runs), so it is not used for timing claims.
-- These are microbenchmarks on one machine. They do not establish application
-  throughput or process memory.
+- BenchmarkDotNet 0.15.7, .NET 9.0.9, Apple M4, macOS 27.0, Release. "Bytes" are managed
+  bytes allocated per benchmark operation, not retained heap or RSS.
+- The 2.1.0 comparison below was measured on the final `main` build on 2026-09-19 on a quiet
+  host (load average about 2). Full tables for both benchmark jobs:
+  [v2.2.0/BENCHMARKS.md](v2.2.0/BENCHMARKS.md).
+- Per-feature "before" values were measured on the commit that preceded each feature; "final"
+  allocation values were measured on the final build. Per-feature timings name their build.
+- These are microbenchmarks on one machine. They do not establish application throughput or
+  process memory.
 
 ## Against NGql.Core 2.1.0
 
@@ -52,18 +48,33 @@ release; none allocates more.
 | ToString + UTF-8 ×10 | 14,336 | 12,196 | −14.9% |
 | ToString + UTF-8 ×50 | 57,221 | 47,391 | −17.2% |
 
-Timing against 2.1.0 (ordered 2.1.0 / local / local / 2.1.0 runs, ten
-iterations, intervals below ±18 ns and not overlapping, taken at `feb2e75`):
+Timing against 2.1.0 on the final build (in-process job, 99.9% intervals): **22 of the 24
+workloads are faster with non-overlapping intervals; the two flat-selection workloads are
+unchanged** (+1.4% and +2.1%, overlapping). The separate-process job agrees in direction
+for every workload.
 
-| Workload | 2.1.0 | Local | Change |
+| Workload | 2.1.0 | 2.2.0 | Change |
 | --- | ---: | ---: | ---: |
-| Complex query with merging | 1,462 / 1,456 ns | 1,217 / 1,203 ns | about 17% faster |
-| Simple query | 365 / 360 ns | 321 / 319 ns | about 12% faster |
-| Classic nesting, depth 10 (at `815ea8b`) | 6,538 ns | 3,019 ns | −54% |
-| Classic nesting, depth 30 (at `815ea8b`) | 38,468 ns | 9,694 ns | −75% |
+| Simple query | 372.3 ns | 330.2 ns | −11.3% |
+| Complex query with merging | 1,426.3 ns | 1,218.9 ns | −14.5% |
+| Type drift scenario | 568.5 ns | 483.4 ns | −15.0% |
+| Deep nested fields | 1,487.1 ns | 1,315.8 ns | −11.5% |
+| Arguments pool stress | 8.41 µs | 7.29 µs | −13.3% |
+| Bulk building, 100 queries | 57.17 µs | 52.05 µs | −9.0% |
+| Dictionary arguments ×50 | 59.64 µs | 49.20 µs | −17.5% |
+| Expression preservation ×50 | 57.24 µs | 50.99 µs | −10.9% |
+| ToString ×50 | 15.58 µs | 12.08 µs | −22.4% |
+| ToString + UTF-8 ×50 | 17.13 µs | 13.72 µs | −19.9% |
+| Dotted paths, 200 fields | 72.29 µs | 68.90 µs | −4.7% |
+| Flat selection, 500 fields | 63.48 µs | 64.35 µs | +1.4% (overlap) |
+| Classic nesting, depth 10 | 6.64 µs | 3.05 µs | −54.2% |
+| Classic nesting, depth 30 | 39.26 µs | 9.86 µs | −74.9% |
+
+The two runners ran one after the other rather than interleaved, so treat single-digit
+percentages as approximate.
 
 Retained managed heap per held complex-merge workload (10,000 held, compacting
-full GC, three identical repeats, final build):
+full GC, three identical repeats, measured at `91bf481`; the layout has not changed since):
 
 | Held graph | 2.1.0 | Final |
 | --- | ---: | ---: |
@@ -204,24 +215,19 @@ optional-state races, and the captured-builder merge-index cases.
 ## Reproduce
 
 ```sh
-dotnet test tests/Core.Tests/Core.Tests.csproj -c Release -p:NuGetAudit=false
-dotnet test tests/Core.IntegrationTests/Core.IntegrationTests.csproj -c Release -p:NuGetAudit=false
+make ci     # clean build, all tests, coverage report (deletes artifacts/ first)
 
-# Release comparison: preserve each NGql.Core.dll under complex-merge-opt/<name>/ first
-dotnet run --project artifacts/benchmarks/complex-merge-opt/bdn -c Release -p:ProfileVersion=published -- --filter '*SharedWorkloadBenchmark*' --job short --inProcess --warmupCount 3 --iterationCount 5 --iterationTime 200 --artifacts artifacts/benchmarks/complex-merge-opt/bdn-final-published
-dotnet run --project artifacts/benchmarks/complex-merge-opt/bdn -c Release -p:ProfileVersion=final -- --filter '*' --job short --inProcess --warmupCount 3 --iterationCount 5 --iterationTime 200 --artifacts artifacts/benchmarks/complex-merge-opt/bdn-final
-python3 artifacts/benchmarks/complex-merge-opt/compare.py bdn-final-published bdn-final
-dotnet run --project artifacts/benchmarks/complex-merge-opt/heap -c Release -p:ProfileVersion=final -- --count 10000 --repeats 3 --mode both
+# Release comparison: see docs/v2.2.0/BENCHMARKS.md for the two commands and full tables.
 
 # Feature benchmarks
-dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*ArgumentInsertionBenchmark*' '*BlockArgumentRenderingBenchmark*' '*AliasCollisionBenchmark*' '*EmptyArgumentBenchmark*' '*ListArgumentBenchmark*' '*RootSelectionBenchmark*' '*MediumRenderBenchmark*' '*AllocationHotspotBenchmark*' '*BatchOperationsBenchmark*' '*TypeCacheBenchmark*' '*TypeCacheChurnBenchmark*' --job short --inProcess
+dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -- --filter '*ArgumentInsertionBenchmark*' '*BlockArgumentRenderingBenchmark*' '*AliasCollisionBenchmark*' '*EmptyArgumentBenchmark*' '*ListArgumentBenchmark*' '*RootSelectionBenchmark*' '*MediumRenderBenchmark*' '*AllocationHotspotBenchmark*' '*BatchOperationsBenchmark*' '*TypeCacheBenchmark*' '*TypeCacheChurnBenchmark*' '*MergeIsolationBenchmark*' '*GuardrailBenchmark*' --job short --inProcess --artifacts benchmark-results/features
 ```
 
-The `-p:NuGetAudit=false` in these commands is no longer needed: it worked around advisory
-GHSA-23fw-v26w-5fgq in `Microsoft.Build.Tasks.Git` 8.0.0, fixed by moving
-`Microsoft.SourceLink.GitHub` to 10.0.401.
-Raw reports for the final figures are in the git-ignored
-`artifacts/benchmarks/complex-merge-opt/` (`bdn-final`, `bdn-final-published`,
-`heap-final.txt`) and `artifacts/benchmarks/final-91bf481/local`.
+Write benchmark output outside `artifacts/`: `make clean` and `make ci` delete that folder.
+The per-pass raw reports, the preserved intermediate assemblies and the standalone
+retained-heap and paired-assembly harnesses used during this work lived there, were
+git-ignored, and were removed by a `make ci` run on 2026-09-19. Their results are recorded in
+this document; the retained-heap and per-pass figures cannot be regenerated without
+rebuilding those harnesses.
 
 Open work is listed in [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md).

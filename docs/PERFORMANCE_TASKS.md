@@ -12,6 +12,6 @@ check and a measured result before it is closed.
 - [ ] Scalar-argument rendering measured about 2.7% slower after the memo-cache
   compaction, with unchanged allocation and no identified cause. Re-measure on a
   quiet host; investigate object layout or code alignment only if it reproduces.
-- [ ] Re-run the release timing comparison on a quiet host. Final-build
-  allocations are recorded; final-build timings were taken under load and are
-  not used.
+- [ ] Rebuild the retained-heap harness as a tracked project under `tests/` if retained-memory
+  figures need to be regenerated; the original lived in the git-ignored `artifacts/` folder and
+  was deleted by `make clean`.
