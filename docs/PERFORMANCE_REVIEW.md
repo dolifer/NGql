@@ -1,8 +1,8 @@
 # NGql.Core performance — final state
 
-`main` at `5ba6909`, compared with the released **NGql.Core 2.1.0** package and with the
-baseline `9502ece` that preceded this work. Public method signatures, rendered output and the
-legacy reflection-based `Include` path are unchanged. The pass-by-pass history is in git.
+`main` at `d6cfe86`, compared with the released **NGql.Core 2.1.0** package and with the
+baseline `ecb2ded` that preceded this work. Public method signatures, rendered output and the
+legacy reflection-based `Include` path are unchanged. The pass-by-pass history is in git; commit hashes below refer to `main` after its 2026-09-20 history rewrite.
 
 ## How to read the numbers
 
@@ -26,9 +26,9 @@ release; none allocates more.
 | Simple query | 1,597 | 1,413 | −11.5% |
 | Type drift scenario | 2,130 | 1,782 | −16.3% |
 | Type drift edge cases | 1,915 | 1,403 | −26.7% |
-| Case-insensitive fields | 1,813 | 1,597 | −11.9% |
+| Case-insensitive fields | 1,812 | 1,597 | −11.9% |
 | Array type preservation | 1,843 | 1,434 | −22.2% |
-| Complex query with merging | 6,359 | 4,721 | −25.8% |
+| Complex query with merging | 6,380 | 4,721 | −26.0% |
 | Deep nested fields | 5,857 | 5,581 | −4.7% |
 | Arguments pool stress | 40,366 | 37,724 | −6.5% |
 | Bulk building, 10 queries | 22,559 | 20,398 | −9.6% |
@@ -36,13 +36,13 @@ release; none allocates more.
 | Dotted paths, 50 fields | 58,593 | 57,262 | −2.3% |
 | Dotted paths, 200 fields | 236,984 | 232,059 | −2.1% |
 | Flat selection, 100 fields | 26,747 | 26,573 | −0.7% |
-| Flat selection, 500 fields | 129,454 | 129,280 | −0.1% |
+| Flat selection, 500 fields | 129,444 | 129,280 | −0.1% |
 | Classic nesting, depth 10 | 54,456 | 13,363 | −75.5% |
-| Classic nesting, depth 30 | 685,333 | 56,556 | −91.7% |
+| Classic nesting, depth 30 | 685,332 | 56,556 | −91.7% |
 | Dictionary arguments ×10 | 41,759 | 37,202 | −10.9% |
 | Dictionary arguments ×50 | 208,804 | 185,999 | −10.9% |
-| Expression preservation ×10 | 37,489 | 30,720 | −18.1% |
-| Expression preservation ×50 | 180,849 | 147,528 | −18.4% |
+| Expression preservation ×10 | 37,509 | 30,720 | −18.1% |
+| Expression preservation ×50 | 180,879 | 147,528 | −18.4% |
 | ToString ×10 | 11,295 | 9,155 | −18.9% |
 | ToString ×50 | 42,015 | 32,195 | −23.4% |
 | ToString + UTF-8 ×10 | 14,336 | 12,196 | −14.9% |
@@ -50,8 +50,9 @@ release; none allocates more.
 
 Timing against 2.1.0 on the final build (in-process job, 99.9% intervals): **22 of the 24
 workloads are faster with non-overlapping intervals; the two flat-selection workloads are
-unchanged** (+1.4% and +2.1%, overlapping). The separate-process job agrees in direction
-for every workload.
+unchanged** (+1.4% and +2.1%, overlapping). In the separate-process job, which has only three
+iterations, 12 of the 24 intervals separate; every one of those is faster, and the
+flat-selection workloads are again within noise (−0.3% and +2.4%).
 
 | Workload | 2.1.0 | 2.2.0 | Change |
 | --- | ---: | ---: | ---: |
@@ -74,7 +75,7 @@ The two runners ran one after the other rather than interleaved, so treat single
 percentages as approximate.
 
 Retained managed heap per held complex-merge workload (10,000 held, compacting
-full GC, three identical repeats, measured at `91bf481`; the layout has not changed since):
+full GC, three identical repeats, measured at `c4845bf`; the layout has not changed since):
 
 | Held graph | 2.1.0 | Final |
 | --- | ---: | ---: |
@@ -92,15 +93,15 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 | --- | --- | ---: | ---: |
 | Scalars, decimals and dates format into a stack buffer (invariant culture) | Five scalar arguments, bytes | 928 | 536 |
 | Oversized builders are rejected before `Clear` | 300,000-character argument, bytes | 1,234,128 | 617,561 |
-| Single-child selections render without a sort buffer | Sixteen-level chain, time (at `dd27676`) | 971.5 ns | 357.4 ns |
+| Single-child selections render without a sort buffer | Sixteen-level chain, time (at `423419d`) | 971.5 ns | 357.4 ns |
 | Sorting uses cached comparisons, no adapter objects | Write 10 sorted root fields, bytes | 64 | 0 |
 | Root arguments sort pooled entries instead of a dictionary | Render 1,000 arguments, bytes | 92,497 | 36,024 |
 | | Render 1,000 variables, bytes | 126,610 | 70,249 |
 | | Render 10 arguments / variables, bytes | 1,408 / 1,672 | 472 / 848 |
 | A lone argument or variable renders without an enumerator | Render 1 argument / variable, bytes | 552 / 480 | 80 / 88 |
-| | Render 1 argument, time (at `fa3d8f5`) | 63.0 ns | 44.0 ns |
+| | Render 1 argument, time (at `c8cb8bc`) | 63.0 ns | 44.0 ns |
 | | Warm single-entry write to a sink, bytes | — | 0 |
-| Single root selection renders from a reference span | One-field write, time (at `815ea8b`) | 44.5 ns | 32.8 ns |
+| Single root selection renders from a reference span | One-field write, time (at `f22174c`) | 44.5 ns | 32.8 ns |
 | Single-chunk UTF-8 output skips the encoder | Small UTF-8 query, bytes | 48 | 0 |
 | | Large UTF-8 query, bytes | 176 | 128 |
 
@@ -109,11 +110,11 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 | Feature | Metric | Before | Final |
 | --- | --- | ---: | ---: |
 | New argument keys skip the key-casing scan | Insert 1,000 arguments individually, bytes | 240,108 | 56,275 |
-| | Same, time (at `49c7bc0`) | 4,173 µs | 387 µs |
+| | Same, time (at `b346794`) | 4,173 µs | 387 µs |
 | | Insert 10 individually / as a batch, bytes | 1,710 / 2,447 | 832 / 1,872 |
 | | Insert a batch of 1,000, bytes | 201,564 | 145,545 |
 | Root-variable lookup is logarithmic | 1,000 root variables, bytes | 294,245 | 54,040 |
-| | Same, time (at `b837e1f`) | 4,435 µs | 374 µs |
+| | Same, time (at `9a24b12`) | 4,435 µs | 374 µs |
 | List normalization reserves capacity | 10 / 1,000 items, bytes | 624 / 16,896 | 432 / 8,352 |
 | Property metadata is shared across extraction, normalization, comparison and rendering | Object-argument construction, bytes | 2,488 | 2,216 |
 | Empty containers skip cycle tracking | `QueryBlock` empty list / dictionary, bytes | 528 / 608 | 360 / 440 |
@@ -135,7 +136,7 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 
 | Feature | Metric | Before | Final |
 | --- | --- | ---: | ---: |
-| Merge-index invalidation is scoped to the queries that observe a field, not process-wide | Merge after an unrelated mutation, 1,000 candidates (at `815ea8b`) | 81,608 ns, 268,728 B | 290 ns, 296 B |
+| Merge-index invalidation is scoped to the queries that observe a field, not process-wide | Merge after an unrelated mutation, 1,000 candidates (at `f22174c`) | 81,608 ns, 268,728 B | 290 ns, 296 B |
 | | Warm merge, 1,000 candidates, bytes | 272 | 272 |
 | Captured builders keep the index correct: `Where`, `IncludeIf`/`SkipIf` and argument-bearing `AddField` on a builder captured from a nested action, a dotted path or after a sub-field overload | Regression cases confirmed to produce two definitions instead of one | 6 failing | 0 failing |
 
@@ -144,7 +145,7 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 | Feature | Metric | Before | Final |
 | --- | --- | ---: | ---: |
 | Ancestor pruning probes dotted prefixes instead of scanning all paths | 1,000 unrelated paths, bytes | 97,188 | 73,192 |
-| | Same, time (at `b837e1f`) | 501 µs | 40 µs |
+| | Same, time (at `9a24b12`) | 501 µs | 40 µs |
 | .NET 8 hash prefilter avoids prefix strings | 512 deep paths after a short path, extra bytes (.NET 8) | 114,576 | under 16,384 |
 
 ### Caches, pools and retention
@@ -155,9 +156,9 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 | Over budget, the pool keeps the largest builders that fit, largest on top | Builder retained after an 80,000 + 200,000 nested render | first returned | the 200,000 one, either order |
 | Medium renders still reuse their builder | 1,024 to 131,072-character argument, bytes | 128 | 128 |
 | Custom type names: two lock-free generations of 2,048, names in use are promoted | Names retained after 20,000 unique lookups | 20,000 | at most about 4,096 |
-| | Churn of 6,000 names, 1 / 4 threads (at `34fece7`) | 2.564 / 5.223 ms | 2.266 / 4.440 ms |
+| | Churn of 6,000 names, 1 / 4 threads (at `fa5c3fb`) | 2.564 / 5.223 ms | 2.266 / 4.440 ms |
 | | Name kept in use across 20,000 others | evicted | same instance |
-| | Cached custom-type field creation (at `34fece7`) | 158.1 ns, 896 B | 158.0 ns, 896 B |
+| | Cached custom-type field creation (at `fa5c3fb`) | 158.1 ns, 896 B | 158.0 ns, 896 B |
 | Reflection metadata caches hold types weakly | Collectible types rooted by the three caches | 3 | 0 |
 | Pooled hash sets above 256 slots are not returned | Backing slots of the next rental after growing past 2,000 | over 2,000 | at most 256 |
 
@@ -174,7 +175,7 @@ full GC, three identical repeats, measured at `91bf481`; the layout has not chan
 
 - **Feature-bearing fields pay a 48 B holder.** Cold builds of fields with
   metadata are about 12% slower and with inline fragments about 6% slower than
-  before the 96 B layout (ordered runs at `feb2e75`), plus 1–3% for atomic
+  before the 96 B layout (ordered runs at `3c0a8b6`), plus 1–3% for atomic
   replacement. Their allocation is still below the pre-change values above. A
   schema where most fields carry metadata benefits less.
 - **Scalar-argument rendering measured about 2.7% slower** (roughly 16 ns,

@@ -42,16 +42,16 @@ Measured with the same benchmark source against the NGql.Core 2.1.0 package
 | Workload | 2.1.0 | 2.2.0 | Change |
 | --- | ---: | ---: | ---: |
 | Simple query | 1,597 B | 1,413 B | −12% |
-| Complex query with merging | 6,359 B | 4,721 B | −26% |
+| Complex query with merging | 6,380 B | 4,721 B | −26% |
 | Dictionary arguments ×50 | 208,804 B | 185,999 B | −11% |
-| Expression preservation ×50 | 180,849 B | 147,528 B | −18% |
+| Expression preservation ×50 | 180,879 B | 147,528 B | −18% |
 | `ToString` ×50 | 42,015 B | 32,195 B | −23% |
 | 200 dotted paths | 236,984 B | 232,059 B | −2% |
-| 500-field flat selection | 129,454 B | 129,280 B | −0.1% |
-| Classic nested query, depth 30 | 685,333 B | 56,556 B | −92% |
+| 500-field flat selection | 129,444 B | 129,280 B | −0.1% |
+| Classic nested query, depth 30 | 685,332 B | 56,556 B | −92% |
 
-22 of the 24 benchmark workloads are also faster than 2.1.0 with non-overlapping confidence
-intervals, typically by 9–22%: a simple query −11%, a complex merge −15%, `ToString` ×50
+In the in-process benchmark job, 22 of the 24 workloads are also faster than 2.1.0 with
+non-overlapping confidence intervals, typically by 9–22%: a simple query −11%, a complex merge −15%, `ToString` ×50
 −22%, a depth-30 classic nested query −75%. Large flat selections are unchanged. Merging many
 fragments that share a path but differ in arguments is now linear instead of quadratic
 (800 such fragments: about 117 ms → 1.4 ms).
@@ -82,7 +82,8 @@ minus sign under every culture.
 - `QueryDefinition.Fields` and `QueryDefinition.Metadata` return `IReadOnlyDictionary<,>`
   and `Metadata` has no public setter. Reads are unchanged; mutate through
   `QueryBuilder`/`FieldBuilder`.
-- Signed integers always render with the ASCII `-`, regardless of `CultureInfo.CurrentCulture`.
+- Behavior: signed integers always render with the ASCII `-`, regardless of
+  `CultureInfo.CurrentCulture`.
 
 No other public signature changed. Interned type-name strings are no longer guaranteed to
 be the same instance for the life of the process; equality is unaffected.
@@ -96,6 +97,10 @@ be the same instance for the life of the process; equality is unaffected.
 - `NullReferenceException` when merging into a childless object-typed field.
 - `PreservationBuilder.Build()` results no longer share state with their source builder.
 - `dotnet-ngql`: `ngql -` now reads the snippet from stdin as documented since 2.1.
+
+Fixed since the 2.2.0 previews (never in a stable release): stale merge-index entries after
+mutating an indexed query through a captured `FieldBuilder`, and `WriteUtf8` throwing when
+the buffer writer returned a short span.
 
 ## Tooling
 

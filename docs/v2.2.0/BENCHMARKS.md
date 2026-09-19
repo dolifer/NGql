@@ -1,6 +1,6 @@
 # NGql.Core 2.2.0 against 2.1.0
 
-Measured 2026-09-19 on the `main` build (`5ba6909`) and the NGql.Core 2.1.0 NuGet package with the same
+Measured 2026-09-19 on the `main` build (`d6cfe86`) and the NGql.Core 2.1.0 NuGet package with the same
 linked source, `VersionComparisonBenchmark`. BenchmarkDotNet 0.15.7, .NET 9.0.9, Apple M4, macOS 27.0,
 quiet host (load average about 2). The 2.1.0 runner ran first, then the local runner; each ran an
 in-process job (three warmups, five iterations) and BenchmarkDotNet's separate-process ShortRun (three
@@ -71,5 +71,8 @@ allocation per operation, not retained heap. Microbenchmarks on one machine do n
 NGqlCoreVersion=2.1.0 dotnet run --project tests/BenchmarkRunner.Published -c Release -f net9.0 -- --filter '*VersionComparisonBenchmark*' --warmupCount 3 --iterationCount 5 --inProcess --artifacts benchmark-results/published
 dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -- --filter '*VersionComparisonBenchmark*' --warmupCount 3 --iterationCount 5 --inProcess --artifacts benchmark-results/local
 ```
+
+Each command produces both tables: `--inProcess` configures the command-line job, and
+`VersionComparisonBenchmark` adds the separate-process ShortRun through its own config.
 
 Write results outside `artifacts/`: `make clean` and `make ci` delete that folder.
