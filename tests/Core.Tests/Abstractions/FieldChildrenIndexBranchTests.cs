@@ -20,6 +20,34 @@ public class FieldChildrenIndexBranchTests
     }
 
     [Fact]
+    public void AsSpan_OnCollectionWithoutBackingStorage_ReturnsEmptySpan()
+    {
+        var children = new FieldChildren();
+
+        children.AsSpan().IsEmpty.Should().BeTrue();
+        children.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void AsSpan_AfterFirstAppend_ReturnsThatChild()
+    {
+        var children = new FieldChildren();
+        var child = new FieldDefinition("only");
+        children.Append(child);
+
+        children.AsSpan().ToArray().Should().ContainSingle().Which.Should().BeSameAs(child);
+    }
+
+    [Fact]
+    public void Find_OnCollectionWithoutBackingStorage_ReturnsNull()
+    {
+        var children = new FieldChildren();
+
+        children.Find("absent").Should().BeNull();
+        children.Find("absent".AsSpan()).Should().BeNull();
+    }
+
+    [Fact]
     public void Find_BySpanOnIndexedCollection_ResolvesThroughIndex()
     {
         var children = BuildIndexedChildren();
