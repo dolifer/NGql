@@ -37,12 +37,13 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
         // Get parameter names once; parameter types are only needed by the local-map strategy,
         // so their (allocating) map is deferred into that branch.
-        var parameterNames = GetParameterNames(expression);
+        var lambda = expression as LambdaExpression;
+        var parameterNames = GetParameterNames(lambda);
 
         // Choose strategy based on localMap availability
         if (localMap != null && parameterNames != null)
         {
-            var parameterTypes = GetParameterTypes(expression);
+            var parameterTypes = GetParameterTypes(lambda!);
             PreserveWithLocalMap(extractedPaths, parameterNames, nodePath, localMap, parameterTypes, alwaysPreserveFields);
         }
         else
@@ -444,8 +445,9 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
 
     private void PreserveFromRoot(FieldDefinition rootField, string nodePath, string lastSegment, HashSet<string> fieldsToPreserve)
     {
+        // rootField is one of the query's own roots, so GetPathTo always resolves its name and
+        // returns at least the root segment — no empty-result guard is reachable here.
         var pathToNode = sourceQuery.GetPathTo(rootField.Alias ?? rootField.Name, nodePath);
-        if (pathToNode.Length == 0) return;
 
         var fullNodePath = $"{string.Join(".", pathToNode)}.{lastSegment}";
         var nodeField = QueryDefinitionExtensions.NavigatePath(sourceQuery.Definition._fields, fullNodePath.AsSpan(), out _);
@@ -462,9 +464,9 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static string[]? GetParameterNames(Expression expression)
+    private static string[]? GetParameterNames(LambdaExpression? lambda)
     {
-        if (expression is not LambdaExpression { Parameters.Count: > 0 } lambda)
+        if (lambda is not { Parameters.Count: > 0 })
             return null;
 
         // Lambdas authored in C# always carry parameter names. The BCL allows null names via
@@ -479,12 +481,13 @@ internal sealed class ExpressionPreservationProcessor(QueryBuilder sourceQuery, 
         return names;
     }
 
+    /// <summary>
+    /// Maps parameter name to declared type. Only called once <see cref="GetParameterNames"/> has
+    /// confirmed a lambda with at least one parameter, so no empty-input guard is needed.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Dictionary<string, Type> GetParameterTypes(Expression expression)
+    private static Dictionary<string, Type> GetParameterTypes(LambdaExpression lambda)
     {
-        if (expression is not LambdaExpression lambda || lambda.Parameters.Count == 0)
-            return new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-
         var dict = new Dictionary<string, Type>(lambda.Parameters.Count, StringComparer.OrdinalIgnoreCase);
         foreach (var p in lambda.Parameters)
         {

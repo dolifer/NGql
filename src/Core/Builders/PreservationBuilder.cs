@@ -170,8 +170,9 @@ public sealed class PreservationBuilder
 
     private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
     {
+        // rootName always names one of the query's own roots, so GetPathTo resolves it and
+        // returns at least the root segment — no empty-result guard is reachable here.
         var pathToNode = _sourceQuery.GetPathTo(rootName, nodePath);
-        if (pathToNode.Length == 0) return;
 
         var fullNodePath = JoinPath(pathToNode, lastSegment);
         var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);

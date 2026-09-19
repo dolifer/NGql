@@ -118,25 +118,17 @@ internal static class QueryBlockObjectExtensions
             .ToArray();
     }
 
-    private static bool IsMoreDerivedThan(PropertyInfo candidate, PropertyInfo current)
-    {
-        var candidateType = candidate.DeclaringType;
-        var currentType = current.DeclaringType;
-        if (candidateType is null || currentType is null || candidateType == currentType)
-        {
-            return false;
-        }
-
-        // candidate is more derived when currentType sits somewhere up its base chain.
-        for (var baseType = candidateType.BaseType; baseType is not null; baseType = baseType.BaseType)
-        {
-            if (baseType == currentType)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    /// <summary>
+    /// True when <paramref name="candidate"/> is declared further down the hierarchy than
+    /// <paramref name="current"/>. <c>GetProperties()</c> happens to return most-derived
+    /// declarations first on the runtimes NGql targets, but that ordering is not contractual, so
+    /// <see cref="GetSelectableProperties"/> compares rather than trusting position. Internal so
+    /// both orderings stay directly testable. Both arguments come from
+    /// <c>Type.GetProperties()</c>, whose results always carry a non-null DeclaringType.
+    /// </summary>
+    internal static bool IsMoreDerivedThan(PropertyInfo candidate, PropertyInfo current)
+        => candidate.DeclaringType != current.DeclaringType
+           && current.DeclaringType!.IsAssignableFrom(candidate.DeclaringType);
 
     private static void HandleProperties(QueryBlock block, object? obj, PropertyInfo[] properties)
     {

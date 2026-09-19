@@ -202,27 +202,48 @@ internal static class ValueFormatter
     }
 
     /// <summary>Formats <paramref name="value"/> with invariant culture. Used for
-    /// float/double/decimal — none of those produce strings longer than the BCL guarantees.</summary>
+    /// int/long/float/double/decimal — none of those produce strings longer than the BCL guarantees.</summary>
     private static void AppendFormattable<T>(StringBuilder builder, T value, ReadOnlySpan<char> format = default)
-        where T : ISpanFormattable
+        where T : struct, ISpanFormattable
     {
-        // Enough for the supported numeric types and DateFormat. The fallback keeps this
-        // helper safe if another format or value type is introduced later.
-        Span<char> buffer = stackalloc char[64];
+        // Enough for the supported numeric types and DateFormat. The fallback inside
+        // AppendSpanFormatted keeps this helper safe if another format or value type is
+        // introduced later.
+        Span<char> buffer = stackalloc char[StackBufferLength];
+        AppendSpanFormatted(builder, value, format, buffer);
+    }
+
+    /// <summary>Stack buffer size used by <see cref="AppendFormattable{T}"/>; comfortably above the
+    /// longest output of any currently-supported value type and format.</summary>
+    internal const int StackBufferLength = 64;
+
+    /// <summary>
+    /// Formats <paramref name="value"/> into <paramref name="buffer"/> and appends the result,
+    /// falling back to an allocating <c>ToString</c> when the buffer is too small. Split out from
+    /// <see cref="AppendFormattable{T}"/> so the undersized-buffer fallback is exercisable without
+    /// changing the production buffer size.
+    /// </summary>
+    internal static void AppendSpanFormatted<T>(StringBuilder builder, T value, ReadOnlySpan<char> format, Span<char> buffer)
+        where T : struct, ISpanFormattable
+    {
         if (value.TryFormat(buffer, out var written, format, CultureInfo.InvariantCulture))
         {
             builder.Append(buffer[..written]);
+            return;
         }
-        else
-        {
-            builder.Append(value.ToString(format.IsEmpty ? null : format.ToString(), CultureInfo.InvariantCulture));
-        }
+
+        AppendFormattedFallback(builder, value, format);
     }
+
+    /// <summary>Allocating path taken only when the destination span cannot hold the formatted
+    /// value. Non-generic so it is compiled once rather than per value type.</summary>
+    private static void AppendFormattedFallback(StringBuilder builder, IFormattable value, ReadOnlySpan<char> format)
+        => builder.Append(value.ToString(format.IsEmpty ? null : format.ToString(), CultureInfo.InvariantCulture));
 
     /// <summary>Formats <paramref name="value"/> with the NGql DateFormat and quotes it.
     /// Used for DateTime/DateTimeOffset.</summary>
     private static void AppendQuotedFormattable<T>(StringBuilder builder, T value)
-        where T : ISpanFormattable
+        where T : struct, ISpanFormattable
     {
         builder.Append('"');
         AppendFormattable(builder, value, DateFormat);
