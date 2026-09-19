@@ -702,16 +702,17 @@ internal static class FieldDefinitionExtensions
     /// </para>
     ///
     /// <para>
-    /// <b>Why there is no third ("was false, incoming introduces a genuinely new argument") case to
-    /// handle here.</b> <c>CanMergeFields</c> — which every <c>MergeFieldsInPlace</c> caller already
-    /// ran before reaching this method — rejects that shape outright: <c>IsIncomingChildCompatible</c>
+    /// <b>The third ("was false, incoming introduces a genuinely new argument") case.</b> On the
+    /// <see cref="QueryMerger"/> path this shape cannot arise: <c>CanMergeFields</c> runs before
+    /// <see cref="MergeFieldsInPlace"/> there and rejects it outright — <see cref="IsIncomingChildCompatible"/>
     /// only tolerates an incoming child ABSENT from existing when that child's whole subtree is
     /// argument-free, and any incoming child that DOES exist by name on the existing side must have
-    /// <c>AreArgumentsEqual</c>-equal own arguments before recursing further — so an argument can only
-    /// ever appear where the existing side already carries the identical argument (already <c>true</c>,
-    /// handled above) or where both sides remain argument-free (handled above). A merge that would
-    /// introduce a net-new argument into a previously argument-free region is therefore never accepted
-    /// by <c>CanMergeFields</c> in the first place and never reaches this method at all.
+    /// <c>AreArgumentsEqual</c>-equal own arguments before recursing further. It IS reachable through
+    /// the inline-fragment path, however: <see cref="MergeInlineFragmentBodyInPlace"/> calls
+    /// <see cref="MergeChildInPlace"/> — and therefore <see cref="MergeFieldsInPlace"/> — with no
+    /// <c>CanMergeFields</c> gate at all, so merging two same-typed inline fragments whose shared
+    /// child gains an argument-bearing descendant lands here. Full invalidation is always safe, so
+    /// this case simply forgoes the O(1) fast path and recomputes both memos on next read.
     /// </para>
     /// </summary>
     private static void InvalidateMergeMemoAfterChildrenMerge(FieldDefinition existing, bool incomingChildrenHaveArguments)
@@ -738,12 +739,10 @@ internal static class FieldDefinitionExtensions
             return;
         }
 
-        // Unreachable under the current CanMergeFields contract (see proof above): every caller of
-        // MergeFieldsInPlace already confirmed compatibility, which rejects any merge that would
-        // introduce a net-new argument into a previously argument-free region. Kept as a conservative
-        // fallback — full invalidation is always safe — so a future change to CanMergeFields's
-        // compatibility rules cannot silently resurrect the stale-fingerprint false-split bug fixed
-        // in a prior commit; it would instead just lose this method's O(1) fast path for this case.
+        // A previously argument-free subtree just gained an argument. Unreachable via QueryMerger
+        // (CanMergeFields rejects that shape first) but genuinely reachable via the ungated
+        // inline-fragment merge path — see the third-case remarks above. Drop both memos: full
+        // invalidation is always correct, it only costs this method's O(1) fast path here.
         existing._subtreeHasAnyArguments = null;
         existing._deepArgumentFingerprint = null;
     }

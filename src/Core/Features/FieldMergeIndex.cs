@@ -183,7 +183,11 @@ internal sealed class FieldMergeIndex
             if (!fields.TryGetValue(key, out var liveField))
             {
                 bucket.RemoveAt(i);
-                _keyFingerprint.GetValueOrDefault(name)?.Remove(key);
+
+                // _keyFingerprint[name] is written in lock-step with every _byNameFingerprint bucket
+                // insertion (see SetKeyFingerprint), so reaching a populated bucket under `name`
+                // guarantees the per-name reverse map already exists.
+                _keyFingerprint[name].Remove(key);
                 continue;
             }
 
