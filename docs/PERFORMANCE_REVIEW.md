@@ -1086,13 +1086,60 @@ Findings reviewed and left unchanged: `ConditionalWeakTable` metadata caches
 fingerprint's split flag and payload (the former `Nullable<ulong>` was equally
 non-atomic, and any value read is a fingerprint the field has held); merge clones
 no longer share a lazily attached empty metadata dictionary with their source,
-which removes accidental aliasing rather than a documented behavior. Still open:
-the FIFO type-name cache (T12) and the linear key-casing scan when an existing
-`QueryBlock` argument is set again.
+which removes accidental aliasing rather than a documented behavior. Still open: the
+linear key-casing scan when an existing `QueryBlock` argument is set again
+(the FIFO type-name cache is resolved in T12 below).
 
-Open review findings, not changed: the custom type-name cache evicts FIFO and
-serializes misses once more than 4,096 names cycle (documented under T4), and
-every root `FieldBuilder` still creates its merge tracker eagerly.
+### T12: type-name cache churn and the remaining eager tracker (`34fece7`, `997e504`)
+
+**Type-name cache.** The bounded FIFO cache took a process-wide lock on every miss
+and evicted in insertion order, so a name still in use was dropped once 4,096
+others had been seen. It is replaced by two generations of at most 2,048 names.
+A full current generation becomes the previous one and the oldest is dropped; a
+hit in the previous generation is promoted. Misses use the concurrent
+dictionary's own striped add, the swap is a single compare-and-swap, and at most
+4,096 names are retained as before (a few more can be admitted while threads race
+a swap). The first generation starts small so applications with few custom types
+pay nothing extra; rotated generations are sized up front.
+
+`TypeCacheChurnBenchmark` cycles 6,000 custom type names per operation (more than
+the cache holds) while one name stays in use. .NET 9.0.9, Apple M4, in-process
+ShortRun, three warmups, five iterations, run back to back:
+
+| Workload | Before | After | Allocated before → after |
+| --- | ---: | ---: | ---: |
+| Churn, 1 thread | 2.564 ±0.100 ms | 2.266 ±0.040 ms | 7.23 → 7.29 MB |
+| Churn, 4 threads | 5.223 ±0.034 ms | 4.440 ±0.228 ms | 27.70 → 27.74 MB |
+| Cached custom-type field | 158.1 ns | 158.0 ns | 896 B, unchanged |
+| Common-type field | 135.9 ns | 132.2 ns | 896 B, unchanged |
+
+Churn is about 12% faster on one thread and 15% on four, with non-overlapping
+intervals; allocation is within 1%. A first version without presized generations
+allocated 13% more under churn (8.18 MB) and was corrected before this result.
+The hot path is unchanged. A new test keeps one name in use across 20,000 others
+and requires the same string instance throughout: it fails on the FIFO cache and
+passes now. The existing bound test (at most 4,096 of 20,000 names retained) and
+a new eight-thread miss test also pass.
+
+**Eager tracker.** A root `FieldBuilder` creates its merge tracker in the
+constructor so that record copies made later (`Where`, alias or type changes,
+metadata merges) share it with the instance a merge index observes. Every
+builder handed to user code needs that, because it can be captured. The one
+remaining builder that never reached user code was the sub-field overload
+(`AddField(path, subFields)`), which now adds children through the factory
+directly. `MetadataColdBuild` falls from 2.29 to 2.25 KB in all four paired runs;
+simple-query, type-drift and deep-nesting controls keep their allocation and
+their timings overlap. Two new regressions build a field through the sub-field
+overload, capture a builder for it afterwards, warm the index and verify that
+`Where` still invalidates it. Trackers for builders passed to actions are
+retained deliberately.
+
+**2,148 unit and 91 integration tests pass on .NET 8, 9 and 10.** Raw reports:
+`review-fixes/types-before`, `types-after`; `complex-merge-opt/t12-1-t12before` …
+`t12-4-t12before`.
+
+Still open: re-setting an existing `QueryBlock` argument scans every key to
+recover its stored casing.
 
 ## Remaining profile-dependent opportunities and tradeoffs
 

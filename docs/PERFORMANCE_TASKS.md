@@ -30,7 +30,7 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
   nested renders, single argument/variable rendering.
 - [x] T13 — Second review pass: stale index after captured-builder `AddField` with
   arguments; discarded builder, chain lookup and pool scratch trimmed.
-- [ ] T12 — Open review findings: FIFO type-name cache under churn; eager merge
+- [x] T12 — Open review findings: FIFO type-name cache under churn; eager merge
   tracker on every root `FieldBuilder`.
 
 ## Execution log
@@ -76,6 +76,11 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
 - T13 complete: two stale-index regressions fail before and pass after. Dictionary
   arguments ×50: 49.03 / 49.15 → 48.20 / 48.44 µs and 185.55 → 181.64 KB; three
   controls unchanged. 2,144 / 91 tests. Source: `complex-merge-opt/review2-*`.
+- T12 complete: two-generation lock-free type-name cache. Churn of 6,000 names:
+  2.564 → 2.266 ms on one thread, 5.223 → 4.440 ms on four; allocation within 1%;
+  hot path unchanged; a name kept in use now survives 20,000 others. Sub-field
+  overload no longer builds a `FieldBuilder`: metadata cold build 2.29 → 2.25 KB.
+  Trackers for builders passed to user actions are kept on purpose. 2,148 / 91 tests.
 
 ## Measurement ledger (T7–T10)
 
