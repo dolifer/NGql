@@ -217,8 +217,9 @@ dotnet run --project artifacts/benchmarks/complex-merge-opt/heap -c Release -p:P
 dotnet run --project tests/BenchmarkRunner -c Release -f net9.0 -p:NuGetAudit=false -- --filter '*ArgumentInsertionBenchmark*' '*BlockArgumentRenderingBenchmark*' '*AliasCollisionBenchmark*' '*EmptyArgumentBenchmark*' '*ListArgumentBenchmark*' '*RootSelectionBenchmark*' '*MediumRenderBenchmark*' '*AllocationHotspotBenchmark*' '*BatchOperationsBenchmark*' '*TypeCacheBenchmark*' '*TypeCacheChurnBenchmark*' --job short --inProcess
 ```
 
-`NuGetAudit=false` is a command-local workaround for an existing NU1902 warning
-from `Microsoft.Build.Tasks.Git` 8.0.0; no dependency or audit setting changed.
+The `-p:NuGetAudit=false` in these commands is no longer needed: it worked around advisory
+GHSA-23fw-v26w-5fgq in `Microsoft.Build.Tasks.Git` 8.0.0, fixed by moving
+`Microsoft.SourceLink.GitHub` to 10.0.401.
 Raw reports for the final figures are in the git-ignored
 `artifacts/benchmarks/complex-merge-opt/` (`bdn-final`, `bdn-final-published`,
 `heap-final.txt`) and `artifacts/benchmarks/final-91bf481/local`.
