@@ -62,6 +62,7 @@ build: restore
 	dotnet build $(SOLUTION) --configuration $(CONFIG) --no-restore
 
 test: build
+	@rm -rf $(COVERLET_DIR)
 	@mkdir -p $(COVERLET_DIR)
 	@count=$$(echo $(TEST_PROJECTS) | wc -w | tr -d ' '); \
 	idx=0; \
@@ -69,27 +70,15 @@ test: build
 		idx=$$((idx + 1)); \
 		name=$$(basename $$proj .csproj); \
 		echo "==> Running $$name ($$idx/$$count)"; \
-		if [ $$idx -eq $$count ]; then \
-			fmt="cobertura"; \
-		else \
-			fmt="json"; \
-		fi; \
-		if [ $$idx -gt 1 ]; then \
-			merge_file=$$(ls $(COVERLET_DIR)/coverage.*.json 2>/dev/null | head -1); \
-			merge="/p:MergeWith=$$merge_file"; \
-		else \
-			merge=""; \
-		fi; \
 		dotnet test $$proj \
 			--configuration $(CONFIG) \
 			--no-build \
 			--results-directory $(ARTIFACTS)/test-results \
 			--logger "junit;LogFilePath=$(JUNIT_DIR)/$$name.{framework}.xml;MethodFormat=Class;FailureBodyFormat=Verbose" \
 			/p:CollectCoverage=true \
-			/p:CoverletOutputFormat=$$fmt \
-			/p:CoverletOutput=$(COVERLET_DIR)/coverage \
-			/p:ExcludeByFile=\"*.Generated.cs\" \
-			$$merge || exit $$?; \
+			/p:CoverletOutputFormat=cobertura \
+			/p:CoverletOutput=$(COVERLET_DIR)/$$name/coverage \
+			/p:ExcludeByFile=\"*.Generated.cs\" || exit $$?; \
 	done
 
 tools:
@@ -178,7 +167,7 @@ skill-publish-stable:
 
 report: tools
 	reportgenerator \
-		"-reports:$(COVERLET_DIR)/*.cobertura.xml" \
+		"-reports:$(COVERLET_DIR)/**/*.cobertura.xml" \
 		"-targetdir:$(COVERAGE_DIR)" \
 		"-reporttypes:HtmlInline_AzurePipelines;Badges"
 
