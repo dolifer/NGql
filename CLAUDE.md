@@ -139,6 +139,7 @@ tests/Core.Tests/
 └── Issues/                # Regression tests for bug fixes (with snapshots)
 
 tests/Core.IntegrationTests/   # Real composition scenarios
+tests/Tool.Tests/              # ngql CLI end to end (console, fixtures, --execute against a local stub)
 tests/BenchmarkRunner/         # BenchmarkDotNet performance harness
 ```
 
@@ -375,7 +376,7 @@ Paths use dot notation for hierarchy: `"user.profile.settings.privacy"`
 
 ### Coverage Requirements
 
-- **Target:** 100% line and branch coverage for the solution (reached 2026-09-19: 4,116 lines, 2,781 branches)
+- **Target:** 100% line and branch coverage for the solution (reached 2026-09-19 across NGql.Core, NGql.Tool, Server and Shared: 4,377 lines, 2,886 branches)
 - **Strategy:** Test public API surfaces; implementation details covered indirectly
 - **Coverage tracked:** Via Coverlet during `dotnet test`
 

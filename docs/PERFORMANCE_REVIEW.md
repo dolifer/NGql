@@ -189,8 +189,9 @@ full GC, three identical repeats, final build):
 ## Validation
 
 **2,313 unit tests and 92 integration tests pass on each of .NET 8, 9 and 10, with
-100% line, branch and method coverage** (4,116 lines, 2,781 branches, 855 methods;
-`make coverage`). Reaching it removed unreachable guards, the unused
+100% line, branch and method coverage** across NGql.Core, the `ngql` tool, the demo
+server and Shared (4,377 lines, 2,886 branches, 888 methods; `make coverage`; the tool
+adds 73 tests per framework). Reaching it removed unreachable guards, the unused
 `LockFreeArgumentsPool`, and key-generator and pool overloads that only tests called;
 allocation figures above were re-checked afterwards and are unchanged.
 Rendered output for the complex-merge workload is byte-identical to 2.1.0

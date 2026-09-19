@@ -1,4 +1,4 @@
-using System.Diagnostics;
+using System;
 using FluentAssertions;
 using NGql.Core.Abstractions;
 using Xunit;
@@ -8,32 +8,24 @@ namespace NGql.Core.Tests.Issues;
 public class ArgumentInsertionScalingTests
 {
     [Fact]
-    public void AddArgument_NewKeys_ScalesNearLinearly()
+    public void AddArgument_NewKeys_DoesNotEnumerateExistingKeys()
     {
-        Insert(2000);
-        var small = Measure(2000);
-        var large = Measure(16000);
+        var keys = new string[4000];
+        for (var i = 0; i < keys.Length; i++) keys[i] = "argument" + i;
+        Insert(keys);
 
-        // Eight times the keys should cost far less than the 64x of a per-insert key scan.
-        large.Should().BeLessThan(small * 24);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Insert(keys);
+        var bytesPerKey = (GC.GetAllocatedBytesForCurrentThread() - before) / keys.Length;
+
+        // A tree node costs about 56 B per key. Scanning the stored keys on every insert adds a
+        // traversal stack per call (over 200 B per key at this size) and makes insertion quadratic.
+        bytesPerKey.Should().BeLessThan(120);
     }
 
-    private static long Measure(int count)
-    {
-        var best = long.MaxValue;
-        for (var attempt = 0; attempt < 5; attempt++)
-        {
-            var watch = Stopwatch.StartNew();
-            Insert(count);
-            best = System.Math.Min(best, watch.ElapsedTicks);
-        }
-
-        return best;
-    }
-
-    private static void Insert(int count)
+    private static void Insert(string[] keys)
     {
         var block = new QueryBlock("Q");
-        for (var i = 0; i < count; i++) block.AddArgument("argument" + i, i);
+        for (var i = 0; i < keys.Length; i++) block.AddArgument(keys[i], i);
     }
 }
