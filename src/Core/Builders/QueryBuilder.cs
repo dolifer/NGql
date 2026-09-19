@@ -476,17 +476,18 @@ public sealed class QueryBuilder
         if (arguments is { Count: > 0 })
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
-        var type = hasSubFields ? Constants.ObjectFieldType : Constants.DefaultFieldType;
-        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, type, arguments, metadata);
-
         if (!hasSubFields)
         {
+            // No builder escapes here, so skip its tracker and ancestor chain (see AddFieldFastPath).
+            FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.DefaultFieldType,
+                arguments is { Count: > 0 } ? arguments : null, null, metadata);
             QueryMapInstance.UpdateRootMapping(_definition);
             // Phase 3: Invalidate caches after field addition
             InvalidateLookupCaches();
             return this;
         }
 
+        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, Constants.ObjectFieldType, arguments, metadata);
         foreach (var subField in subFields!)
             builder.AddField(subField);
 

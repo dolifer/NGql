@@ -526,41 +526,57 @@ public sealed class FieldBuilder
             return null;
         }
 
-        // Paths normally nest by prefix, which confines the search to one branch. The unpruned
-        // pass covers any path shape that does not, so the chain is found whenever it exists.
+        // The leaf's Path names its ancestors, so one lookup per segment normally finds them.
+        // Aliased or typed segments may not resolve by name; the reference search covers those.
         var ancestors = new List<FieldDefinition>(4);
-        return BuildChain(fieldDefinitions, field, ancestors, variableSink, prunedByPath: true)
-            ?? BuildChain(fieldDefinitions, field, ancestors, variableSink, prunedByPath: false);
-    }
-
-    private static FieldBuilder? BuildChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, List<FieldDefinition> ancestors, SortedSet<Variable>? variableSink, bool prunedByPath)
-    {
-        foreach (var root in fieldDefinitions.Values)
+        if (!TryWalkPath(fieldDefinitions, field, ancestors))
         {
             ancestors.Clear();
-            if (!TryFindAncestors(root, field, ancestors, prunedByPath)) continue;
-
-            FieldBuilder? parent = null;
-            foreach (var ancestor in ancestors)
+            var found = false;
+            foreach (var root in fieldDefinitions.Values)
             {
-                parent = new FieldBuilder(ancestor, parent, variableSink);
+                found = TryFindAncestors(root, field, ancestors);
+                if (found) break;
             }
 
-            return parent;
+            if (!found) return null;
         }
 
-        return null;
+        FieldBuilder? parent = null;
+        foreach (var ancestor in ancestors)
+        {
+            parent = new FieldBuilder(ancestor, parent, variableSink);
+        }
+
+        return parent;
     }
 
-    private static bool TryFindAncestors(FieldDefinition current, FieldDefinition target, List<FieldDefinition> ancestors, bool prunedByPath)
+    private static bool TryWalkPath(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition target, List<FieldDefinition> ancestors)
+    {
+        var remaining = target.Path.AsSpan();
+        var dot = remaining.IndexOf('.');
+        if (dot <= 0 || !fieldDefinitions.TryGetValue(remaining[..dot].ToString(), out var current)) return false;
+
+        while (true)
+        {
+            ancestors.Add(current);
+            remaining = remaining[(dot + 1)..];
+            dot = remaining.IndexOf('.');
+            var segment = dot < 0 ? remaining : remaining[..dot];
+            if (current._children is null || !current._children.TryGetValue(segment, out var child)) return false;
+            if (dot < 0) return ReferenceEquals(child, target);
+            current = child;
+        }
+    }
+
+    private static bool TryFindAncestors(FieldDefinition current, FieldDefinition target, List<FieldDefinition> ancestors)
     {
         if (current._children is not { Count: > 0 } children) return false;
-        if (prunedByPath && !target.Path.StartsWith(current.Path, StringComparison.Ordinal)) return false;
 
         ancestors.Add(current);
         foreach (var child in children.AsSpan())
         {
-            if (ReferenceEquals(child, target) || TryFindAncestors(child, target, ancestors, prunedByPath)) return true;
+            if (ReferenceEquals(child, target) || TryFindAncestors(child, target, ancestors)) return true;
         }
 
         ancestors.RemoveAt(ancestors.Count - 1);

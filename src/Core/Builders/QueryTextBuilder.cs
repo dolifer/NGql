@@ -106,20 +106,23 @@ internal sealed class QueryTextBuilder
     // on every nested render. The largest ends on top, where the outermost render rents it.
     private static void RetainLargestWithinBudget(Stack<QueryTextBuilder> stack, QueryTextBuilder incoming)
     {
-        var candidates = new QueryTextBuilder[stack.Count + 1];
+        // Nested renders of large queries land here on every return, so the scratch array is
+        // reused per thread and cleared afterwards to avoid rooting rejected builders.
+        var candidates = _retentionScratch ??= new QueryTextBuilder[MaxPooledBuilders];
+        var count = stack.Count + 1;
         stack.CopyTo(candidates, 0);
-        candidates[^1] = incoming;
-        Array.Sort(candidates, static (left, right) => right._stringBuilder.Capacity.CompareTo(left._stringBuilder.Capacity));
+        candidates[count - 1] = incoming;
+        candidates.AsSpan(0, count).Sort(LargestCapacityFirst);
 
         stack.Clear();
         var retainedCapacity = 0;
         var kept = 0;
-        foreach (var candidate in candidates)
+        for (var i = 0; i < count; i++)
         {
-            var capacity = candidate._stringBuilder.Capacity;
+            var capacity = candidates[i]._stringBuilder.Capacity;
             if (retainedCapacity + capacity > MaxBuilderCapacity) continue;
             retainedCapacity += capacity;
-            candidates[kept++] = candidate;
+            candidates[kept++] = candidates[i];
         }
 
         for (var i = kept - 1; i >= 0; i--)
@@ -127,7 +130,15 @@ internal sealed class QueryTextBuilder
             if (ReferenceEquals(candidates[i], incoming)) incoming._stringBuilder.Clear();
             stack.Push(candidates[i]);
         }
+
+        Array.Clear(candidates, 0, count);
     }
+
+    [ThreadStatic]
+    private static QueryTextBuilder[]? _retentionScratch;
+
+    private static readonly Comparison<QueryTextBuilder> LargestCapacityFirst =
+        static (left, right) => right._stringBuilder.Capacity.CompareTo(left._stringBuilder.Capacity);
 
     /// <summary>
     /// Gets padding string for the specified indent level, using cache for common levels.
