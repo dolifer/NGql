@@ -394,12 +394,9 @@ public sealed class QueryBlock
         Justification = "Plain foreach over SortedDictionary.Keys uses the struct enumerator and short-circuits on first match; the Where LINQ form would allocate an enumerator and a closure on every argument add.")]
     private bool TryGetExistingKey(string key, out string existingKey)
     {
-        if (!_arguments.ContainsKey(key))
-        {
-            existingKey = string.Empty;
-            return false;
-        }
-
+        // _arguments is keyed OrdinalIgnoreCase, so a hit here means exactly one stored key matches
+        // `key` case-insensitively — the scan below recovers the casing it was originally stored
+        // under, which the callers compare ordinally to reject a case-colliding re-add.
         foreach (var storedKey in _arguments.Keys)
         {
             if (string.Equals(storedKey, key, StringComparison.OrdinalIgnoreCase))
