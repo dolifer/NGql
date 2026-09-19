@@ -63,14 +63,7 @@ public sealed class FieldBuilder
     /// <exception cref="ArgumentNullException">Thrown when fieldDefinition is null.</exception>
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
-        ArgumentNullException.ThrowIfNull(fieldDefinition);
-        // Dotted names are valid here — they are expanded into nested fields by FieldFactory,
-        // matching the string-overload behavior. Validate each segment individually.
-        ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
-        var arguments = fieldDefinition._arguments;
-
-        // FieldDefinition._type is always set non-null by every constructor path.
-        FieldFactory.GetOrAddField(_fieldDefinition, fieldDefinition.Name, fieldDefinition._type!, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        AddSubField(_fieldDefinition, fieldDefinition);
         return this;
     }
 
@@ -651,6 +644,19 @@ public sealed class FieldBuilder
 
     internal static void Include(FieldChildren children, FieldDefinition fieldDefinition)
         => RecursiveCreateField(children, fieldDefinition);
+
+    // Shared with QueryBuilder's sub-field overloads, which add children without exposing a
+    // builder and so need neither a FieldBuilder nor the merge tracker its constructor creates.
+    internal static void AddSubField(FieldDefinition parent, FieldDefinition fieldDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+        // Dotted names are valid here — they are expanded into nested fields by FieldFactory,
+        // matching the string-overload behavior. Validate each segment individually.
+        ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
+
+        // FieldDefinition._type is always set non-null by every constructor path.
+        FieldFactory.GetOrAddField(parent, fieldDefinition.Name, fieldDefinition._type!, fieldDefinition._arguments, parent.Path, fieldDefinition.Metadata);
+    }
 
     private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
     {

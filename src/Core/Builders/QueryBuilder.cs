@@ -487,9 +487,10 @@ public sealed class QueryBuilder
             return this;
         }
 
-        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, Constants.ObjectFieldType, arguments, metadata);
+        var parent = FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.ObjectFieldType,
+            arguments is { Count: > 0 } ? arguments : null, null, metadata);
         foreach (var subField in subFields!)
-            builder.AddField(subField);
+            FieldBuilder.AddSubField(parent, subField);
 
         QueryMapInstance.UpdateRootMapping(_definition);
         // Phase 3: Invalidate caches after field addition

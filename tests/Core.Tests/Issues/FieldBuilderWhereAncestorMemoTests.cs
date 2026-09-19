@@ -100,6 +100,26 @@ public class FieldBuilderWhereAncestorMemoTests
             : query.AddField("metrics", metrics => metrics.AddField("realtime", Currency("USD"), configure));
     }
 
+    [Theory]
+    [InlineData("metrics")]
+    [InlineData("stats.metrics")]
+    public void Where_OnBuilderCapturedAfterSubFieldAddition_InvalidatesWarmedMergeIndex(string path)
+    {
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), ["deposits", "withdrawals"]);
+        FieldBuilder? captured = null;
+        target.AddField(path, Currency("USD"), field => captured = field);
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), ["deposits"]));
+
+        captured!.Where("cur", "EUR");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("EUR"), ["deposits"]));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().Contain("cur:\"EUR\"").And.NotContain("_1");
+    }
+
     [Fact]
     public void Where_OnCapturedNestedBuilder_AfterActionReturns_MergesGenuinePostMutationCandidate()
     {
