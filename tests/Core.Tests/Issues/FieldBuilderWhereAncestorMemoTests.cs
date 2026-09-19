@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -38,6 +39,8 @@ public class FieldBuilderWhereAncestorMemoTests
     [Theory]
     [InlineData("metrics.deposits")]
     [InlineData("metrics.realtime.deposits")]
+    [InlineData("metrics.d:deposits")]
+    [InlineData("m:metrics.realtime.d:deposits")]
     public void Where_OnBuilderCapturedFromDottedPath_InvalidatesWarmedMergeIndex(string path)
     {
         FieldBuilder? captured = null;
@@ -71,6 +74,30 @@ public class FieldBuilderWhereAncestorMemoTests
 
         target.DefinitionsCount.Should().Be(1);
         target.ToString().Should().NotContain("metrics_1");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AddFieldWithArguments_OnCapturedNestedBuilder_InvalidatesWarmedMergeIndex(bool dotted)
+    {
+        FieldBuilder? captured = null;
+        var target = Realtime("T", dotted, field => captured = field);
+        target.Include(Realtime("Before", dotted, _ => { }));
+
+        captured!.AddField("deposits", Currency("EUR"));
+        target.Include(Realtime("After", dotted, field => field.AddField("deposits", Currency("EUR"))));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().NotContain("metrics_1");
+    }
+
+    private static QueryBuilder Realtime(string name, bool dotted, Action<FieldBuilder> configure)
+    {
+        var query = CreateDefaultBuilder(name, MergingStrategy.MergeByFieldPath);
+        return dotted
+            ? query.AddField("metrics.realtime", Currency("USD"), configure)
+            : query.AddField("metrics", metrics => metrics.AddField("realtime", Currency("USD"), configure));
     }
 
     [Fact]

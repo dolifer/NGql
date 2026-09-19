@@ -458,6 +458,14 @@ public sealed class FieldBuilder
             _fieldDefinition.ClearMergeMemo();
         }
 
+        // A captured builder can add argument-bearing fields long after its own action unwound
+        // and a merge index fingerprinted the root. Only arguments (directly, or set inside the
+        // action) change a fingerprint, so plain field additions skip the ancestor walk.
+        if (action != null || arguments is { Count: > 0 })
+        {
+            ClearAncestorMergeMemos();
+        }
+
         return this;
     }
 
