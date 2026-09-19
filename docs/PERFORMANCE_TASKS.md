@@ -28,6 +28,8 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
 - [x] T11 — Code review fixes: stale merge index from dotted-path builders, short
   UTF-8 destination spans, .NET 8 preservation prefix strings, pool budget with
   nested renders, single argument/variable rendering.
+- [x] T13 — Second review pass: stale index after captured-builder `AddField` with
+  arguments; discarded builder, chain lookup and pool scratch trimmed.
 - [ ] T12 — Open review findings: FIFO type-name cache under churn; eager merge
   tracker on every root `FieldBuilder`.
 
@@ -71,6 +73,9 @@ regression checks, and findings in `PERFORMANCE_REVIEW.md`. Commits are local on
   → under 16 KB for 512 deep paths; pool keeps the 200,000-character builder in
   either return order; single argument 63.0 → 44.0 ns and 208 → 80 B, single
   variable 69.1 → 40.8 ns and 208 → 88 B. 2,140 / 91 tests.
+- T13 complete: two stale-index regressions fail before and pass after. Dictionary
+  arguments ×50: 49.03 / 49.15 → 48.20 / 48.44 µs and 185.55 → 181.64 KB; three
+  controls unchanged. 2,144 / 91 tests. Source: `complex-merge-opt/review2-*`.
 
 ## Measurement ledger (T7–T10)
 

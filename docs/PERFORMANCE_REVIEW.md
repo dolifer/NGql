@@ -1041,6 +1041,55 @@ pass on each of .NET 8, 9 and 10** (15 new cases). Raw benchmark reports:
 `artifacts/benchmarks/review-fixes/` (`args-before`, `args-after`,
 `vars-interface`).
 
+### Second review pass (`14806a2`, `1ea0a68`)
+
+A second review, scoped to performance, raised nine unverified findings. Four
+were confirmed and changed:
+
+- **Stale index after a captured builder adds an argument-bearing field**
+  (`14806a2`). `captured.AddField("deposits", args)` after an `Include` cleared
+  only the captured field's memo. Both capture styles (nested action and dotted
+  path) produced two definitions instead of one without the fix. `AddFieldCore`
+  now clears ancestor memos when it receives arguments or an action; plain field
+  additions skip the walk.
+- **Discarded builder in `QueryBuilder.AddFieldCore`.** Calls with arguments or
+  metadata but no sub-fields now use the factory directly, as the argument-free
+  path already did, avoiding the builder, its tracker and the ancestor chain.
+- **Ancestor chain lookup.** The chain is found with one child lookup per `Path`
+  segment; the reference search remains only as the fallback for aliased or
+  typed segments that do not resolve by name. Two aliased-path regressions cover
+  the fallback.
+- **Pool retention scratch.** The over-budget path reuses a per-thread
+  four-slot array and a cached comparison instead of allocating an array and a
+  delegate sort on every return; the array is cleared so rejected builders are
+  not rooted.
+
+Paired before/after/after/before runs (five warmups, ten iterations):
+
+| Workload | Before (runs 1, 4) | After (runs 2, 3) | Bytes before → after |
+| --- | ---: | ---: | ---: |
+| Dictionary arguments ×10 | 10.05 / 10.13 µs | 9.88 / 9.81 µs | 37.11 → 36.33 KB |
+| Dictionary arguments ×50 | 49.03 / 49.15 µs | 48.20 / 48.44 µs | 185.55 → 181.64 KB |
+| Arguments pool stress | 7.17 / 7.24 µs | 7.29 / 7.18 µs | 36.84 KB, unchanged |
+| Type drift scenario | 472.6 / 478.3 ns | 480.5 / 480.8 ns | 1.74 KB, unchanged |
+| Complex merging | 1,204 / 1,211 ns | 1,201 / 1,204 ns | 4.61 KB, unchanged |
+
+Argument-bearing construction allocates 2.1% less and is about 2% faster; the
+controls are unchanged within their intervals. The pool-scratch change has no
+benchmark (it needs nested renders above 256K characters) and is covered by the
+existing retention tests. **2,144 unit and 91 integration tests pass on .NET 8,
+9 and 10.** Raw reports: `complex-merge-opt/review2-1-review2before` …
+`review2-4-review2before`.
+
+Findings reviewed and left unchanged: `ConditionalWeakTable` metadata caches
+(T4 measured the read cost within noise and unloading was the goal); the
+fingerprint's split flag and payload (the former `Nullable<ulong>` was equally
+non-atomic, and any value read is a fingerprint the field has held); merge clones
+no longer share a lazily attached empty metadata dictionary with their source,
+which removes accidental aliasing rather than a documented behavior. Still open:
+the FIFO type-name cache (T12) and the linear key-casing scan when an existing
+`QueryBlock` argument is set again.
+
 Open review findings, not changed: the custom type-name cache evicts FIFO and
 serializes misses once more than 4,096 names cycle (documented under T4), and
 every root `FieldBuilder` still creates its merge tracker eagerly.
