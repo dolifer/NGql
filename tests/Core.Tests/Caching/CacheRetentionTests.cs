@@ -42,6 +42,37 @@ public class CacheRetentionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void CustomTypeChurn_KeepsNameThatStaysInUse()
+    {
+        var hot = "Hot" + Guid.NewGuid().ToString("N");
+        var first = TypeCache.GetInternedType(hot.AsSpan());
+        var prefix = "Churn" + Guid.NewGuid().ToString("N");
+
+        for (var i = 0; i < 20000; i++)
+        {
+            TypeCache.GetInternedType((prefix + i).AsSpan());
+            if (i % 500 == 0) TypeCache.GetInternedType(hot.AsSpan()).Should().BeSameAs(first);
+        }
+
+        TypeCache.GetInternedType(hot.AsSpan()).Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public void CustomTypeChurn_ConcurrentMissesReturnEqualNames()
+    {
+        var prefix = "Parallel" + Guid.NewGuid().ToString("N");
+
+        System.Threading.Tasks.Parallel.For(0, 8, _ =>
+        {
+            for (var i = 0; i < 6000; i++)
+            {
+                var name = prefix + i;
+                TypeCache.GetInternedType(name.AsSpan()).Should().Be(name);
+            }
+        });
+    }
+
+    [Fact]
     public void OversizedCustomType_IsNotRetained()
     {
         var reference = CacheLongType();

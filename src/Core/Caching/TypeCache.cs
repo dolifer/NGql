@@ -11,11 +11,24 @@ namespace NGql.Core.Caching;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class TypeCache
 {
-    private static readonly ConcurrentDictionary<string, string> CustomTypes = new(StringComparer.Ordinal);
-    private static readonly Queue<string> CustomTypeOrder = new();
-    private static readonly object CustomTypeGate = new();
-    private const int MaxCustomTypes = 4096;
+    // Custom names live in two generations of at most MaxGenerationSize entries. A full current
+    // generation becomes the previous one and the oldest is dropped; a hit in the previous
+    // generation is promoted. Names still in use therefore survive rotation, misses never take
+    // a global lock, and at most 2 * MaxGenerationSize names are retained.
+    private const int MaxGenerationSize = 2048;
     private const int MaxCachedTypeLength = 256;
+    private static Generation _current = new();
+    private static Generation _previous = new();
+
+    // The first generation starts small: most applications never fill it. A rotated generation
+    // is expected to fill, so it is sized up front instead of regrowing through every resize.
+    private sealed class Generation(bool presized = false)
+    {
+        internal readonly ConcurrentDictionary<string, string> Names = presized
+            ? new(Environment.ProcessorCount, MaxGenerationSize, StringComparer.Ordinal)
+            : new(StringComparer.Ordinal);
+        internal int Count;
+    }
 
     // Pre-intern the most common GraphQL types (ordered by frequency)
     private static readonly string[] CommonTypes =
@@ -56,24 +69,39 @@ internal static class TypeCache
 
         if (type.Length > MaxCachedTypeLength) return type.ToString();
 
+        var current = Volatile.Read(ref _current);
+        var previous = Volatile.Read(ref _previous);
 #if NET9_0_OR_GREATER
-        if (CustomTypes.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(type, out var cached))
+        if (current.Names.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(type, out var cached))
         {
             return cached;
         }
-#endif
 
-        var typeString = type.ToString();
-        if (CustomTypes.TryGetValue(typeString, out var existing)) return existing;
-        lock (CustomTypeGate)
+        if (previous.Names.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(type, out cached))
         {
-            if (CustomTypes.TryGetValue(typeString, out existing)) return existing;
-            if (CustomTypeOrder.Count == MaxCustomTypes)
-                CustomTypes.TryRemove(CustomTypeOrder.Dequeue(), out _);
-            CustomTypes[typeString] = typeString;
-            CustomTypeOrder.Enqueue(typeString);
-            return typeString;
+            return Admit(current, cached);
         }
+
+        return Admit(current, type.ToString());
+#else
+        var typeString = type.ToString();
+        if (current.Names.TryGetValue(typeString, out var cached)) return cached;
+        return Admit(current, previous.Names.TryGetValue(typeString, out cached) ? cached : typeString);
+#endif
+    }
+
+    private static string Admit(Generation current, string type)
+    {
+        if (!current.Names.TryAdd(type, type)) return current.Names.GetValueOrDefault(type, type);
+        if (Interlocked.Increment(ref current.Count) < MaxGenerationSize) return type;
+
+        // Exactly one thread wins the swap; a reader that still sees the old pair only misses.
+        if (ReferenceEquals(Interlocked.CompareExchange(ref _current, new Generation(presized: true), current), current))
+        {
+            Volatile.Write(ref _previous, current);
+        }
+
+        return type;
     }
 
     // Lazy-initialized combined array to avoid allocation at static init time
