@@ -25,12 +25,6 @@ internal static class LockFreeStringBuilderPool
     internal static PooledStringBuilder Get() => new(_pool.Get());
 
     /// <summary>
-    /// Gets a pooled StringBuilder instance (alias for compatibility)
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static PooledStringBuilder GetPooled() => Get();
-
-    /// <summary>
     /// Returns StringBuilder to the pool
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
