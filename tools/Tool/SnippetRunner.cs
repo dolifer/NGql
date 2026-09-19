@@ -26,25 +26,36 @@ internal static class SnippetRunner
             "NGql.Core",
             "NGql.Core.Builders");
 
-    public static async Task<(bool ok, string? output, string? error)> CompileAndRun(string snippet)
+    public static async Task<SnippetResult> CompileAndRun(string snippet)
     {
         try
         {
             var result = await CSharpScript.EvaluateAsync<object?>(snippet, Options);
             return result is null
-                ? (false, null, "snippet produced null — its final expression must yield a builder/object with ToString()")
-                : (true, result.ToString() ?? string.Empty, null);
+                ? SnippetResult.Failed("snippet produced null — its final expression must yield a builder/object with ToString()")
+                : SnippetResult.Rendered(result.ToString() ?? string.Empty);
         }
         catch (CompilationErrorException ex)
         {
-            return (false, null, "compile error:\n" + string.Join('\n', ex.Diagnostics));
+            return SnippetResult.Failed("compile error:\n" + string.Join('\n', ex.Diagnostics));
         }
         catch (Exception ex)
         {
-            return (false, null, $"runtime error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+            return SnippetResult.Failed($"runtime error: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
         }
     }
 
     public static bool IsMutation(string rendered) =>
         rendered.TrimStart().StartsWith("mutation ", StringComparison.Ordinal);
+}
+
+/// <summary>
+/// Outcome of compiling and evaluating a snippet: exactly one of <see cref="Output"/> (when
+/// <see cref="Ok"/>) or <see cref="Error"/> carries text, so callers never need a null fallback.
+/// </summary>
+internal sealed record SnippetResult(bool Ok, string Output, string Error)
+{
+    public static SnippetResult Rendered(string output) => new(true, output, string.Empty);
+
+    public static SnippetResult Failed(string error) => new(false, string.Empty, error);
 }

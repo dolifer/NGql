@@ -10,6 +10,12 @@ namespace NGql.Tool;
 /// </summary>
 internal sealed class RenderCommand : AsyncCommand<RenderCommand.Settings>
 {
+    /// <summary>
+    /// Stand-in for the bare "-" argument, which Spectre's parser rejects before the command sees
+    /// it. <see cref="Program"/> substitutes this; it is not part of the documented CLI surface.
+    /// </summary>
+    public const string StdInMarker = "\u0000stdin";
+
     public sealed class Settings : CommandSettings
     {
         [CommandArgument(0, "[INPUT]")]
@@ -42,9 +48,9 @@ internal sealed class RenderCommand : AsyncCommand<RenderCommand.Settings>
         // ── 1. Resolve snippet text ────────────────────────────────────────────────────────
         string snippet;
         string sourceLabel;
-        if (s.Input is null || s.Input == "-")
+        if (s.Input is null || s.Input == StdInMarker)
         {
-            if (s.Input is null && !Console.IsInputRedirected)
+            if (s.Input is null && !ToolEnvironment.IsInputRedirected())
             {
                 await Console.Error.WriteLineAsync("ngql: no input. Pipe a snippet on stdin or pass a file path. See `ngql --help`.");
                 return ExitCodes.InvalidUsage;
@@ -66,15 +72,15 @@ internal sealed class RenderCommand : AsyncCommand<RenderCommand.Settings>
         }
 
         // ── 2. Compile + render ────────────────────────────────────────────────────────────
-        var (ok, rendered, error) = await SnippetRunner.CompileAndRun(snippet);
-        if (!ok)
+        var result = await SnippetRunner.CompileAndRun(snippet);
+        if (!result.Ok)
         {
             await Console.Error.WriteLineAsync($"ngql: failed to render {sourceLabel}");
-            await Console.Error.WriteLineAsync(error);
+            await Console.Error.WriteLineAsync(result.Error);
             return ExitCodes.RenderFailed;
         }
 
-        var graphql = rendered ?? string.Empty;
+        var graphql = result.Output;
 
         // ── 3. Render-only path ────────────────────────────────────────────────────────────
         if (!s.Execute)
@@ -180,7 +186,7 @@ internal sealed class RenderCommand : AsyncCommand<RenderCommand.Settings>
         JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
         JsonValueKind.True => true,
         JsonValueKind.False => false,
-        JsonValueKind.Null => null,
+        // Remaining kinds are Null and Undefined; JsonDocument.Parse never yields Undefined.
         _ => null,
     };
 }

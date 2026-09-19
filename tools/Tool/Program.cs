@@ -17,6 +17,8 @@ internal static class Program
             return 0;
         }
 
+        args = EscapeStdInArgument(args);
+
         var app = new CommandApp<RenderCommand>();
         app.Configure(config =>
         {
@@ -48,13 +50,31 @@ internal static class Program
         }
     }
 
-    private static string GetVersion()
+    /// <summary>
+    /// Spectre 0.49 reads a bare "-" as a malformed option ("Option does not have a name") rather
+    /// than as the documented stdin argument, so it never reaches the command. Swap it for the
+    /// marker the command recognises before parsing.
+    /// </summary>
+    private static string[] EscapeStdInArgument(string[] args)
     {
-        var asm = typeof(Program).Assembly;
+        var dash = Array.IndexOf(args, "-");
+        if (dash < 0)
+            return args;
+
+        var escaped = (string[])args.Clone();
+        escaped[dash] = RenderCommand.StdInMarker;
+        return escaped;
+    }
+
+    private static string GetVersion() => GetVersion(typeof(Program).Assembly);
+
+    public static string GetVersion(Assembly asm)
+    {
         var info = asm.GetCustomAttributes(typeof(AssemblyInformationalVersionAttribute), false);
+        // AssemblyName.Version is always populated for a loaded assembly, so no fallback is needed.
         var v = info.Length > 0
             ? ((AssemblyInformationalVersionAttribute)info[0]).InformationalVersion
-            : asm.GetName().Version?.ToString() ?? "unknown";
+            : asm.GetName().Version!.ToString();
 
         // Strip the "+<commit-sha>" SourceLink suffix.
         var plus = v.IndexOf('+');

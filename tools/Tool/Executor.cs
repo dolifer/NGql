@@ -26,18 +26,17 @@ internal static class Executor
 
         var bodyJson = JsonSerializer.Serialize(body, JsonWriteOptions);
 
+        var content = new StringContent(bodyJson, Encoding.UTF8, "application/json");
+
         using var http = new HttpClient();
-        using var req = new HttpRequestMessage(HttpMethod.Post, endpoint)
-        {
-            Content = new StringContent(bodyJson, Encoding.UTF8, "application/json"),
-        };
+        using var req = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content };
 
         foreach (var (name, value) in headers)
         {
             // Try request-scoped first; fall back to content-scoped for content headers.
             if (!req.Headers.TryAddWithoutValidation(name, value))
             {
-                req.Content?.Headers.TryAddWithoutValidation(name, value);
+                content.Headers.TryAddWithoutValidation(name, value);
             }
         }
 
@@ -79,8 +78,9 @@ internal static class Executor
         try
         {
             using var _ = JsonDocument.Parse(responseBody);
-            AnsiConsole.Write(new JsonText(responseBody));
-            AnsiConsole.WriteLine();
+            var console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(Console.Out) });
+            console.Write(new JsonText(responseBody));
+            console.WriteLine();
         }
         catch (JsonException)
         {
