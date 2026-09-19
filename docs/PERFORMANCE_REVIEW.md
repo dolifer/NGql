@@ -106,7 +106,7 @@ full GC, three identical repeats, final build):
 | List normalization reserves capacity | 10 / 1,000 items, bytes | 624 / 16,896 | 432 / 8,352 |
 | Property metadata is shared across extraction, normalization, comparison and rendering | Object-argument construction, bytes | 2,488 | 2,216 |
 | Empty containers skip cycle tracking | `QueryBlock` empty list / dictionary, bytes | 528 / 608 | 360 / 440 |
-| Alias suffix candidates are tested as spans (.NET 9+) | Alias with 10 / 1,000 occupied names, bytes | 496 / 113,264 | 136 / 73,304 |
+| Alias suffix candidates are tested as spans (.NET 9+) | Alias with 10 / 1,000 occupied names, bytes | 496 / 113,264 | 104 / 73,272 |
 
 ### Construction and field layout
 
@@ -188,7 +188,11 @@ full GC, three identical repeats, final build):
 
 ## Validation
 
-**2,148 unit tests and 91 integration tests pass on each of .NET 8, 9 and 10.**
+**2,313 unit tests and 92 integration tests pass on each of .NET 8, 9 and 10, with
+100% line, branch and method coverage** (4,116 lines, 2,781 branches, 855 methods;
+`make coverage`). Reaching it removed unreachable guards, the unused
+`LockFreeArgumentsPool`, and key-generator and pool overloads that only tests called;
+allocation figures above were re-checked afterwards and are unchanged.
 Rendered output for the complex-merge workload is byte-identical to 2.1.0
 (SHA256 `2F440BAE…3AAB6`). Regression coverage added on this branch includes
 randomized differential tests against the former argument-ordering algorithm,

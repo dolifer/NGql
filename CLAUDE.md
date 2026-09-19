@@ -62,7 +62,7 @@ dotnet test tests/Core.Tests/Core.Tests.csproj --filter "FullyQualifiedName~Quer
 
 Coverage reports are generated during test execution and placed in:
 - `artifacts/coverage-report/` — HTML coverage report
-- `artifacts/test-results/` — JUnit and Coverlet results
+- `artifacts/test-results/` — JUnit and Coverlet results (one Cobertura file per test project and framework under `coverlet/<project>/`; the report generator merges them)
 
 ---
 
@@ -375,7 +375,7 @@ Paths use dot notation for hierarchy: `"user.profile.settings.privacy"`
 
 ### Coverage Requirements
 
-- **Target:** 100% line coverage for Core namespace
+- **Target:** 100% line and branch coverage for the solution (reached 2026-09-19: 4,116 lines, 2,781 branches)
 - **Strategy:** Test public API surfaces; implementation details covered indirectly
 - **Coverage tracked:** Via Coverlet during `dotnet test`
 
@@ -419,7 +419,7 @@ type: short-description
 
 Recommended (configure in repo settings as needed):
 - Tests passing before merge
-- Coverage held at or above baseline (~99.9% line / ~99.3% branch)
+- Coverage held at the 100% line / 100% branch baseline; delete unreachable code rather than excluding it
 
 ---
 
