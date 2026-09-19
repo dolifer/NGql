@@ -1,6 +1,6 @@
 SOLUTION       := NGql.sln
 CORE_PROJECT   := src/Core/Core.csproj
-TEST_PROJECTS  := tests/Core.Tests/Core.Tests.csproj tests/Core.IntegrationTests/Core.IntegrationTests.csproj
+TEST_PROJECTS  := tests/Core.Tests/Core.Tests.csproj tests/Core.IntegrationTests/Core.IntegrationTests.csproj tests/Tool.Tests/Tool.Tests.csproj
 CONFIG         := Release
 ARTIFACTS      := $(CURDIR)/artifacts
 COVERLET_DIR   := $(ARTIFACTS)/test-results/coverlet
