@@ -714,8 +714,8 @@ public class QueryTextBuilderTests
         
         var stringBuilder = (StringBuilder)sbField!.GetValue(builder)!;
         
-        // Append a large string to make the capacity exceed MaxBuilderCapacity (256KB)
-        var largeString = new string('x', 300 * 1024); // 300KB
+        // Capacity is measured in UTF-16 characters.
+        var largeString = new string('x', 300 * 1024);
         stringBuilder.Append(largeString);
         
         var builderCapacityBefore = stringBuilder.Capacity;
@@ -728,9 +728,9 @@ public class QueryTextBuilderTests
         var nextBuilder = QueryTextBuilder.GetFromPool();
         var nextStringBuilder = (StringBuilder)sbField.GetValue(nextBuilder)!;
         
-        // The next builder's capacity should be reasonable (not grown to 300KB+)
-        // The initial default capacity is typically much smaller
-        nextStringBuilder.Should().NotBeNull();
+        nextBuilder.Should().NotBeSameAs(builder);
+        nextStringBuilder.Capacity.Should().BeLessThanOrEqualTo(256 * 1024);
+        nextStringBuilder.Length.Should().Be(0);
         
         // Clean up
         QueryTextBuilder.ReturnToPool(nextBuilder);

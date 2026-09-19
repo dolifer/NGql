@@ -109,10 +109,9 @@ internal static class QueryDefinitionExtensions
         }
     }
 
+    // A null or empty Alias needs no separate guard: string.Equals never matches the caller's
+    // `name`, which is always a non-empty LINQ member name (see ExpressionPreservationProcessor).
     private static bool NameOrAliasMatches(FieldDefinition field, string name)
-    {
-        if (string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
-        if (string.IsNullOrEmpty(field.Alias)) return false;
-        return string.Equals(field.Alias, name, StringComparison.OrdinalIgnoreCase);
-    }
+        => string.Equals(field.Name, name, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(field.Alias, name, StringComparison.OrdinalIgnoreCase);
 }

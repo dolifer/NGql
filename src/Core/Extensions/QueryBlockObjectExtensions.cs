@@ -6,53 +6,6 @@ namespace NGql.Core.Extensions;
 
 internal static class QueryBlockObjectExtensions
 {
-    internal static SortedDictionary<string, object> GetArguments(this QueryBlock queryBlock, bool isRootElement)
-    {
-        var arguments = new SortedDictionary<string, object>(StringComparer.Ordinal);
-        CopyArguments(queryBlock, isRootElement, arguments);
-
-        if (isRootElement)
-        {
-            AddMissingRootVariables(queryBlock, arguments);
-        }
-        return arguments;
-    }
-
-    private static void CopyArguments(QueryBlock queryBlock, bool isRootElement, SortedDictionary<string, object> arguments)
-    {
-        foreach (var kvp in queryBlock.Arguments)
-        {
-            var key = kvp.Value is Variable variable && isRootElement ? variable.Name : kvp.Key;
-            arguments[key] = kvp.Value;
-        }
-    }
-
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Render hot path — a plain foreach avoids the closure + enumerator allocations of Where on every block render.")]
-    private static void AddMissingRootVariables(QueryBlock queryBlock, SortedDictionary<string, object> arguments)
-    {
-        foreach (var variable in queryBlock.Variables)
-        {
-            if (!ContainsVariableNamed(arguments, variable.Name))
-            {
-                arguments[variable.Name] = variable;
-            }
-        }
-    }
-
-    private static bool ContainsVariableNamed(SortedDictionary<string, object> arguments, string name)
-    {
-        foreach (var value in arguments.Values)
-        {
-            if (value is Variable existing && existing.Name == name)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /// <summary>
     /// Adds the given type properties into <see cref="QueryBlock.FieldsList"/> part of the query.
     /// </summary>
@@ -165,25 +118,17 @@ internal static class QueryBlockObjectExtensions
             .ToArray();
     }
 
-    private static bool IsMoreDerivedThan(PropertyInfo candidate, PropertyInfo current)
-    {
-        var candidateType = candidate.DeclaringType;
-        var currentType = current.DeclaringType;
-        if (candidateType is null || currentType is null || candidateType == currentType)
-        {
-            return false;
-        }
-
-        // candidate is more derived when currentType sits somewhere up its base chain.
-        for (var baseType = candidateType.BaseType; baseType is not null; baseType = baseType.BaseType)
-        {
-            if (baseType == currentType)
-            {
-                return true;
-            }
-        }
-        return false;
-    }
+    /// <summary>
+    /// True when <paramref name="candidate"/> is declared further down the hierarchy than
+    /// <paramref name="current"/>. <c>GetProperties()</c> happens to return most-derived
+    /// declarations first on the runtimes NGql targets, but that ordering is not contractual, so
+    /// <see cref="GetSelectableProperties"/> compares rather than trusting position. Internal so
+    /// both orderings stay directly testable. Both arguments come from
+    /// <c>Type.GetProperties()</c>, whose results always carry a non-null DeclaringType.
+    /// </summary>
+    internal static bool IsMoreDerivedThan(PropertyInfo candidate, PropertyInfo current)
+        => candidate.DeclaringType != current.DeclaringType
+           && current.DeclaringType!.IsAssignableFrom(candidate.DeclaringType);
 
     private static void HandleProperties(QueryBlock block, object? obj, PropertyInfo[] properties)
     {
@@ -261,4 +206,3 @@ internal static class QueryBlockObjectExtensions
             SimpleTypes.Contains(type) ||
             Convert.GetTypeCode(type) != TypeCode.Object;
 }
-

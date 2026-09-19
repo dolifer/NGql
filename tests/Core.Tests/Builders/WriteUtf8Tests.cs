@@ -22,6 +22,21 @@ public class WriteUtf8Tests
 {
     private static byte[] Utf8Of(string s) => Encoding.UTF8.GetBytes(s);
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(10000)]
+    public void WriteUtf8_UnpairedSurrogatesMatchReplacementEncoding(int padding)
+    {
+        var value = new string('x', padding) + (char)0xD800 + "a" + (char)0xDC00;
+        var query = QueryBuilder.CreateDefaultBuilder("Q")
+            .AddField("value", new Dictionary<string, object?> { ["text"] = value });
+        var writer = new ArrayBufferWriter<byte>();
+
+        query.WriteUtf8(writer);
+
+        writer.WrittenSpan.ToArray().Should().Equal(Utf8Of(query.ToString()));
+    }
+
     private static QueryBuilder Simple()
         => QueryBuilder.CreateDefaultBuilder("Simple")
             .AddField("user.name")

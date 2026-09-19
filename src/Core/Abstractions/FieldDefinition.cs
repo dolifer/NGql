@@ -12,21 +12,97 @@ public sealed record FieldDefinition
 {
     // Fields
     internal FieldChildren? _children;
-    internal Dictionary<string, InlineFragmentDefinition>? _fragments;
-    internal List<string>? _spreadFragments;
-    internal List<FieldDirective>? _directives;
     internal string? _type;
     internal string? _alias;
-    internal string _effectiveName;
     internal SortedDictionary<string, object?>? _arguments;
-    internal Dictionary<string, object?>? _metadata;
+
+    // Fragments, spreads, directives and metadata are absent on most fields. Keeping them behind
+    // one reference saves three object slots per field. The holder is immutable and replaced on
+    // assignment, so record copies that share it never observe one another's reassignments.
+    private OptionalState? _optional;
+
+    internal Dictionary<string, InlineFragmentDefinition>? _fragments
+    {
+        get => _optional?.Fragments;
+        set => ReplaceOptional(static (current, fragments) => OptionalState.Create(fragments, current?.SpreadFragments, current?.Directives, current?.Metadata), value);
+    }
+
+    internal List<string>? _spreadFragments
+    {
+        get => _optional?.SpreadFragments;
+        set => ReplaceOptional(static (current, spreads) => OptionalState.Create(current?.Fragments, spreads, current?.Directives, current?.Metadata), value);
+    }
+
+    internal List<FieldDirective>? _directives
+    {
+        get => _optional?.Directives;
+        set => ReplaceOptional(static (current, directives) => OptionalState.Create(current?.Fragments, current?.SpreadFragments, directives, current?.Metadata), value);
+    }
+
+    internal Dictionary<string, object?>? _metadata
+    {
+        get => _optional?.Metadata;
+        init => _optional = OptionalState.Create(_optional?.Fragments, _optional?.SpreadFragments, _optional?.Directives, value);
+    }
+
+    // Reading Metadata attaches a dictionary, so a reader can race a builder adding a directive
+    // or fragment. Compare-and-swap keeps either replacement from discarding the other's member.
+    private void ReplaceOptional<T>(Func<OptionalState?, T, OptionalState?> replace, T value)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref _optional);
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _optional, replace(current, value), current), current)) return;
+        }
+    }
+
+    /// <summary>
+    /// Assigns all optional members with a single holder allocation (none when all are null).
+    /// </summary>
+    internal void SetOptionalState(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+        List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+        => Volatile.Write(ref _optional, OptionalState.Create(fragments, spreadFragments, directives, metadata));
+
+    internal string _effectiveName => !string.IsNullOrEmpty(_alias) ? _alias : Name;
+
+    private sealed class OptionalState
+    {
+        internal readonly Dictionary<string, InlineFragmentDefinition>? Fragments;
+        internal readonly List<string>? SpreadFragments;
+        internal readonly List<FieldDirective>? Directives;
+        internal readonly Dictionary<string, object?>? Metadata;
+
+        private OptionalState(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+            List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+        {
+            Fragments = fragments;
+            SpreadFragments = spreadFragments;
+            Directives = directives;
+            Metadata = metadata;
+        }
+
+        internal static OptionalState? Create(Dictionary<string, InlineFragmentDefinition>? fragments, List<string>? spreadFragments,
+            List<FieldDirective>? directives, Dictionary<string, object?>? metadata)
+            => fragments is null && spreadFragments is null && directives is null && metadata is null
+                ? null
+                : new OptionalState(fragments, spreadFragments, directives, metadata);
+    }
     internal string Path { get; init; } = string.Empty;
 
     /// <summary>
     /// Cached result of "does this field's subtree contain any arguments?".
     /// Null = not yet computed. Reset to null whenever the subtree mutates.
     /// </summary>
-    internal bool? _subtreeHasAnyArguments;
+    internal bool? _subtreeHasAnyArguments
+    {
+        get => _subtreeArgumentState == CachedBoolean.Unknown ? null : _subtreeArgumentState == CachedBoolean.True;
+        set => _subtreeArgumentState = value switch
+        {
+            true => CachedBoolean.True,
+            false => CachedBoolean.False,
+            null => CachedBoolean.Unknown
+        };
+    }
 
     /// <summary>
     /// Cached conservative fingerprint over this field's own arguments plus, recursively, every
@@ -35,44 +111,46 @@ public sealed record FieldDefinition
     /// computed. Reset to null at exactly the same two sites as <see cref="_subtreeHasAnyArguments"/>
     /// whenever the subtree mutates — the two caches share an invalidation contract by design.
     /// </summary>
-    internal ulong? _deepArgumentFingerprint;
+    internal ulong? _deepArgumentFingerprint
+    {
+        get => _hasDeepArgumentFingerprint ? _deepArgumentFingerprintValue : null;
+        set
+        {
+            if (value.HasValue)
+            {
+                _deepArgumentFingerprintValue = value.GetValueOrDefault();
+                _hasDeepArgumentFingerprint = true;
+            }
+            else
+            {
+                _hasDeepArgumentFingerprint = false;
+            }
+        }
+    }
 
-    /// <summary>
-    /// Process-wide counter bumped every time ANY <see cref="FieldDefinition"/>'s
-    /// <see cref="_deepArgumentFingerprint"/> is invalidated outside of
-    /// <see cref="Features.FieldMergeIndex"/>'s own bookkeeping (i.e. by <see cref="ClearMergeMemo"/>
-    /// or <see cref="Builders.FieldBuilder.Where"/>'s direct writes). <see cref="Features.FieldMergeIndex"/>
-    /// compares this against a snapshot taken when it last trusted its fingerprint sub-buckets: any
-    /// change proves a mutation happened somewhere it was not explicitly told about (out-of-band
-    /// <c>AddField</c>, a nested <c>Action&lt;FieldBuilder&gt;</c>, direct <c>Where()</c> calls, …),
-    /// and the sub-buckets are invalidated wholesale rather than trusted. Deliberately process-wide
-    /// rather than per-field or per-name: the mutation sites that must bump it are scattered across
-    /// <see cref="Builders.FieldFactory"/> and <see cref="Builders.FieldBuilder"/> by design (each
-    /// ancestor on the path to a mutation clears its own memo independently), so there is no single
-    /// field or root dictionary to scope a counter to without re-threading every one of those call
-    /// sites with index-awareness they should not need. A global counter costs one extra volatile
-    /// read per <c>FindMergeTarget</c> call and, in the overwhelming common case (a chain of
-    /// <c>Include()</c>s with no interleaved out-of-band mutation), never actually changes mid-chain
-    /// — so the fingerprint sub-buckets stay warm across the whole chain regardless.
-    /// </summary>
-    private static long _mergeMemoEpoch;
+    // Keep cache state in independent bytes. Packing unrelated caches into shared bit flags
+    // would let concurrent readers lose one another's updates. Splitting the fingerprint's
+    // payload from its presence flag also avoids Nullable<ulong>'s alignment padding.
+    private ulong _deepArgumentFingerprintValue;
+    private volatile bool _hasDeepArgumentFingerprint;
+    private CachedBoolean _subtreeArgumentState;
 
-    /// <summary>
-    /// Bumps <see cref="_mergeMemoEpoch"/>. Called from <see cref="ClearMergeMemo"/> and from
-    /// <see cref="Builders.FieldBuilder.Where"/>'s direct fingerprint-memo writes — the two places
-    /// a field's deep fingerprint can be invalidated outside <see cref="Features.FieldMergeIndex"/>'s
-    /// own bookkeeping.
-    /// </summary>
-    internal static void BumpMergeMemoEpoch() => System.Threading.Interlocked.Increment(ref _mergeMemoEpoch);
+    internal Features.MergeMemoTracker? _mergeMemoTracker;
 
-    /// <summary>
-    /// Reads the current value of <see cref="_mergeMemoEpoch"/>, for <see cref="Features.FieldMergeIndex"/>
-    /// to compare against its own last-synced snapshot.
-    /// </summary>
-    internal static long ReadMergeMemoEpoch() => System.Threading.Interlocked.Read(ref _mergeMemoEpoch);
+    internal Features.MergeMemoTracker EnsureMergeMemoTracker()
+        => LazyInitializer.EnsureInitialized(ref _mergeMemoTracker, static () => new Features.MergeMemoTracker());
 
-    private bool? _isArray;
-    private bool? _isNullable;
+    internal void InvalidateMergeIndex() => _mergeMemoTracker?.Invalidate();
+
+    private CachedBoolean _isArray;
+    private CachedBoolean _isNullable;
+
+    private enum CachedBoolean : byte
+    {
+        Unknown,
+        False,
+        True
+    }
 
     /// <summary>
     /// Creates a field definition with a name and optional type and alias.
@@ -102,7 +180,6 @@ public sealed record FieldDefinition
         _type = type;
         _arguments = sortedArguments?.Count > 0 ? sortedArguments : null;
         _children = AsChildren(fields);
-        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     /// <summary>
@@ -122,7 +199,6 @@ public sealed record FieldDefinition
         _type = type;
         _arguments = ToSortedArguments(arguments);
         _children = AsChildren(fields);
-        _effectiveName = !string.IsNullOrEmpty(_alias) ? _alias : Name;
     }
 
     private static SortedDictionary<string, object?>? ToSortedArguments(IDictionary<string, object?>? arguments)
@@ -168,11 +244,7 @@ public sealed record FieldDefinition
     public string? Alias
     {
         get => _alias;
-        init
-        {
-            _alias = value;
-            _effectiveName = !string.IsNullOrEmpty(value) ? value : Name;
-        }
+        init => _alias = value;
     }
 
     private static readonly IReadOnlyDictionary<string, FieldDefinition> EmptyReadOnlyFields
@@ -232,12 +304,18 @@ public sealed record FieldDefinition
     /// </summary>
     internal void AddSpreadFragment(string name)
     {
-        _spreadFragments ??= new List<string>();
+        var spreads = _spreadFragments;
+        if (spreads is null)
+        {
+            spreads = new List<string>();
+            _spreadFragments = spreads;
+        }
+
         // List<string>.Contains is ordinal by default; avoids the enumerator allocation of the
         // LINQ Contains(value, comparer) overload.
-        if (!_spreadFragments.Contains(name))
+        if (!spreads.Contains(name))
         {
-            _spreadFragments.Add(name);
+            spreads.Add(name);
         }
     }
 
@@ -280,7 +358,13 @@ public sealed record FieldDefinition
     /// called with <c>"include"</c>/<c>"skip"</c> directly — routes through) shares with
     /// <see cref="InlineFragmentDefinition.AddDirective"/>.
     /// </summary>
-    internal void AddDirective(FieldDirective directive) => DirectiveListOps.Add(ref _directives, directive);
+    internal void AddDirective(FieldDirective directive)
+    {
+        var current = _directives;
+        var directives = current;
+        DirectiveListOps.Add(ref directives, directive);
+        if (!ReferenceEquals(directives, current)) _directives = directives;
+    }
 
     private static readonly IReadOnlyDictionary<string, object?> EmptyReadOnlyArguments
         = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -308,9 +392,21 @@ public sealed record FieldDefinition
     [JsonPropertyName("metadata")]
     public Dictionary<string, object?> Metadata
     {
-        get => _metadata ??= [];
-        set => _metadata = value;
+        get
+        {
+            var metadata = _metadata;
+            if (metadata is not null) return metadata;
+
+            ReplaceOptional(static (current, created) => current?.Metadata is not null
+                ? current
+                : OptionalState.Create(current?.Fragments, current?.SpreadFragments, current?.Directives, created), new Dictionary<string, object?>());
+            return _metadata!;
+        }
+        set => SetMetadata(value);
     }
+
+    private void SetMetadata(Dictionary<string, object?>? metadata)
+        => ReplaceOptional(static (current, value) => OptionalState.Create(current?.Fragments, current?.SpreadFragments, current?.Directives, value), metadata);
 
     /// <summary>
     /// Gets a value indicating whether this field carries any metadata. Unlike reading
@@ -324,13 +420,29 @@ public sealed record FieldDefinition
     /// Gets a value indicating whether this field type is an array.
     /// </summary>
     [JsonIgnore]
-    public bool IsArray => _isArray ??= _type.IsArrayType();
+    public bool IsArray
+    {
+        get
+        {
+            if (_isArray == CachedBoolean.Unknown)
+                _isArray = _type.IsArrayType() ? CachedBoolean.True : CachedBoolean.False;
+            return _isArray == CachedBoolean.True;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether this field type is nullable.
     /// </summary>
     [JsonIgnore]
-    public bool IsNullable => _isNullable ??= _type.IsNullableType();
+    public bool IsNullable
+    {
+        get
+        {
+            if (_isNullable == CachedBoolean.Unknown)
+                _isNullable = _type.IsNullableType() ? CachedBoolean.True : CachedBoolean.False;
+            return _isNullable == CachedBoolean.True;
+        }
+    }
 
     /// <summary>
     /// Gets a value indicating whether this field has child fields.
@@ -351,11 +463,17 @@ public sealed record FieldDefinition
     /// </summary>
     internal InlineFragmentDefinition GetOrAddInlineFragment(string typeName)
     {
-        _fragments ??= new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
-        if (!_fragments.TryGetValue(typeName, out var fragment))
+        var fragments = _fragments;
+        if (fragments is null)
+        {
+            fragments = new Dictionary<string, InlineFragmentDefinition>(StringComparer.Ordinal);
+            _fragments = fragments;
+        }
+
+        if (!fragments.TryGetValue(typeName, out var fragment))
         {
             fragment = new InlineFragmentDefinition(typeName);
-            _fragments[typeName] = fragment;
+            fragments[typeName] = fragment;
         }
         return fragment;
     }
@@ -383,7 +501,7 @@ public sealed record FieldDefinition
     {
         _deepArgumentFingerprint = null;
         _subtreeHasAnyArguments = null;
-        BumpMergeMemoEpoch();
+        InvalidateMergeIndex();
     }
 
     // Methods

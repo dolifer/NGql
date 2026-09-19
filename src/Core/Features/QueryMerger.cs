@@ -200,7 +200,7 @@ internal static class QueryMerger
         var fieldToAdd = incomingField.DeepClone();
         if (!string.Equals(uniqueKey, originalFieldKey, StringComparison.OrdinalIgnoreCase))
         {
-            fieldToAdd = fieldToAdd with { Alias = uniqueKey, _effectiveName = uniqueKey };
+            fieldToAdd = fieldToAdd with { Alias = uniqueKey };
         }
 
         fields[uniqueKey] = fieldToAdd;

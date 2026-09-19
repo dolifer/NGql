@@ -730,11 +730,6 @@ internal static class FieldFactory
         if (segment.HasAlias && field._alias is null)
         {
             field._alias = segment.Alias.ToString();
-            // Direct-field assignment bypasses the Alias init-only property, so _effectiveName
-            // (this field's identity key in any FieldChildren it's already a member of) must be
-            // kept in sync here too — otherwise a later lookup by the field's true current
-            // identity would miss its own slot.
-            field._effectiveName = field._alias;
         }
         if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
         {
@@ -792,18 +787,15 @@ internal static class FieldFactory
         return newField;
     }
 
-    // FieldDefinition._type is always set to a non-empty value by all constructors (defaulting
-    // to Constants.DefaultFieldType), so the type-empty branch was a dead defensive check.
     private static FieldDefinition CloneFieldDefinitionForMerge(FieldDefinition fieldDefinition)
     {
-        var fieldAlias = string.IsNullOrEmpty(fieldDefinition._alias) ? Span<char>.Empty : fieldDefinition._alias.AsSpan();
         return Helpers.CreateFieldDefinition(
-            fieldDefinition.Name.AsSpan(),
+            fieldDefinition.Name,
             fieldDefinition._type.AsSpan(),
-            fieldAlias,
+            fieldDefinition._alias,
             fieldDefinition._arguments,
-            fieldDefinition.Path.AsSpan(),
-            fieldDefinition.Metadata);
+            fieldDefinition.Path,
+            fieldDefinition._metadata);
     }
 
     private static void ExtractDottedSegment(ReadOnlySpan<char> fieldPath, int pathStart, out SpanSegment segment, out int nextStart)

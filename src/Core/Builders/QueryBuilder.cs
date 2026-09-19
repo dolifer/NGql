@@ -36,7 +36,7 @@ public sealed class QueryBuilder
     /// Two-level path cache: <c>rootPath → (nodePath → segments)</c>. The two-level structure avoids
     /// allocating a concatenated <c>"{root}.{node}"</c> string on every <c>GetPathTo</c> cache hit.
     /// </summary>
-    private readonly Dictionary<string, Dictionary<string, string[]>> _pathIndex = new();
+    private Dictionary<string, Dictionary<string, string[]>>? _pathIndex;
 
     private QueryBuilder(QueryDefinition queryDefinition) => _definition = queryDefinition;
 
@@ -390,8 +390,9 @@ public sealed class QueryBuilder
         }
         else
         {
-            // Fallback to standard processing for complex fields
-            FieldBuilder.Create(Definition.FieldsInternal, field, Constants.DefaultFieldType, null, null);
+            // No builder escapes this overload, so avoid allocating its mutation tracker.
+            // FieldFactory preserves the same dotted/typed/aliased path processing.
+            FieldFactory.GetOrAddField(Definition.FieldsInternal, fieldSpan, Constants.DefaultFieldTypeSpan, null);
         }
         
         // Phase 3: Invalidate caches after field addition
@@ -475,19 +476,21 @@ public sealed class QueryBuilder
         if (arguments is { Count: > 0 })
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
 
-        var type = hasSubFields ? Constants.ObjectFieldType : Constants.DefaultFieldType;
-        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, type, arguments, metadata);
-
         if (!hasSubFields)
         {
+            // No builder escapes here, so skip its tracker and ancestor chain (see AddFieldFastPath).
+            FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.DefaultFieldType,
+                arguments is { Count: > 0 } ? arguments : null, null, metadata);
             QueryMapInstance.UpdateRootMapping(_definition);
             // Phase 3: Invalidate caches after field addition
             InvalidateLookupCaches();
             return this;
         }
 
+        var parent = FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.ObjectFieldType,
+            arguments is { Count: > 0 } ? arguments : null, null, metadata);
         foreach (var subField in subFields!)
-            builder.AddField(subField);
+            FieldBuilder.AddSubField(parent, subField);
 
         QueryMapInstance.UpdateRootMapping(_definition);
         // Phase 3: Invalidate caches after field addition
@@ -530,7 +533,7 @@ public sealed class QueryBuilder
     /// </summary>
     private void InvalidateLookupCaches()
     {
-        _pathIndex.Clear();
+        _pathIndex?.Clear();
     }
 
     /// <summary>
@@ -556,7 +559,10 @@ public sealed class QueryBuilder
     /// <param name="nodePath">The optional node path within the query (e.g., "edges.node").</param>
     /// <returns>An array of path segments to reach the specified node.</returns>
     public string[] GetPathTo(string queryName, string? nodePath = null)
-        => QueryMapInstance.GetPathTo(queryName, nodePath, _definition, _pathIndex);
+    {
+        _pathIndex ??= new();
+        return QueryMapInstance.GetPathTo(queryName, nodePath, _definition, _pathIndex);
+    }
 
     /// <summary>
     /// Gets the count of fields in the QueryDefinition.

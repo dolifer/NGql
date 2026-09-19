@@ -3,6 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Text;
 using NGql.Core.Abstractions;
+using NGql.Core.Caching;
 
 namespace NGql.Core.Extensions;
 
@@ -47,6 +48,7 @@ internal static class Helpers
 
     private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        if (dict.Count == 0) return;
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(dict)) return; // cycle detected
         
@@ -58,6 +60,7 @@ internal static class Helpers
 
     private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables, HashSet<object>? visited)
     {
+        if (list.Count == 0) return;
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(list)) return; // cycle detected
         
@@ -81,7 +84,7 @@ internal static class Helpers
     {
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(obj)) return; // cycle detected
-        var properties = obj.GetType().GetProperties();
+        var properties = TypeMetadataCache.GetObjectProperties(obj.GetType());
         foreach (var property in properties)
         {
             var propertyValue = property.GetValue(obj);
@@ -292,7 +295,7 @@ internal static class Helpers
         // SortedDictionary orders by its comparer on insert — pre-sorting the properties or
         // staging them in an intermediate Dictionary is wasted work.
         var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in obj.GetType().GetProperties())
+        foreach (var property in TypeMetadataCache.GetObjectProperties(obj.GetType()))
         {
             // Add (not the indexer): property names colliding under OrdinalIgnoreCase must
             // throw — reflection order is unspecified, so last-wins would be nondeterministic.
@@ -308,7 +311,7 @@ internal static class Helpers
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static List<object?> SortListItems(IEnumerable<object> list)
     {
-        var result = new List<object?>();
+        var result = new List<object?>(list.TryGetNonEnumeratedCount(out var count) ? count : 0);
         foreach (var item in list)
         {
             result.Add(SortArgumentValue(item));
@@ -506,7 +509,7 @@ internal static class Helpers
     private static bool AreObjectsStructurallyEqual(object obj1, object obj2)
     {
         var type = obj1.GetType();
-        var properties = type.GetProperties();
+        var properties = TypeMetadataCache.GetObjectProperties(type);
 
         foreach (var property in properties)
         {
@@ -561,29 +564,33 @@ internal static class Helpers
 
     /// <summary>
     /// Creates a new FieldDefinition with sorted arguments for consistent behavior.
-    /// Arguments are passed by reference to avoid unnecessary copying of potentially large dictionaries.
+    /// Normalizes argument values into an independent sorted dictionary.
     /// <param name="name">Field name</param>
     /// <param name="type">Field type</param>
     /// <param name="alias">Optional field alias</param>
-    /// <param name="arguments">Field arguments (passed by reference for performance)</param>
+    /// <param name="arguments">Field arguments to normalize</param>
     /// <param name="path">Field path for caching</param>
     /// <param name="metadata">Optional field metadata</param>
     /// <returns>New FieldDefinition instance</returns>
     /// </summary>
     internal static FieldDefinition CreateFieldDefinition(ReadOnlySpan<char> name, ReadOnlySpan<char> type, ReadOnlySpan<char> alias, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata = null)
-    {
-        // Use type interning for memory efficiency
-        var nameStr = name.ToString();
-        var typeStr = Caching.TypeCache.GetInternedType(type);
-        var aliasStr = alias.IsEmpty ? null : alias.ToString();
-        var pathStr = path.ToString();
+        => CreateFieldDefinitionCore(name.ToString(), TypeCache.GetInternedType(type),
+            alias.IsEmpty ? null : alias.ToString(), arguments, path.ToString(), metadata);
 
+    // Merge inputs already own immutable name/path/alias strings. Reuse those strings while
+    // retaining exactly the same type and recursive argument normalization as parsed fields.
+    internal static FieldDefinition CreateFieldDefinition(string name, ReadOnlySpan<char> type, string? alias, IDictionary<string, object?>? arguments, string path, Dictionary<string, object?>? metadata = null)
+        => CreateFieldDefinitionCore(name, TypeCache.GetInternedType(type),
+            string.IsNullOrEmpty(alias) ? null : alias, arguments, path, metadata);
+
+    private static FieldDefinition CreateFieldDefinitionCore(string name, string type, string? alias, IDictionary<string, object?>? arguments, string path, Dictionary<string, object?>? metadata)
+    {
         // FAST PATH: Skip dictionary operations when arguments are empty or null
         if (arguments?.Count == 0 || arguments == null)
         {
-            return new FieldDefinition(nameStr, typeStr, aliasStr, null)
+            return new FieldDefinition(name, type, alias, null)
             {
-                Path = pathStr,
+                Path = path,
                 _metadata = metadata
             };
         }
@@ -595,9 +602,9 @@ internal static class Helpers
             sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
         }
 
-        return new FieldDefinition(nameStr, typeStr, aliasStr, sortedArguments)
+        return new FieldDefinition(name, type, alias, sortedArguments)
         {
-            Path = pathStr,
+            Path = path,
             _metadata = metadata
         };
     }

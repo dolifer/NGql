@@ -26,6 +26,22 @@ public sealed class QueryBlock
     /// </summary>
     public IReadOnlyDictionary<string, object> Arguments => _arguments;
 
+    // Arguments are never removed, so while exactly one exists it is the first key written, in
+    // its original casing. Rendering reads it directly: enumerating a SortedDictionary allocates
+    // a traversal stack, and doing so through the interface also boxes the enumerator.
+    private string? _firstArgumentKey;
+
+    internal SortedDictionary<string, object> ArgumentsInternal => _arguments;
+
+    internal SortedSet<Variable> VariablesInternal => _variables;
+
+    internal bool TryGetSingleArgument([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out object? value)
+    {
+        key = _firstArgumentKey;
+        value = null;
+        return _arguments.Count == 1 && key is not null && _arguments.TryGetValue(key, out value);
+    }
+
     /// <summary>
     /// The collection of variables related to <see cref="FieldsList"/> or <see cref="Arguments"/>.
     /// </summary>
@@ -152,6 +168,7 @@ public sealed class QueryBlock
         foreach (var (key, sortedValue) in staged)
         {
             Helpers.ExtractVariablesFromValue(sortedValue, _variables);
+            if (_arguments.Count == 0) _firstArgumentKey = key;
             _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
         }
     }
@@ -163,7 +180,7 @@ public sealed class QueryBlock
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Plain foreach avoids allocating an enumerator/closure per incoming dictionary; mirrors TryGetExistingKey's style.")]
+        Justification = "Plain foreach avoids allocating an enumerator/closure per incoming dictionary; mirrors CollidesByCase's style.")]
     private void ValidateNoCaseCollisions(IReadOnlyDictionary<string, object> dict)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -176,8 +193,7 @@ public sealed class QueryBlock
                     nameof(dict));
             }
 
-            if (TryGetExistingKey(key, out var existingKey) &&
-                !string.Equals(existingKey, key, StringComparison.Ordinal))
+            if (CollidesByCase(key))
             {
                 throw new ArgumentException(
                     $"An item with the same key has already been added. Colliding key: '{key}'.",
@@ -354,7 +370,7 @@ public sealed class QueryBlock
         // This check runs before any mutation of the block (variable extraction, sorting, or the
         // dictionary write below) so a throw leaves this block exactly as it was beforehand — no
         // orphaned variable declarations, no partially-applied argument.
-        if (TryGetExistingKey(key, out var existingKey) && !string.Equals(existingKey, key, StringComparison.Ordinal))
+        if (CollidesByCase(key))
         {
             throw new ArgumentException(
                 $"An item with the same key has already been added. Colliding key: '{key}'.",
@@ -363,29 +379,27 @@ public sealed class QueryBlock
 
         Helpers.ExtractVariablesFromValue(value, _variables);
         var sortedValue = Helpers.SortArgumentValue(value);
+        if (_arguments.Count == 0) _firstArgumentKey = key;
         _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 
     /// <summary>
-    /// Finds the stored argument key that matches <paramref name="key"/> under the arguments'
-    /// case-insensitive comparer, exposing its original casing so a case-only difference can be
-    /// detected. Returns false when no matching key is present.
+    /// Returns true when <paramref name="key"/> matches a stored argument key only by case.
+    /// New keys take the O(log n) membership check alone; the scan runs only when an existing
+    /// key is set again, to tell an exact re-set (allowed) from a case-differing one (rejected).
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Plain foreach over SortedDictionary.Keys uses the struct enumerator and short-circuits on first match; the Where LINQ form would allocate an enumerator and a closure on every argument add.")]
-    private bool TryGetExistingKey(string key, out string existingKey)
+        Justification = "Plain foreach over SortedDictionary.Keys short-circuits on the exact match without allocating a closure.")]
+    private bool CollidesByCase(string key)
     {
+        if (!_arguments.ContainsKey(key)) return false;
+
         foreach (var storedKey in _arguments.Keys)
         {
-            if (string.Equals(storedKey, key, StringComparison.OrdinalIgnoreCase))
-            {
-                existingKey = storedKey;
-                return true;
-            }
+            if (string.Equals(storedKey, key, StringComparison.Ordinal)) return false;
         }
 
-        existingKey = string.Empty;
-        return false;
+        return true;
     }
 }

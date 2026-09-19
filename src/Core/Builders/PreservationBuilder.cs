@@ -21,6 +21,12 @@ public sealed class PreservationBuilder
 {
     private readonly QueryBuilder _sourceQuery;
     private readonly HashSet<string> _pathsToPreserve;
+    private int _minimumAddedPathLength = int.MaxValue;
+#if !NET9_0_OR_GREATER
+    // .NET 8 has no span lookup on HashSet<string>. Probing these hashes first means a prefix
+    // string is only allocated when a stored path can actually match it.
+    private readonly HashSet<int> _pathHashes = new();
+#endif
 
     private PreservationBuilder(QueryBuilder sourceQuery)
     {
@@ -60,40 +66,33 @@ public sealed class PreservationBuilder
     /// a single-element <c>params string[]</c> just to add one path.
     /// </summary>
     /// <param name="path">Dot-separated field path to preserve. Null/whitespace is a no-op.</param>
-    [System.Diagnostics.CodeAnalysis.SuppressMessage(
-        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
-        Justification = "Plain foreach scan detects whether any parent needs pruning without allocating a Where enumerator or a RemoveWhere closure/delegate; removal itself is deferred to a second pass only taken when a match was found.")]
     private void PreserveOne(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
 
-        // Remove parent paths when adding more specific child. The check is equivalent to
-        // path.StartsWith(existing + ".") without allocating the concatenated prefix.
-        if (_pathsToPreserve.Count > 0)
+        var remaining = path.AsSpan();
+        while (_pathsToPreserve.Count > 0)
         {
-            var hasMatch = false;
-            foreach (var existing in _pathsToPreserve)
-            {
-                if (IsDotDelimitedAncestor(path, existing))
-                {
-                    hasMatch = true;
-                    break;
-                }
-            }
+            var dot = remaining.LastIndexOf('.');
+            if (dot < _minimumAddedPathLength) break;
 
-            if (hasMatch)
+            remaining = remaining[..dot];
+#if NET9_0_OR_GREATER
+            _pathsToPreserve.GetAlternateLookup<ReadOnlySpan<char>>().Remove(remaining);
+#else
+            if (_pathHashes.Contains(string.GetHashCode(remaining, StringComparison.OrdinalIgnoreCase)))
             {
-                _pathsToPreserve.RemoveWhere(existing => IsDotDelimitedAncestor(path, existing));
+                _pathsToPreserve.Remove(remaining.ToString());
             }
+#endif
         }
 
         _pathsToPreserve.Add(path);
+#if !NET9_0_OR_GREATER
+        _pathHashes.Add(string.GetHashCode(path.AsSpan(), StringComparison.OrdinalIgnoreCase));
+#endif
+        _minimumAddedPathLength = Math.Min(_minimumAddedPathLength, path.Length);
     }
-
-    private static bool IsDotDelimitedAncestor(string path, string existing)
-        => path.Length > existing.Length
-           && path[existing.Length] == '.'
-           && path.AsSpan(0, existing.Length).Equals(existing, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Preserves <paramref name="fieldPath"/> within the subtree at <paramref name="nodePath"/>.
@@ -171,8 +170,9 @@ public sealed class PreservationBuilder
 
     private void PreserveAtPathForRoot(string rootName, string fieldPath, string nodePath, string lastSegment, bool fieldPathHasDot)
     {
+        // rootName always names one of the query's own roots, so GetPathTo resolves it and
+        // returns at least the root segment — no empty-result guard is reachable here.
         var pathToNode = _sourceQuery.GetPathTo(rootName, nodePath);
-        if (pathToNode.Length == 0) return;
 
         var fullNodePath = JoinPath(pathToNode, lastSegment);
         var nodeField = QueryDefinitionExtensions.NavigatePath(_sourceQuery.Definition.Fields, fullNodePath.AsSpan(), out _);

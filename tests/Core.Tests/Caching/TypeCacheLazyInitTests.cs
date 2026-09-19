@@ -247,16 +247,10 @@ public class TypeCacheLazyInitTests
     [Fact]
     public void TypeMetadataCache_ObjectPropertyCache_IsThreadSafe()
     {
-        // Arrange
-        var type1 = typeof(string);
-        var type2 = typeof(int);
-
-        // Act
-        TypeMetadataCache.ObjectPropertyCache.TryAdd(type1, System.Type.EmptyTypes.GetType().GetProperties());
-        TypeMetadataCache.ObjectPropertyCache.TryAdd(type2, System.Type.EmptyTypes.GetType().GetProperties());
-
-        // Assert
-        TypeMetadataCache.ObjectPropertyCache.Count.Should().BeGreaterThanOrEqualTo(2);
+        var results = new System.Reflection.PropertyInfo[100][];
+        Parallel.For(0, results.Length, i => results[i] = TypeMetadataCache.GetObjectProperties(typeof(string)));
+        foreach (var result in results) result.Should().BeSameAs(results[0]);
+        results[0].Should().NotBeEmpty();
     }
 
     [Theory]

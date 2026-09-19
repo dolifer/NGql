@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -11,6 +12,113 @@ namespace NGql.Core.Tests.Issues;
 public class FieldBuilderWhereAncestorMemoTests
 {
     private static Dictionary<string, object?> Currency(string code) => new() { ["cur"] = code };
+
+    [Theory]
+    [InlineData("metrics.deposits")]
+    [InlineData("String metrics.deposits")]
+    [InlineData("String metrics.d:deposits")]
+    public void Where_OnBuilderCapturedAfterPlainPathAddition_InvalidatesWarmedMergeIndex(string path)
+    {
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path);
+        target.AddField(path, Currency("USD"));
+        FieldBuilder? captured = null;
+        var leaf = path.Contains("d:deposits") ? "d:deposits" : "deposits";
+        target.AddField("metrics", metrics => metrics.AddField(leaf, field => captured = field));
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD")));
+
+        captured!.Where("cur", "EUR");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("EUR")));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().Contain("cur:\"EUR\"").And.NotContain("metrics_1");
+    }
+
+    [Theory]
+    [InlineData("metrics.deposits")]
+    [InlineData("metrics.realtime.deposits")]
+    [InlineData("metrics.d:deposits")]
+    [InlineData("m:metrics.realtime.d:deposits")]
+    public void Where_OnBuilderCapturedFromDottedPath_InvalidatesWarmedMergeIndex(string path)
+    {
+        FieldBuilder? captured = null;
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), field => captured = field);
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD")));
+
+        captured!.Where("cur", "EUR");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("EUR")));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().Contain("cur:\"EUR\"").And.NotContain("metrics_1");
+    }
+
+    [Theory]
+    [InlineData("metrics.deposits")]
+    [InlineData("metrics.realtime.deposits")]
+    public void IncludeIf_OnBuilderCapturedFromDottedPath_InvalidatesWarmedMergeIndex(string path)
+    {
+        FieldBuilder? captured = null;
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), field => captured = field);
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD")));
+
+        captured!.IncludeIf("$show");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), field => field.IncludeIf("$show")));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().NotContain("metrics_1");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AddFieldWithArguments_OnCapturedNestedBuilder_InvalidatesWarmedMergeIndex(bool dotted)
+    {
+        FieldBuilder? captured = null;
+        var target = Realtime("T", dotted, field => captured = field);
+        target.Include(Realtime("Before", dotted, _ => { }));
+
+        captured!.AddField("deposits", Currency("EUR"));
+        target.Include(Realtime("After", dotted, field => field.AddField("deposits", Currency("EUR"))));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().NotContain("metrics_1");
+    }
+
+    private static QueryBuilder Realtime(string name, bool dotted, Action<FieldBuilder> configure)
+    {
+        var query = CreateDefaultBuilder(name, MergingStrategy.MergeByFieldPath);
+        return dotted
+            ? query.AddField("metrics.realtime", Currency("USD"), configure)
+            : query.AddField("metrics", metrics => metrics.AddField("realtime", Currency("USD"), configure));
+    }
+
+    [Theory]
+    [InlineData("metrics")]
+    [InlineData("stats.metrics")]
+    public void Where_OnBuilderCapturedAfterSubFieldAddition_InvalidatesWarmedMergeIndex(string path)
+    {
+        var target = CreateDefaultBuilder("T", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), ["deposits", "withdrawals"]);
+        FieldBuilder? captured = null;
+        target.AddField(path, Currency("USD"), field => captured = field);
+        target.Include(CreateDefaultBuilder("Before", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("USD"), ["deposits"]));
+
+        captured!.Where("cur", "EUR");
+        target.Include(CreateDefaultBuilder("After", MergingStrategy.MergeByFieldPath)
+            .AddField(path, Currency("EUR"), ["deposits"]));
+
+        target.DefinitionsCount.Should().Be(1);
+        target.ToString().Should().Contain("cur:\"EUR\"").And.NotContain("_1");
+    }
 
     [Fact]
     public void Where_OnCapturedNestedBuilder_AfterActionReturns_MergesGenuinePostMutationCandidate()

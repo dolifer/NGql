@@ -85,12 +85,12 @@ internal static class FixtureSupport
     {
         var name = Path.GetFileNameWithoutExtension(snippetPath);
         var snippet = await File.ReadAllTextAsync(snippetPath);
-        var (ok, output, error) = await SnippetRunner.CompileAndRun(snippet);
+        var result = await SnippetRunner.CompileAndRun(snippet);
 
-        if (!ok)
+        if (!result.Ok)
         {
             Console.WriteLine($"FAIL  {name}  (compile/run error)");
-            foreach (var line in (error ?? string.Empty).Split('\n'))
+            foreach (var line in result.Error.Split('\n'))
                 Console.WriteLine($"      {line}");
             return false;
         }
@@ -98,13 +98,13 @@ internal static class FixtureSupport
         if (!File.Exists(expectedPath))
         {
             Console.WriteLine($"SMOKE {name}  (no expected file; output below)");
-            foreach (var line in (output ?? string.Empty).Split('\n'))
+            foreach (var line in result.Output.Split('\n'))
                 Console.WriteLine($"      {line}");
             return true;
         }
 
         var expected = (await File.ReadAllTextAsync(expectedPath)).Replace("\r\n", "\n").TrimEnd();
-        var actual = (output ?? string.Empty).Replace("\r\n", "\n").TrimEnd();
+        var actual = result.Output.Replace("\r\n", "\n").TrimEnd();
 
         if (expected == actual)
         {
@@ -122,15 +122,17 @@ internal static class FixtureSupport
         return false;
     }
 
-    public static string ResolveFixturesDir()
+    public static string ResolveFixturesDir() => ResolveFixturesDir(ToolEnvironment.BaseDirectory());
+
+    public static string ResolveFixturesDir(string baseDirectory)
     {
         // When running via `dotnet run`, BaseDirectory is bin/Debug/...; fall back to a
         // project-relative Fixtures dir found by walking up to Tool.csproj.
-        var local = Path.Combine(AppContext.BaseDirectory, "Fixtures");
+        var local = Path.Combine(baseDirectory, "Fixtures");
         if (Directory.Exists(local))
             return local;
 
-        var dir = AppContext.BaseDirectory;
+        var dir = baseDirectory;
         while (dir is not null && !File.Exists(Path.Combine(dir, "Tool.csproj")))
             dir = Path.GetDirectoryName(dir);
 

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <RootNamespace>NGql.Tool.Tests</RootNamespace>
+        <AssemblyName>Tool.Tests</AssemblyName>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\tools\Tool\Tool.csproj" />
+    </ItemGroup>
+</Project>

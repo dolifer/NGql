@@ -16,7 +16,7 @@ internal sealed class QueryTextBuilder
     private QueryTextBuilder() => _stringBuilder = new StringBuilder();
 
     private const int IndentSize = 4;
-    private const int MaxBuilderCapacity = 256 * 1024;  // 256KB threshold before reset
+    private const int MaxBuilderCapacity = 256 * 1024; // UTF-16 characters, not bytes
 
     // Pre-allocated padding strings for common indentation levels to avoid repeated allocations
     private static readonly string[] PaddingCache = new string[20];
@@ -31,8 +31,8 @@ internal sealed class QueryTextBuilder
     // Alias tiebreakers (ordinal) turn the comparison into a total order derived purely from each
     // field's own data, so equal effective keys resolve to one well-defined order with no extra
     // allocation and no insertion-index threading. Primary key semantics are unchanged.
-    private static readonly IComparer<FieldDefinition> FieldSortComparer =
-        Comparer<FieldDefinition>.Create(static (a, b) =>
+    private static readonly Comparison<FieldDefinition> FieldSortComparer =
+        static (a, b) =>
         {
             var effectiveNameComparison =
                 StringComparer.OrdinalIgnoreCase.Compare(a.Alias ?? a.Name, b.Alias ?? b.Name);
@@ -42,7 +42,7 @@ internal sealed class QueryTextBuilder
             if (nameComparison != 0) return nameComparison;
 
             return string.CompareOrdinal(a.Alias, b.Alias);
-        });
+        };
 
     // SHARED thread-local builder pool used by both QueryBlock and QueryDefinition
     // This consolidates the pooling strategy and prevents duplicate ThreadLocal instances
@@ -75,9 +75,8 @@ internal sealed class QueryTextBuilder
     /// </summary>
     internal static void ReturnToPool(QueryTextBuilder builder)
     {
-        builder._stringBuilder.Clear();
-
-        // Don't repool builders that have grown too large (prevents memory leak)
+        // Reject before Clear: clearing a multi-chunk builder can allocate a large
+        // contiguous buffer that would immediately be discarded.
         if (builder._stringBuilder.Capacity > MaxBuilderCapacity)
         {
             return;
@@ -86,10 +85,60 @@ internal sealed class QueryTextBuilder
         var stack = SharedBuilderStack.Value!;
         if (stack.Count < MaxPooledBuilders)
         {
+            if (stack.Count > 0)
+            {
+                var retainedCapacity = builder._stringBuilder.Capacity;
+                foreach (var pooled in stack) retainedCapacity += pooled._stringBuilder.Capacity;
+                if (retainedCapacity > MaxBuilderCapacity)
+                {
+                    RetainLargestWithinBudget(stack, builder);
+                    return;
+                }
+            }
+            builder._stringBuilder.Clear();
             stack.Push(builder);
         }
         // If pool is full, let GC handle it
     }
+
+    // Over budget: keep the largest builders that fit, because those are the costly ones to regrow.
+    // Rejecting the incoming builder unconditionally let a small pooled builder block a large one
+    // on every nested render. The largest ends on top, where the outermost render rents it.
+    private static void RetainLargestWithinBudget(Stack<QueryTextBuilder> stack, QueryTextBuilder incoming)
+    {
+        // Nested renders of large queries land here on every return, so the scratch array is
+        // reused per thread and cleared afterwards to avoid rooting rejected builders.
+        var candidates = _retentionScratch ??= new QueryTextBuilder[MaxPooledBuilders];
+        var count = stack.Count + 1;
+        stack.CopyTo(candidates, 0);
+        candidates[count - 1] = incoming;
+        candidates.AsSpan(0, count).Sort(LargestCapacityFirst);
+
+        stack.Clear();
+        var retainedCapacity = 0;
+        var kept = 0;
+        for (var i = 0; i < count; i++)
+        {
+            var capacity = candidates[i]._stringBuilder.Capacity;
+            if (retainedCapacity + capacity > MaxBuilderCapacity) continue;
+            retainedCapacity += capacity;
+            candidates[kept++] = candidates[i];
+        }
+
+        for (var i = kept - 1; i >= 0; i--)
+        {
+            if (ReferenceEquals(candidates[i], incoming)) incoming._stringBuilder.Clear();
+            stack.Push(candidates[i]);
+        }
+
+        Array.Clear(candidates, 0, count);
+    }
+
+    [ThreadStatic]
+    private static QueryTextBuilder[]? _retentionScratch;
+
+    private static readonly Comparison<QueryTextBuilder> LargestCapacityFirst =
+        static (left, right) => right._stringBuilder.Capacity.CompareTo(left._stringBuilder.Capacity);
 
     /// <summary>
     /// Gets padding string for the specified indent level, using cache for common levels.
@@ -201,19 +250,40 @@ internal sealed class QueryTextBuilder
     // stateful encoder — flushing only on the final chunk — reassembles the pair correctly.
     private void WriteBuilderToUtf8(IBufferWriter<byte> bufferWriter)
     {
+        // A StringBuilder always exposes a first chunk, even when it is empty.
+        var chunks = _stringBuilder.GetChunks();
+        chunks.MoveNext();
+
+        var first = chunks.Current;
+        if (!chunks.MoveNext())
+        {
+            // A writer that hands back less than the requested size (bounded or slab-capped
+            // buffers) cannot take the chunk in one call; the encoder loop below fills it in parts.
+            var destination = bufferWriter.GetSpan(Encoding.UTF8.GetMaxByteCount(first.Length));
+            if (Encoding.UTF8.TryGetBytes(first.Span, destination, out var written))
+            {
+                bufferWriter.Advance(written);
+                return;
+            }
+
+            EncodeChunk(Encoding.UTF8.GetEncoder(), first.Span, true, bufferWriter);
+            return;
+        }
+
         var encoder = Encoding.UTF8.GetEncoder();
 
         // GetChunks exposes no count, so track the last chunk by comparing against the total length
         // consumed. Flush must happen exactly once, on the final Convert call, so any trailing
         // high-surrogate left dangling by malformed input is emitted rather than silently swallowed.
-        var remaining = _stringBuilder.Length;
-        foreach (var chunk in _stringBuilder.GetChunks())
+        var remaining = _stringBuilder.Length - first.Length;
+        EncodeChunk(encoder, first.Span, false, bufferWriter);
+        do
         {
-            var chars = chunk.Span;
+            var chars = chunks.Current.Span;
             remaining -= chars.Length;
             var isLast = remaining == 0;
             EncodeChunk(encoder, chars, isLast, bufferWriter);
-        }
+        } while (chunks.MoveNext());
     }
 
     private static void EncodeChunk(Encoder encoder, ReadOnlySpan<char> chars, bool flush, IBufferWriter<byte> bufferWriter)
@@ -330,6 +400,11 @@ internal sealed class QueryTextBuilder
         // field(s). Rent, copy, render, clear and return all key off this single snapshot's length.
         var span = children.AsSpan();
         var count = span.Length;
+        if (count <= 1)
+        {
+            RenderFields(span, indent);
+            return;
+        }
         var arr = ArrayPool<FieldDefinition>.Shared.Rent(count);
         try
         {
@@ -347,6 +422,11 @@ internal sealed class QueryTextBuilder
     {
         var count = fields.Count;
         if (count == 0) return;
+        if (count == 1)
+        {
+            foreach (var field in fields.Values) RenderFields(new ReadOnlySpan<FieldDefinition>(in field), indent);
+            return;
+        }
 
         // Dictionary<TKey,TValue> is insertion-ordered, not alphabetical. Copy values to a
         // pooled buffer so RenderSortedFields can sort once and render with a stable order.
@@ -371,12 +451,16 @@ internal sealed class QueryTextBuilder
     /// </summary>
     private void RenderSortedFields(FieldDefinition[] arr, int count, int indent)
     {
-        Array.Sort(arr, 0, count, FieldSortComparer);
+        arr.AsSpan(0, count).Sort(FieldSortComparer);
+        RenderFields(arr.AsSpan(0, count), indent);
+    }
+
+    private void RenderFields(ReadOnlySpan<FieldDefinition> fields, int indent)
+    {
         var padding = GetPadding(indent);
 
-        for (int j = 0; j < count; j++)
+        foreach (var field in fields)
         {
-            var field = arr[j];
             _stringBuilder.Append(padding);
 
             if (field.Alias != null)
@@ -706,9 +790,7 @@ internal sealed class QueryTextBuilder
 
         // KeyValuePair<,> is a sealed BCL struct that always exposes Key and Value properties —
         // GetProperty cannot return null here, so cache the pair without nullable wrapping.
-        var (keyProp, valueProp) = TypeMetadataCache.KvpPropertyCache.GetOrAdd(
-            valueType,
-            static t => (t.GetProperty("Key")!, t.GetProperty("Value")!));
+        var (keyProp, valueProp) = TypeMetadataCache.GetKeyValueProperties(valueType);
 
         builder.Append(keyProp.GetValue(value));
         builder.Append(':');
@@ -718,7 +800,7 @@ internal sealed class QueryTextBuilder
 
     private static void WriteObjectReflection(StringBuilder builder, object value, Type valueType)
     {
-        var props = TypeMetadataCache.ObjectPropertyCache.GetOrAdd(valueType, static t => t.GetProperties());
+        var props = TypeMetadataCache.GetObjectProperties(valueType);
         builder.Append('{');
         bool first = true;
         foreach (var prop in props)
@@ -734,12 +816,12 @@ internal sealed class QueryTextBuilder
 
     // Stable sort key for QueryBlock field lists: effective name first, original index as the
     // tiebreaker so equal names keep insertion order (matching LINQ OrderBy's stability).
-    private static readonly Comparer<(string Key, int Index, object Item)> BlockFieldComparer =
-        Comparer<(string Key, int Index, object Item)>.Create(static (a, b) =>
+    private static readonly Comparison<(string Key, int Index, object Item)> BlockFieldComparer =
+        static (a, b) =>
         {
             var nameComparison = StringComparer.OrdinalIgnoreCase.Compare(a.Key, b.Key);
             return nameComparison != 0 ? nameComparison : a.Index.CompareTo(b.Index);
-        });
+        };
 
     private void AddFields(QueryBlock queryBlock, string prevPad, int indent = 0)
     {
@@ -766,7 +848,7 @@ internal sealed class QueryTextBuilder
                 entries[i] = (key, i, field);
             }
 
-            Array.Sort(entries, 0, count, BlockFieldComparer);
+            entries.AsSpan(0, count).Sort(BlockFieldComparer);
 
             for (int i = 0; i < count; i++)
             {
@@ -795,40 +877,95 @@ internal sealed class QueryTextBuilder
 
     private void AddArguments(QueryBlock queryBlock, bool isRootElement)
     {
-        // GetArguments allocates a fresh SortedDictionary; skip it entirely when nothing can
-        // render — no explicit arguments, and no root variables that would be injected.
-        // Whenever it IS called, the result is non-empty: explicit arguments are copied over,
-        // and root variables are injected for any names not already present.
         if (queryBlock.Arguments.Count == 0 && (!isRootElement || queryBlock.Variables.Count == 0))
         {
             return;
         }
 
-        var arguments = queryBlock.GetArguments(isRootElement);
-
         _stringBuilder.Append('(');
-
-        bool first = true;
-        foreach (var (key, value) in arguments)
+        if ((!isRootElement || queryBlock.Variables.Count == 0) && queryBlock.TryGetSingleArgument(out var singleKey, out var singleValue))
         {
-            if (!first)
+            AppendArgument(singleKey, singleValue, isRootElement);
+            _stringBuilder.Append(')');
+            return;
+        }
+
+        if (isRootElement && queryBlock.Arguments.Count == 0 && queryBlock.Variables.Count == 1)
+        {
+            var variable = queryBlock.VariablesInternal.Min!;
+            variable.Print(_stringBuilder, variable.Name, true);
+            _stringBuilder.Append(')');
+            return;
+        }
+
+        var explicitCount = queryBlock.Arguments.Count;
+        var count = explicitCount + (isRootElement ? queryBlock.Variables.Count : 0);
+        var entries = ArrayPool<ArgumentEntry>.Shared.Rent(count);
+        try
+        {
+            var index = 0;
+            // An empty SortedDictionary still allocates its traversal stack when enumerated.
+            if (explicitCount > 0)
             {
-                _stringBuilder.Append(", ");
+                foreach (var (key, value) in queryBlock.ArgumentsInternal)
+                {
+                    var renderedKey = isRootElement && value is Variable variable ? variable.Name : key;
+                    entries[index] = new ArgumentEntry(renderedKey, value, index);
+                    index++;
+                }
             }
 
-            first = false;
-            if (value is Variable variable)
+            if (isRootElement && count > explicitCount)
             {
-                variable.Print(_stringBuilder, key, isRootElement);
-                continue;
+                foreach (var variable in queryBlock.VariablesInternal)
+                {
+                    entries[index] = new ArgumentEntry(variable.Name, variable, index);
+                    index++;
+                }
             }
 
-            _stringBuilder.Append(key);
-            _stringBuilder.Append(':');
-
-            WriteObject(_stringBuilder, value);
+            entries.AsSpan(0, count).Sort(ArgumentEntryComparer);
+            var i = 0;
+            while (i < count)
+            {
+                if (i != 0) _stringBuilder.Append(", ");
+                var entry = entries[i++];
+                while (i < count && string.Equals(entry.Key, entries[i].Key, StringComparison.Ordinal))
+                {
+                    var next = entries[i++];
+                    if (next.Order < explicitCount || entry.Value is not Variable) entry = next;
+                }
+                AppendArgument(entry.Key, entry.Value, isRootElement);
+            }
+        }
+        finally
+        {
+            Array.Clear(entries, 0, count);
+            ArrayPool<ArgumentEntry>.Shared.Return(entries, clearArray: false);
         }
 
         _stringBuilder.Append(')');
+    }
+
+    private readonly record struct ArgumentEntry(string Key, object Value, int Order);
+
+    private static readonly Comparison<ArgumentEntry> ArgumentEntryComparer =
+        static (left, right) =>
+        {
+            var keyComparison = string.CompareOrdinal(left.Key, right.Key);
+            return keyComparison != 0 ? keyComparison : left.Order.CompareTo(right.Order);
+        };
+
+    private void AppendArgument(string key, object value, bool isRootElement)
+    {
+        if (value is Variable variable)
+        {
+            variable.Print(_stringBuilder, key, isRootElement);
+            return;
+        }
+
+        _stringBuilder.Append(key);
+        _stringBuilder.Append(':');
+        WriteObject(_stringBuilder, value);
     }
 }

@@ -33,6 +33,7 @@ public sealed class FieldBuilder
     private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null, SortedSet<Variable>? variableSink = null)
     {
         _fieldDefinition = fieldDefinition;
+        if (parent is null) fieldDefinition.EnsureMergeMemoTracker();
         _parent = parent;
         _variableSink = variableSink ?? parent?._variableSink;
     }
@@ -62,14 +63,7 @@ public sealed class FieldBuilder
     /// <exception cref="ArgumentNullException">Thrown when fieldDefinition is null.</exception>
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
-        ArgumentNullException.ThrowIfNull(fieldDefinition);
-        // Dotted names are valid here — they are expanded into nested fields by FieldFactory,
-        // matching the string-overload behavior. Validate each segment individually.
-        ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
-        var arguments = fieldDefinition._arguments;
-
-        // FieldDefinition._type is always set non-null by every constructor path.
-        FieldFactory.GetOrAddField(_fieldDefinition, fieldDefinition.Name, fieldDefinition._type!, arguments, _fieldDefinition.Path, fieldDefinition.Metadata);
+        AddSubField(_fieldDefinition, fieldDefinition);
         return this;
     }
 
@@ -457,6 +451,14 @@ public sealed class FieldBuilder
             _fieldDefinition.ClearMergeMemo();
         }
 
+        // A captured builder can add argument-bearing fields long after its own action unwound
+        // and a merge index fingerprinted the root. Only arguments (directly, or set inside the
+        // action) change a fingerprint, so plain field additions skip the ancestor walk.
+        if (action != null || arguments is { Count: > 0 })
+        {
+            ClearAncestorMergeMemos();
+        }
+
         return this;
     }
 
@@ -494,11 +496,9 @@ public sealed class FieldBuilder
         var argumentsToUse = arguments is { Count: > 0 } ? arguments : null;
 
         // Use FieldFactory for field creation
-        var rootField = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
+        var field = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
 
-        var fieldBuilder = new FieldBuilder(rootField, variableSink: variableSink);
-
-        return fieldBuilder;
+        return new FieldBuilder(field, CreateAncestorChain(fieldDefinitions, field, variableSink), variableSink);
     }
 
     /// <summary>
@@ -507,6 +507,74 @@ public sealed class FieldBuilder
     /// <param name="fieldDefinition">The field definition to create the builder from.</param>
     /// <returns>A new FieldBuilder instance.</returns>
     public static FieldBuilder Create(FieldDefinition fieldDefinition) => new(fieldDefinition);
+
+    // A dotted or complex path resolves to a nested field. Its builder can be captured and mutated
+    // after a merge index has fingerprinted the root, so it needs the same ancestor chain a nested
+    // Action<FieldBuilder> scope gets: Where()/IncludeIf()/SkipIf() clear every ancestor's memo and
+    // reach the root's tracker through it. Root-level fields return null and keep the direct path.
+    private static FieldBuilder? CreateAncestorChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, SortedSet<Variable>? variableSink)
+    {
+        if (fieldDefinitions.TryGetValue(field._effectiveName, out var rootCandidate) && ReferenceEquals(rootCandidate, field))
+        {
+            return null;
+        }
+
+        // The leaf's Path names its ancestors, so one lookup per segment normally finds them.
+        // Aliased or typed segments may not resolve by name; the reference search covers those.
+        var ancestors = new List<FieldDefinition>(4);
+        if (!TryWalkPath(fieldDefinitions, field, ancestors))
+        {
+            ancestors.Clear();
+            var found = false;
+            foreach (var root in fieldDefinitions.Values)
+            {
+                found = TryFindAncestors(root, field, ancestors);
+                if (found) break;
+            }
+
+            if (!found) return null;
+        }
+
+        FieldBuilder? parent = null;
+        foreach (var ancestor in ancestors)
+        {
+            parent = new FieldBuilder(ancestor, parent, variableSink);
+        }
+
+        return parent;
+    }
+
+    private static bool TryWalkPath(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition target, List<FieldDefinition> ancestors)
+    {
+        var remaining = target.Path.AsSpan();
+        var dot = remaining.IndexOf('.');
+        if (dot <= 0 || !fieldDefinitions.TryGetValue(remaining[..dot].ToString(), out var current)) return false;
+
+        while (true)
+        {
+            ancestors.Add(current);
+            remaining = remaining[(dot + 1)..];
+            dot = remaining.IndexOf('.');
+            var segment = dot < 0 ? remaining : remaining[..dot];
+            if (current._children is null || !current._children.TryGetValue(segment, out var child)) return false;
+            if (dot < 0) return ReferenceEquals(child, target);
+            current = child;
+        }
+    }
+
+    private static bool TryFindAncestors(FieldDefinition current, FieldDefinition target, List<FieldDefinition> ancestors)
+    {
+        if (current._children is not { Count: > 0 } children) return false;
+
+        ancestors.Add(current);
+        foreach (var child in children.AsSpan())
+        {
+            if (ReferenceEquals(child, target) || TryFindAncestors(child, target, ancestors)) return true;
+        }
+
+        ancestors.RemoveAt(ancestors.Count - 1);
+        return false;
+    }
 
     /// <summary>
     /// Builds and returns the final field definition.
@@ -576,6 +644,19 @@ public sealed class FieldBuilder
 
     internal static void Include(FieldChildren children, FieldDefinition fieldDefinition)
         => RecursiveCreateField(children, fieldDefinition);
+
+    // Shared with QueryBuilder's sub-field overloads, which add children without exposing a
+    // builder and so need neither a FieldBuilder nor the merge tracker its constructor creates.
+    internal static void AddSubField(FieldDefinition parent, FieldDefinition fieldDefinition)
+    {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+        // Dotted names are valid here — they are expanded into nested fields by FieldFactory,
+        // matching the string-overload behavior. Validate each segment individually.
+        ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
+
+        // FieldDefinition._type is always set non-null by every constructor path.
+        FieldFactory.GetOrAddField(parent, fieldDefinition.Name, fieldDefinition._type!, fieldDefinition._arguments, parent.Path, fieldDefinition.Metadata);
+    }
 
     private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
     {
@@ -678,10 +759,7 @@ public sealed class FieldBuilder
         // equally stale and must be cleared explicitly here.
         ClearAncestorMergeMemos();
 
-        // This field may be sitting in FieldMergeIndex's fingerprint sub-buckets (directly, if it
-        // is a root field, or as the reason an ancestor's deep fingerprint is stale) without
-        // QueryMerger ever being told — see FieldDefinition's merge-memo-epoch remarks.
-        FieldDefinition.BumpMergeMemoEpoch();
+        _fieldDefinition.InvalidateMergeIndex();
 
         return this;
     }
@@ -965,14 +1043,6 @@ public sealed class FieldBuilder
     private static bool IsBooleanType(string type)
         => type.Equals("Boolean", StringComparison.Ordinal) || type.Equals("Boolean!", StringComparison.Ordinal);
 
-    // @include/@skip are now merge-identity-relevant (see FieldDefinitionExtensions.CanMergeFields'
-    // conditional-directive check), so attaching/replacing one is exactly the same class of mutation
-    // as Where()'s argument change: it can invalidate this field's OWN memoized deep fingerprint and
-    // every ancestor's, and the field may already be sitting in FieldMergeIndex's fingerprint
-    // sub-buckets under its now-stale value. Mirrors Where()'s three-step invalidation (own memo,
-    // ancestor memos via the possibly-detached-builder chain, global epoch bump) exactly. Gated on
-    // the directive actually being include/skip so a custom Directive("format", …) call — which is
-    // never merge-identity-relevant — pays nothing extra on the hot path.
     private void InvalidateMergeMemoIfConditional(string directiveName)
     {
         if (!directiveName.Equals("include", StringComparison.Ordinal)
@@ -984,6 +1054,6 @@ public sealed class FieldBuilder
         _fieldDefinition._deepArgumentFingerprint = null;
         _fieldDefinition._subtreeHasAnyArguments = null;
         ClearAncestorMergeMemos();
-        FieldDefinition.BumpMergeMemoEpoch();
+        _fieldDefinition.InvalidateMergeIndex();
     }
 }
