@@ -147,6 +147,34 @@ public class FieldFactoryPerNodeBranchTests
     }
 
     [Fact]
+    public void AddField_ComplexPathWithUnaliasedLastSegmentAfterAliasedSibling_CreatesUnaliasedSibling()
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("user.aliasA:id")
+            .AddField("u:user.id");
+
+        var result = query.ToString();
+
+        result.Should().Contain("aliasA:id");
+        result.Should().MatchRegex(@"(?m)^\s+id\s*$");
+    }
+
+    [Fact]
+    public void AddField_ComplexPathWithUnaliasedLastSegmentAfterTwoAliasedSiblings_CreatesUnaliasedSibling()
+    {
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("user.aliasA:id")
+            .AddField("user.aliasB:id")
+            .AddField("u:user.id");
+
+        var result = query.ToString();
+
+        result.Should().Contain("aliasA:id");
+        result.Should().Contain("aliasB:id");
+        result.Should().MatchRegex(@"(?m)^\s+id\s*$");
+    }
+
+    [Fact]
     public void AddField_UnaliasedSegmentAfterAliasedSibling_ResolvesToAliasedField()
     {
         var query = QueryBuilder.CreateDefaultBuilder("Test")
