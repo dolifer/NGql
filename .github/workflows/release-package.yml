@@ -10,6 +10,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # lets the job request a GitHub OIDC token for nuget.org trusted publishing
     steps:
       - uses: actions/checkout@v6
         with:
@@ -22,7 +25,15 @@ jobs:
             8.0.x
             9.0.x
             10.0.x
+      # Trusted publishing: nuget.org exchanges the OIDC token for an API key that lasts one hour.
+      # The matching policy on nuget.org names this file (release-package.yml), the owner
+      # `dolifer`, and the packages NGql.Core and dotnet-ngql. No long-lived secret is involved.
+      - name: NuGet login (OIDC to temporary API key)
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: dolifer
       - name: Pack and publish
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: make publish
