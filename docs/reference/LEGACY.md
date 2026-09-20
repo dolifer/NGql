@@ -1,6 +1,6 @@
 # Legacy: Classic API (NGql 1.x)
 
-> **⚠️ Deprecated**: This API is no longer recommended. New projects should use the [QueryBuilder API](README.md) introduced in NGql 2.0.
+> **⚠️ Deprecated**: This API is no longer recommended. New projects should use the [QueryBuilder API](https://github.com/dolifer/NGql/blob/main/README.md) introduced in NGql 2.0.
 > 
 > If you're migrating from NGql 1.x, see the [Migration Guide](MIGRATION.md) for step-by-step instructions.
 
@@ -14,7 +14,11 @@ The Classic API uses direct query construction with nested `Query` and `Mutation
 
 ## Basic Query
 
-```c#
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
+
+```csharp
 var query = new Query("PersonAndFilms")
     .Select(new Query("person")
         .Where("id", "cGVvcGxlOjE=")
@@ -25,23 +29,31 @@ var query = new Query("PersonAndFilms")
     );
 ```
 
-**Output:**
+</td><td>
+
 ```graphql
 query PersonAndFilms{
     person(id:"cGVvcGxlOjE="){
-        name
         filmConnection{
             films{
                 title
             }
         }
+        name
     }
 }
 ```
 
+</td></tr>
+</table>
+
 ## Mutation
 
-```c#
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
+
+```csharp
 var mutation = new Mutation("CreateUser")
     .Select(new Query("createUser")
         .Where("name", "Name")
@@ -49,7 +61,8 @@ var mutation = new Mutation("CreateUser")
         .Select("id", "name"));
 ```
 
-**Output:**
+</td><td>
+
 ```graphql
 mutation CreateUser{
     createUser(name:"Name", password:"Password"){
@@ -59,9 +72,16 @@ mutation CreateUser{
 }
 ```
 
+</td></tr>
+</table>
+
 ## Variables
 
-```c#
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
+
+```csharp
 var variable = new Variable("$name", "String");
 var query = new Query("GetUser", variables: variable)
     .Select(new Query("user")
@@ -69,7 +89,8 @@ var query = new Query("GetUser", variables: variable)
         .Select("id", "name"));
 ```
 
-**Output:**
+</td><td>
+
 ```graphql
 query GetUser($name:String){
     user(name:$name){
@@ -78,6 +99,68 @@ query GetUser($name:String){
     }
 }
 ```
+
+</td></tr>
+</table>
+
+---
+
+## Mutation with Variables
+
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
+
+```csharp
+var nameVar  = new Variable("$name", "String!");
+var emailVar = new Variable("$email", "String!");
+
+var createUser = new Query("createUser")
+    .Where("name", nameVar)
+    .Where("email", emailVar)
+    .Select("id", "createdAt");
+
+var mutation = new Mutation("CreateUser", nameVar, emailVar)
+    .Select(createUser);
+
+Console.WriteLine(mutation);
+```
+
+</td><td>
+
+```graphql
+mutation CreateUser($email:String!, $name:String!){
+    createUser(email:$email, name:$name){
+        createdAt
+        id
+    }
+}
+```
+
+</td></tr>
+</table>
+
+**Mutation API:**
+- `new Mutation(name, params Variable[])` — declare the operation and its variables
+- `.Variable(name, type)` / `.Variable(Variable)` — add more variables incrementally
+- `.Select(params string[])` — add plain field names
+- `.Select(Query subQuery)` — embed a `Query` (with its `Where`/`Select` arguments and subfields)
+- `.Select(IEnumerable<object>)` — mixed list of strings and `QueryBlock`s
+
+---
+
+## Classic API and QueryBuilder Side by Side
+
+| Feature | 1.5.x (Classic) | 2.x (QueryBuilder) |
+|---------|-----------------|--------------------|
+| Query creation | `new Query("name")` | `QueryBuilder.CreateDefaultBuilder("name")` |
+| Nested fields | `.Select(new Query("child"))` | `.AddField("parent.child")` |
+| Field arguments | `.Where("key", value)` | `.AddField("field", new Dictionary<string, object?> { … })` |
+| Composing fragments | manual stitching | `Include(otherBuilder)` with `MergingStrategy` |
+| Field-path subset | not available | `PreservationBuilder.Create(...).Preserve(...).Build()` |
+| Type-annotation metadata | not available | `AddField("String user.name")` (metadata only — does not appear in rendered GraphQL) |
+
+The Classic API (`Query`, `Mutation`) is still fully supported in 2.x and renders independently — it is **not** the internal representation `QueryBuilder` uses; both APIs produce GraphQL text through separate code paths. Use whichever fits your use case (or mix them: a `Mutation` can `Select` a hand-built `Query`, while `QueryBuilder` is the typical entry point for composable, dynamic queries).
 
 ---
 

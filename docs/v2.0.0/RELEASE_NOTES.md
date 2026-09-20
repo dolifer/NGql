@@ -1,4 +1,4 @@
-# NGql 2.0.0
+# 2.0.0
 
 NGql 2.0 reshapes how you build, compose, and filter GraphQL queries from .NET. The release introduces a new field-preservation API, a multi-strategy query merger, and a hot-path overhaul that removes most allocations from rendering — while keeping the library zero-dependency and small enough to read end-to-end.
 
@@ -7,6 +7,10 @@ NGql 2.0 reshapes how you build, compose, and filter GraphQL queries from .NET. 
 ### `PreservationBuilder` — extract a subset of an existing query
 
 Pick fields by string path or by a typed C# expression. No SDL, no codegen.
+
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
 
 ```csharp
 var profile = QueryBuilder.CreateDefaultBuilder("Profile")
@@ -25,6 +29,20 @@ var conditional = PreservationBuilder.Create(profile)
     .Build();
 ```
 
+</td><td>
+
+```graphql
+query Profile{
+    user{
+        email
+        name
+    }
+}
+```
+
+</td></tr>
+</table>
+
 Useful for role-based filtering, conditional fragments, and stripping fields from a shared query without rebuilding it.
 
 ### `MergingStrategy` — control fragment composition
@@ -35,12 +53,35 @@ Useful for role-based filtering, conditional fragments, and stripping fields fro
 - **`MergeByFieldPath`** — merge fragments with compatible paths and arguments; auto-alias when arguments conflict
 - **`NeverMerge`** — keep fragments distinct (every `Include` produces a separate sub-tree)
 
+<table>
+<tr><th>C#</th><th>GraphQL</th></tr>
+<tr><td>
+
 ```csharp
+var fragmentA = QueryBuilder.CreateDefaultBuilder("A")
+    .AddField("user.name");
+var fragmentB = QueryBuilder.CreateDefaultBuilder("B")
+    .AddField("user.email");
+
 var combined = QueryBuilder
     .CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
     .Include(fragmentA)
     .Include(fragmentB);
 ```
+
+</td><td>
+
+```graphql
+query Combined{
+    user{
+        email
+        name
+    }
+}
+```
+
+</td></tr>
+</table>
 
 ### Hot-path performance pass
 
@@ -57,13 +98,6 @@ Query rendering itself is reflection-free; reflection is confined to the LINQ-ex
 ### Multi-target: .NET 8, 9, and 10
 
 The package now ships TFMs for `net8.0`, `net9.0`, and `net10.0`. The minimum supported runtime is .NET 8.
-
-## Quality
-
-- **1725 tests** (1634 unit + 91 integration), executed on all three target frameworks
-- **99.93% line coverage / 99.66% branch coverage / 100% method coverage** on the Core namespace
-- `TreatWarningsAsErrors` enforced across `src/`; SonarAnalyzer.CSharp 10.15 runs on every build
-- HTML coverage report and badges published from CI to GitHub Pages on every push to `main`
 
 ## Installation
 
@@ -106,5 +140,4 @@ Thanks to everyone who reported edge cases against the 1.5.x line — the type-d
 
 ---
 
-**Full changelog:** https://github.com/dolifer/NGql/compare/1.5.0...2.0.0
-**Documentation:** [README](https://github.com/dolifer/NGql#readme) · [Migration guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md) · [Coverage report](https://dolifer.github.io/NGql/)
+**Full changelog:** https://github.com/dolifer/NGql/compare/1.5.0...2.0.0 **Documentation:** [README](https://github.com/dolifer/NGql#readme) · [Migration guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md) · [Coverage report](https://dolifer.github.io/NGql/)
