@@ -1,0 +1,7 @@
+// Subscription via QueryBuilder.CreateSubscriptionBuilder (NGql 2.2). Same fluent surface as a
+// query; the Variable auto-promotes into the operation signature.
+var id = new Variable("$id", "ID!");
+
+QueryBuilder.CreateSubscriptionBuilder("OnOrderUpdated")
+    .AddField("orderUpdated", new Dictionary<string, object?> { ["id"] = id },
+              new[] { "status", "updatedAt" })

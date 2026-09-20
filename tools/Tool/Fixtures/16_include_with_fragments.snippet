@@ -1,0 +1,12 @@
+// Include carries named fragments, spreads and sibling fields across (NGql 2.2). Both builders
+// build `viewer` with the lambda form so the merged parent has one consistent type.
+var identity = QueryBuilder.CreateDefaultBuilder("Identity")
+    .AddFragment("UserCard", "User", f => f.AddField("id").AddField("name"))
+    .AddField("viewer", v => v.SpreadFragment("UserCard"));
+
+var contact = QueryBuilder.CreateDefaultBuilder("Contact")
+    .AddField("viewer", v => v.AddField("email"));
+
+QueryBuilder.CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
+    .Include(identity)
+    .Include(contact)

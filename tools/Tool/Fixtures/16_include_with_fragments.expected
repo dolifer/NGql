@@ -1,0 +1,10 @@
+query Combined{
+    viewer{
+        email
+        ...UserCard
+    }
+}
+fragment UserCard on User{
+    id
+    name
+}

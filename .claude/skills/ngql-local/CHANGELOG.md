@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-21
+
 ### Added
+- **Subscription generation** via `QueryBuilder.CreateSubscriptionBuilder(name)`. Subscriptions move from ❌ to ✅ in the gap table; the Skill renders them with `ngql` but never offers `--execute`, which posts over plain HTTP. EVAL prompt #9 flips from "refuses" to "generates". New worked example.
+- **Custom directive generation** via `FieldBuilder.Directive(name, arguments)`. Custom directives move from ❌ to ✅. New worked example and EVAL prompt #18.
+- **`Include` with fragments.** The gap table no longer claims `Include` throws on fragment-bearing builders — NGql 2.2 merges definitions, spreads, inline fragments and directives. The Composition section documents the one real caveat: build a shared parent field the same way (lambda or dotted) in every included builder, or the merge throws a type conflict. New EVAL prompt #19.
+- A note on the allocation-free output sinks (`AppendTo`, `WriteTo`, `WriteUtf8`) for users wiring queries into application code.
 - **Named fragment generation** via `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)`. With NGql 2.2 shipping the underlying API, the Skill drops named fragments from the gap table and adds a worked example covering the canonical "DRY across multiple use sites" use case. EVAL prompt #16 (users + admins with shared selection) flips from "refuses to generate" to "generates clean snippet using `AddFragment` + `SpreadFragment`."
 - **Conditional field generation** via `FieldBuilder.IncludeIf(variable)` / `SkipIf(variable)`. With NGql 2.2 shipping the underlying API (closing [issue #23](https://github.com/dolifer/NGql/issues/23)), the Skill drops `@include`/`@skip` from the gap table and adds a worked example: conditionally including a user's profile fields based on an `$expand` variable. EVAL prompt #10 (add `@include(if: $verbose)` to a field) flips from "refuses/restructures" to "generates clean snippet using `IncludeIf`." New EVAL prompt #17 exercises `IncludeIf` + variable auto-hoisting into the operation signature specifically.
 

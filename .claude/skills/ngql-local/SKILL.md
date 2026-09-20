@@ -27,6 +27,7 @@ using NGql.Core.Builders;   // QueryBuilder, FieldBuilder, PreservationBuilder
 // Operations
 QueryBuilder.CreateDefaultBuilder("Op");                                       // query
 QueryBuilder.CreateMutationBuilder("Op");                                      // mutation
+QueryBuilder.CreateSubscriptionBuilder("Op");                                  // subscription (NGql 2.2+)
 QueryBuilder.CreateDefaultBuilder("Op", MergingStrategy.MergeByFieldPath);     // optional strategy
 ```
 
@@ -77,6 +78,12 @@ QueryBuilder.CreateDefaultBuilder("GetUser")
         .AddField("profile", p => p.IncludeIf(expand).AddField("bio").AddField("avatarUrl")))
 // -> query GetUser($expand:Boolean!){ user{ id profile @include(if:$expand){ avatarUrl bio } } }
 
+// Custom directive — Directive(name, args); the name works with or without a leading '@'.
+// Arguments use the same value formatter as field arguments, and any Variable inside them is
+// auto-promoted. Use IncludeIf/SkipIf (not Directive) for @include/@skip.
+.AddField("startsAt", s => s.Directive("format", new Dictionary<string, object?> { ["as"] = "ISO8601" }))
+// -> startsAt @format(as:"ISO8601")
+
 // Metadata — via lambda + WithMetadata, NEVER as a positional dict
 .AddField("user", new Dictionary<string, object?> { ["id"] = idVar }, b => b
     .WithMetadata(new Dictionary<string, object> { ["cached"] = true })
@@ -102,6 +109,8 @@ QueryBuilder.CreateDefaultBuilder("Combined", MergingStrategy.MergeByFieldPath)
     .Include(fragmentA)
     .Include(fragmentB);
 ```
+
+`Include` carries named-fragment definitions, fragment spreads, inline fragments and directives across (NGql 2.2+); a fragment declared in an included builder is emitted once in the combined operation. Build a shared parent field the same way in every builder you plan to `Include`: `AddField("viewer", v => …)` and the dotted form `AddField("viewer.email")` record different type metadata for `viewer`, and merging the two throws `QueryMergeException` ("type conflicts in field 'viewer'"). Pick one form per parent.
 
 ### Don't generate
 
@@ -153,6 +162,8 @@ The tool JSON-parses each value; bare strings fall through.
 
 NGql renders with: 4-space indent, tight braces (`users{` not `users {`), fields **sorted alphabetically** within a selection set, aliases appended after the un-aliased duplicate, strings double-quoted, enums unquoted, variables as `$name:Type` in the operation signature.
 
+When the user is wiring the query into application code (not rendering through `ngql`), mention the allocation-free sinks once if they are building requests in a hot path: `AppendTo(StringBuilder)`, `WriteTo(TextWriter)` and `WriteUtf8(IBufferWriter<byte>)` produce output byte-identical to `ToString()` without the intermediate string. Snippets for `ngql` still end in the builder expression itself.
+
 ## Snippet contract for `ngql`
 
 The CLI evaluates a snippet as a Roslyn script: **the final expression yields the builder**, full stop.
@@ -175,9 +186,9 @@ QueryBuilder.CreateDefaultBuilder("Hello").AddField("world.name")
 | Inline fragments / union narrowing | ✅ `FieldBuilder.OnType("TypeName", b => …)` |
 | Named fragments (`fragment X on T`, `...X`) | ✅ `QueryBuilder.AddFragment(name, onType, build)` + `FieldBuilder.SpreadFragment(name)` |
 | `@include` / `@skip` directives | ✅ `FieldBuilder.IncludeIf(variable)` / `FieldBuilder.SkipIf(variable)` — also work on `OnType`'s lambda for inline fragments. See the worked example below. |
-| Custom directives | ❌ — file-separately if needed; uncommon in real APIs. |
-| Subscriptions | ❌ — out of scope (transport-layer concern). |
-| `Include` + any fragments | ❌ — throws `NotSupportedException`. Build the merged query without fragments, or apply `Include` *before* adding fragments. |
+| Custom directives | ✅ `FieldBuilder.Directive(name, arguments)` — also works on `OnType`'s lambda. |
+| Subscriptions | ✅ `QueryBuilder.CreateSubscriptionBuilder(name)` — same fluent surface as queries. NGql renders the operation text only; the transport (WebSocket / SSE) is the caller's job, and `ngql --execute` posts over plain HTTP, so don't offer to execute a subscription. |
+| `Include` + any fragments | ✅ (NGql 2.2+) — definitions, spreads, inline fragments and directives merge. See Composition for the one caveat. |
 
 When the user needs a ❌ construct: **stop before any C#**, name the gap in one sentence, offer concrete paths (inline equivalent, partial + hand-splice, different field). Wait for the user's pick. **Never** generate broken code "for reference" — code that looks right but renders to invalid GraphQL is the worst failure mode.
 
@@ -358,3 +369,31 @@ QueryBuilder.CreateDefaultBuilder("GetUsersAndAdmins")
 ```
 
 Renders the fragment once after the operation block, spread at each use site. Fragment names are case-sensitive; `AddFragment` with a duplicate name + different `onType` throws. NGql doesn't validate that every spread points at a declared fragment — undeclared spreads render verbatim and the server rejects them (NGql is schemaless).
+
+### Subscription
+
+> "Build a subscription OrderUpdated that watches one order by id and returns status and updatedAt."
+
+```csharp
+var id = new Variable("$id", "ID!");
+
+QueryBuilder.CreateSubscriptionBuilder("OnOrderUpdated")
+    .AddField("orderUpdated", new Dictionary<string, object?> { ["id"] = id },
+              new[] { "status", "updatedAt" })
+```
+
+Renders `subscription OnOrderUpdated($id:ID!){ orderUpdated(id:$id){ status updatedAt } }`. Offer to render it with `ngql`; do not offer `--execute` — subscriptions need a streaming transport the tool does not speak.
+
+### Custom directive
+
+> "Add @format(as: \"ISO8601\") to the event's startsAt field."
+
+```csharp
+QueryBuilder.CreateDefaultBuilder("Dates")
+    .AddField("event", e => e
+        .AddField("startsAt", s => s.Directive("format",
+            new Dictionary<string, object?> { ["as"] = "ISO8601" }))
+        .AddField("title"))
+```
+
+Directive names are schema-defined — confirm the name and its arguments against the user's server the same way you would a field name. A structurally identical directive added twice renders once.

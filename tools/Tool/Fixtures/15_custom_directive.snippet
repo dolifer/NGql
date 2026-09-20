@@ -1,0 +1,7 @@
+// Custom directive via FieldBuilder.Directive(name, arguments) (NGql 2.2). Arguments use the
+// same value formatter as field arguments.
+QueryBuilder.CreateDefaultBuilder("Dates")
+    .AddField("event", e => e
+        .AddField("startsAt", s => s.Directive("format",
+            new Dictionary<string, object?> { ["as"] = "ISO8601" }))
+        .AddField("title"))

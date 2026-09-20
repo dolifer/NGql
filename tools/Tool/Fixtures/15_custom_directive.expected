@@ -1,0 +1,6 @@
+query Dates{
+    event{
+        startsAt @format(as:"ISO8601")
+        title
+    }
+}
