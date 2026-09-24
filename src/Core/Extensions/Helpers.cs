@@ -51,6 +51,17 @@ internal static class Helpers
         if (dict.Count == 0) return;
         if (visited is not null && !visited.Add(dict)) return; // cycle detected
 
+        // Argument dictionaries are usually Dictionary<string, object?>; its struct enumerator
+        // avoids boxing the non-generic IDictionary.Values one.
+        if (dict is Dictionary<string, object?> arguments)
+        {
+            foreach (var val in arguments.Values)
+            {
+                ExtractVariablesFromChild(dict, val, variables, ref visited);
+            }
+            return;
+        }
+
         foreach (var val in dict.Values)
         {
             ExtractVariablesFromChild(dict, val, variables, ref visited);
@@ -273,15 +284,37 @@ internal static class Helpers
         _ => IsDecomposable(value) ? DecomposeToDictionary(value) : value,
     };
 
+    // Nested dictionaries reject keys colliding under OrdinalIgnoreCase rather than silently
+    // last-winning — otherwise the rendered query carries different data than the caller supplied.
     private static SortedDictionary<string, object?> SortDictionary(IDictionary<string, object?> dict)
+        => ToSortedArguments(dict, rejectCaseCollisions: true);
+
+    /// <summary>
+    /// Copies <paramref name="source"/> into a case-insensitive sorted dictionary, normalizing each
+    /// value with <see cref="SortArgumentValue"/>. A caller's <see cref="Dictionary{TKey,TValue}"/>
+    /// is enumerated through its struct enumerator instead of a boxed interface one.
+    /// </summary>
+    internal static SortedDictionary<string, object?> ToSortedArguments(IDictionary<string, object?> source, bool rejectCaseCollisions)
+        => source is Dictionary<string, object?> dictionary
+            ? ToSortedArguments(dictionary.GetEnumerator(), rejectCaseCollisions)
+            : ToSortedArguments(source.GetEnumerator(), rejectCaseCollisions);
+
+    private static SortedDictionary<string, object?> ToSortedArguments<TEnumerator>(TEnumerator entries, bool rejectCaseCollisions)
+        where TEnumerator : IEnumerator<KeyValuePair<string, object?>>
     {
         var sorted = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var kvp in dict)
+        try
         {
-            // Add (not the indexer): keys colliding under OrdinalIgnoreCase must throw, not
-            // silently last-win — otherwise the rendered query carries different data than
-            // the caller supplied.
-            sorted.Add(kvp.Key, SortArgumentValue(kvp.Value));
+            while (entries.MoveNext())
+            {
+                var (key, value) = entries.Current;
+                if (rejectCaseCollisions) sorted.Add(key, SortArgumentValue(value));
+                else sorted[key] = SortArgumentValue(value);
+            }
+        }
+        finally
+        {
+            entries.Dispose();
         }
         return sorted;
     }
@@ -608,11 +641,7 @@ internal static class Helpers
         }
 
         // Create a new sorted dictionary to ensure consistent argument ordering
-        var sortedArguments = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-        foreach (var kvp in arguments)
-        {
-            sortedArguments[kvp.Key] = SortArgumentValue(kvp.Value);
-        }
+        var sortedArguments = ToSortedArguments(arguments, rejectCaseCollisions: false);
 
         return new FieldDefinition(name, type, alias, sortedArguments)
         {

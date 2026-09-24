@@ -843,6 +843,13 @@ internal static class FieldDefinitionExtensions
 
     private static SortedDictionary<string, object?> CopyToSortedCaseInsensitive(IDictionary<string, object?> source)
     {
+        // A source already sorted by the same comparer holds no case collisions, so the copy
+        // constructor's linear-time path gives the same result as the overwrite loop below.
+        if (source is SortedDictionary<string, object?> sorted && ReferenceEquals(sorted.Comparer, StringComparer.OrdinalIgnoreCase))
+        {
+            return new SortedDictionary<string, object?>(sorted, StringComparer.OrdinalIgnoreCase);
+        }
+
         var copy = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in source) copy[key] = value;
         return copy;
