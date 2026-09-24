@@ -11,12 +11,68 @@ namespace NGql.Core.Extensions;
 [SuppressMessage("Minor Code Smell", "S3267:Loops should be simplified with \"LINQ\" expressions")]
 internal static class Helpers
 {
+    /// <summary>
+    /// Adds every <see cref="Variable"/> found in <paramref name="value"/> (nested dictionaries,
+    /// lists and object properties included) to <paramref name="variables"/>. The same name with
+    /// the same type is declared once; the same name with another type throws before anything is
+    /// added, because GraphQL allows one declaration per variable name.
+    /// </summary>
+    /// <exception cref="ArgumentException">A found variable's name is already declared, in
+    /// <paramref name="variables"/> or elsewhere in <paramref name="value"/>, with another type.</exception>
     internal static void ExtractVariablesFromValue(object? value, SortedSet<Variable> variables)
     {
-        ExtractVariablesFromValueCore(value, variables, null);
+        List<Variable>? found = null;
+        ExtractVariablesFromValueCore(value, ref found, null);
+        if (found is null) return;
+
+        foreach (var variable in found)
+        {
+            // A declared variable with the same name and type is not a conflict, and finding it
+            // is a set lookup; only a new name/type pair scans for a same-named declaration.
+            var conflict = variables.Contains(variable) ? null : FindTypeConflict(variables, variable) ?? FindTypeConflict(found, variable);
+            if (conflict is { } existing)
+            {
+                throw new ArgumentException(VariableTypeConflictMessage(existing, variable));
+            }
+        }
+
+        foreach (var variable in found)
+        {
+            variables.Add(variable);
+        }
     }
 
-    private static void ExtractVariablesFromValueCore(object? value, SortedSet<Variable> variables, HashSet<object>? visited)
+    /// <summary>
+    /// Returns a variable in <paramref name="declared"/> with <paramref name="variable"/>'s name
+    /// but a different type. Names and types compare the way <see cref="Variable"/> equality does.
+    /// </summary>
+    internal static Variable? FindTypeConflict(SortedSet<Variable> declared, Variable variable)
+    {
+        foreach (var existing in declared)
+        {
+            if (IsTypeConflict(existing, variable)) return existing;
+        }
+        return null;
+    }
+
+    private static Variable? FindTypeConflict(List<Variable> declared, Variable variable)
+    {
+        foreach (var existing in declared)
+        {
+            if (IsTypeConflict(existing, variable)) return existing;
+        }
+        return null;
+    }
+
+    private static bool IsTypeConflict(Variable existing, Variable variable)
+        => string.Equals(existing.Name, variable.Name, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(existing.Type, variable.Type, StringComparison.OrdinalIgnoreCase);
+
+    internal static string VariableTypeConflictMessage(Variable existing, Variable incoming)
+        => $"Variable '{incoming.Name}' is declared as '{existing.Type}' and as '{incoming.Type}'. " +
+           "GraphQL allows one declaration per variable name; use one type or rename one of them.";
+
+    private static void ExtractVariablesFromValueCore(object? value, ref List<Variable>? found, HashSet<object>? visited)
     {
         if (value == null)
         {
@@ -25,29 +81,30 @@ internal static class Helpers
 
         if (value is Variable variable)
         {
-            variables.Add(variable);
+            found ??= [];
+            found.Add(variable);
             return;
         }
 
         if (value is IDictionary dict)
         {
-            ExtractVariablesFromDictionary(dict, variables, visited);
+            ExtractVariablesFromDictionary(dict, ref found, visited);
             return;
         }
 
         if (value is IList list)
         {
-            ExtractVariablesFromList(list, variables, visited);
+            ExtractVariablesFromList(list, ref found, visited);
             return;
         }
 
         if (ShouldExtractFromObjectProperties(value))
         {
-            ExtractVariablesFromObjectProperties(value, variables, visited);
+            ExtractVariablesFromObjectProperties(value, ref found, visited);
         }
     }
 
-    private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables, HashSet<object>? visited)
+    private static void ExtractVariablesFromDictionary(IDictionary dict, ref List<Variable>? found, HashSet<object>? visited)
     {
         if (dict.Count == 0) return;
         if (visited is not null && !visited.Add(dict)) return; // cycle detected
@@ -58,40 +115,40 @@ internal static class Helpers
         {
             foreach (var val in arguments.Values)
             {
-                ExtractVariablesFromChild(dict, val, variables, ref visited);
+                ExtractVariablesFromChild(dict, val, ref found, ref visited);
             }
             return;
         }
 
         foreach (var val in dict.Values)
         {
-            ExtractVariablesFromChild(dict, val, variables, ref visited);
+            ExtractVariablesFromChild(dict, val, ref found, ref visited);
         }
     }
 
-    private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables, HashSet<object>? visited)
+    private static void ExtractVariablesFromList(IList list, ref List<Variable>? found, HashSet<object>? visited)
     {
         if (list.Count == 0) return;
         if (visited is not null && !visited.Add(list)) return; // cycle detected
 
         foreach (var item in list)
         {
-            ExtractVariablesFromChild(list, item, variables, ref visited);
+            ExtractVariablesFromChild(list, item, ref found, ref visited);
         }
     }
 
     // A cycle needs a nested container, so the visited set is created only on the first descent
     // into one, seeded with the container being walked. Flat collections never allocate it.
-    private static void ExtractVariablesFromChild(object container, object? child, SortedSet<Variable> variables, ref HashSet<object>? visited)
+    private static void ExtractVariablesFromChild(object container, object? child, ref List<Variable>? found, ref HashSet<object>? visited)
     {
         if (child is null or Variable || ValueFormatter.IsPrimitiveType(child))
         {
-            ExtractVariablesFromValueCore(child, variables, visited);
+            ExtractVariablesFromValueCore(child, ref found, visited);
             return;
         }
 
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance) { container };
-        ExtractVariablesFromValueCore(child, variables, visited);
+        ExtractVariablesFromValueCore(child, ref found, visited);
     }
 
     private static bool ShouldExtractFromObjectProperties(object obj)
@@ -104,7 +161,7 @@ internal static class Helpers
                !ValueFormatter.IsPrimitiveType(obj);
     }
 
-    private static void ExtractVariablesFromObjectProperties(object obj, SortedSet<Variable> variables, HashSet<object>? visited)
+    private static void ExtractVariablesFromObjectProperties(object obj, ref List<Variable>? found, HashSet<object>? visited)
     {
         visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
         if (!visited.Add(obj)) return; // cycle detected
@@ -114,7 +171,7 @@ internal static class Helpers
             var propertyValue = property.GetValue(obj);
             if (propertyValue != null)
             {
-                ExtractVariablesFromValueCore(propertyValue, variables, visited);
+                ExtractVariablesFromValueCore(propertyValue, ref found, visited);
             }
         }
     }
@@ -363,6 +420,21 @@ internal static class Helpers
             result.Add(SortArgumentValue(item));
         }
         return result;
+    }
+
+    /// <summary>
+    /// True when an argument key set on both sides carries different values. A key only one side
+    /// sets is no conflict: merging adds it.
+    /// </summary>
+    internal static bool HaveConflictingArguments(SortedDictionary<string, object?>? existing, SortedDictionary<string, object?>? incoming)
+    {
+        if (existing is not { Count: > 0 } || incoming is not { Count: > 0 }) return false;
+
+        foreach (var (key, value) in incoming)
+        {
+            if (existing.TryGetValue(key, out var existingValue) && !AreValuesEqual(existingValue, value)) return true;
+        }
+        return false;
     }
 
     /// <summary>

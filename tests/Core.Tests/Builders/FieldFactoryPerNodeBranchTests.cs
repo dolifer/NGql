@@ -134,8 +134,9 @@ public class FieldFactoryPerNodeBranchTests
     }
 
     [Fact]
-    public void AddField_AliasedSegmentAfterUnaliasedSibling_AdoptsAliasOnExistingField()
+    public void AddField_AliasedSegmentAfterUnaliasedSibling_AddsAliasedSibling()
     {
+        // An alias never rewrites an existing field: both response keys stay requested.
         var query = QueryBuilder.CreateDefaultBuilder("Test")
             .AddField("user.id")
             .AddField("user.aliasA:id");
@@ -143,7 +144,7 @@ public class FieldFactoryPerNodeBranchTests
         var result = query.ToString();
 
         result.Should().Contain("aliasA:id");
-        result.Should().NotMatchRegex(@"(?m)^\s+id\s*$");
+        result.Should().MatchRegex(@"(?m)^\s+id\s*$");
     }
 
     [Fact]
@@ -175,8 +176,9 @@ public class FieldFactoryPerNodeBranchTests
     }
 
     [Fact]
-    public void AddField_UnaliasedSegmentAfterAliasedSibling_ResolvesToAliasedField()
+    public void AddField_UnaliasedLastSegmentAfterAliasedSibling_AddsUnaliasedSibling()
     {
+        // The last segment addresses its response key; "id" is not "aliasA", so both are kept.
         var query = QueryBuilder.CreateDefaultBuilder("Test")
             .AddField("user.aliasA:id")
             .AddField("user.id");
@@ -184,11 +186,11 @@ public class FieldFactoryPerNodeBranchTests
         var result = query.ToString();
 
         result.Should().Contain("aliasA:id");
-        result.Should().NotMatchRegex(@"(?m)^\s+id\s*$");
+        result.Should().MatchRegex(@"(?m)^\s+id\s*$");
     }
 
     [Fact]
-    public void AddField_UnaliasedSegmentAfterTwoAliasedSiblings_ResolvesToFirstAliasedField()
+    public void AddField_UnaliasedLastSegmentAfterTwoAliasedSiblings_AddsUnaliasedSibling()
     {
         var query = QueryBuilder.CreateDefaultBuilder("Test")
             .AddField("user.aliasA:id")
@@ -199,6 +201,17 @@ public class FieldFactoryPerNodeBranchTests
 
         result.Should().Contain("aliasA:id");
         result.Should().Contain("aliasB:id");
-        result.Should().NotMatchRegex(@"(?m)^\s+id\s*$");
+        result.Should().MatchRegex(@"(?m)^\s+id\s*$");
+    }
+
+    [Fact]
+    public void AddField_UnaliasedIntermediateSegmentAfterAliasedNode_ExtendsThatNode()
+    {
+        // An unaliased segment that is not the last one still reaches a same-named aliased node.
+        var query = QueryBuilder.CreateDefaultBuilder("Test")
+            .AddField("user.p:profile.name")
+            .AddField("user.profile.email");
+
+        query.ToString().Should().Be("query Test{\n    user{\n        p:profile{\n            email\n            name\n        }\n    }\n}");
     }
 }

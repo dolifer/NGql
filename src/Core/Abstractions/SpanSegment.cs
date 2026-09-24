@@ -13,6 +13,5 @@ internal readonly ref struct SpanSegment(
     public ReadOnlySpan<char> Alias { get; } = alias;
     public ReadOnlySpan<char> ParsedType { get; } = parsedType;
     public bool IsLastFragment { get; } = isLastFragment;
-    public bool HasAlias => !Alias.IsEmpty;
     public bool HasParsedType => !ParsedType.IsEmpty;
 }

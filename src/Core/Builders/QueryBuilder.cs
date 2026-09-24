@@ -372,6 +372,11 @@ public sealed class QueryBuilder
             {
                 slot = new FieldDefinition(field, Constants.DefaultFieldType) { Path = field };
             }
+            else if (slot!._alias is not null)
+            {
+                // The name key holds an aliased field; the factory adds the plain one beside it.
+                FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.DefaultFieldTypeSpan, null);
+            }
         }
         else
         {
@@ -470,6 +475,14 @@ public sealed class QueryBuilder
             // Phase 3: Invalidate caches after field addition
             InvalidateLookupCaches();
             return this;
+        }
+
+        // Sub-field definitions can carry their own arguments; their variables belong in this
+        // operation's signature too, and are checked before any field is added.
+        foreach (var subField in subFields!)
+        {
+            if (subField?._arguments is { Count: > 0 } subFieldArguments)
+                Helpers.ExtractVariablesFromValue(subFieldArguments, Definition.Variables);
         }
 
         var parent = FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.ObjectFieldType,

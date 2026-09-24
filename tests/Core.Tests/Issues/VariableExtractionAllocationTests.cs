@@ -23,8 +23,9 @@ public class VariableExtractionAllocationTests
         Helpers.ExtractVariablesFromValue(arguments, variables);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        // Only the boxed values enumerator remains; a HashSet with its buckets costs over 200 B.
-        allocated.Should().BeLessThan(100);
+        // Found variables are collected in a small list first, so a type conflict throws before
+        // any is added. A cycle-detection HashSet with its buckets would add over 200 B on top.
+        allocated.Should().BeLessThan(200);
         variables.Should().ContainSingle();
     }
 

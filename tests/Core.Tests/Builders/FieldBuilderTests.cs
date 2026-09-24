@@ -1748,11 +1748,12 @@ public class FieldBuilderTests
             var fields = new Dictionary<string, FieldDefinition>();
             var existing = new FieldDefinition("user", "User", null, new Dictionary<string, object?> { { "id", "123" } });
 
-            _ = FieldFactory.CreateOrMergeField(fields, existing);
-            var field2 = FieldFactory.CreateOrMergeField(fields, existing);
+            var field1 = FieldFactory.CreateOrMergeField(fields, existing, out var key1);
+            var field2 = FieldFactory.CreateOrMergeField(fields, existing, out var key2);
 
-            field2.Should().NotBeNull();
-            field2.Arguments.Should().NotBeNull();
+            key2.Should().Be(key1, "the same field with the same arguments merges");
+            fields.Should().ContainSingle();
+            field2.Arguments.Should().ContainKey("id").WhoseValue.Should().Be(field1.Arguments["id"]);
         }
         else if (scenario == "valid-paths")
         {

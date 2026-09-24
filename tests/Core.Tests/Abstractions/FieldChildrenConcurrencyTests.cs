@@ -791,26 +791,4 @@ public class FieldChildrenIndexedReplaceTests
         children.Find("field17")!.Type.Should().Be("ReplacedType");
     }
 
-    [Fact]
-    public void Set_SpanOverload_ReplaceEarlyChild_AfterCrossingIndexThreshold_PreservesPositionAndOrder()
-    {
-        // Arrange: mirrors the string-key test but exercises the ReadOnlySpan<char> overload,
-        // which FieldFactory.ProcessDottedSegment invokes strictly after a successful TryGetValue.
-        var children = new FieldChildren();
-        for (int i = 0; i < 17; i++)
-        {
-            children.Append(new FieldDefinition($"field{i:D2}", "String"));
-        }
-        children.TryGetValue("field00".AsSpan(), out _).Should().BeTrue();
-
-        // Act
-        children.Set("field00".AsSpan(), new FieldDefinition("field00", "ReplacedType"));
-
-        // Assert
-        var names = children.AsSpan().ToArray().Select(f => f.Name).ToArray();
-        names.Should().HaveCount(17);
-        names[0].Should().Be("field00");
-        names.Should().BeInAscendingOrder(StringComparer.Ordinal);
-        children.Find("field00")!.Type.Should().Be("ReplacedType");
-    }
 }

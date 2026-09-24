@@ -42,11 +42,12 @@ internal static class SpanExtensions
     /// </summary>
     public static FieldDefinition GetOrAddSimpleField(this FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata, string? fieldNameText = null)
     {
-        if (children.TryGetValue(fieldName, out var existingField) && existingField is not null)
+        if (children.FindSegmentTarget(fieldName, ReadOnlySpan<char>.Empty, isLastSegment: true) is { } existingField)
         {
-            existingField = MergeArgumentsAndMetadata(existingField, arguments, metadata);
-            children.Set(fieldName, existingField);
-            return existingField;
+            var merged = MergeArgumentsAndMetadata(existingField, arguments, metadata);
+            // By reference: the match was by response key and may share its name with a sibling.
+            children.ReplaceReference(existingField, merged);
+            return merged;
         }
 
         var name = fieldNameText ?? fieldName.ToString();
@@ -60,17 +61,19 @@ internal static class SpanExtensions
     /// </summary>
     internal static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata, string? fieldNameText = null)
     {
-        if (fieldDefinitions.TryGetValue(fieldName, out var existingField))
+        var existingField = FieldFactory.FindRootSegmentTarget(fieldDefinitions, fieldName, ReadOnlySpan<char>.Empty, isLastSegment: true, fieldNameText, out var key);
+        if (existingField is not null)
         {
             var merged = MergeArgumentsAndMetadata(existingField, arguments, metadata);
-            if (!ReferenceEquals(merged, existingField)) fieldDefinitions.SetValue(fieldName, merged);
+            if (!ReferenceEquals(merged, existingField)) fieldDefinitions[FieldFactory.RootKeyOf(fieldDefinitions, existingField)] = merged;
             return merged;
         }
 
-        // One string serves as the dictionary key, the field name and, at the root, its path.
-        var name = fieldNameText ?? fieldName.ToString();
+        // Normally one string serves as the dictionary key, the field name and, at the root, its
+        // path; the key differs only when another field already answers to this name.
+        var name = fieldName.Equals(key.AsSpan(), StringComparison.Ordinal) ? key : fieldName.ToString();
         var field = Helpers.CreateFieldDefinition(name, fieldType, null, arguments, JoinPath(parentPath, name), metadata);
-        fieldDefinitions[name] = field;
+        fieldDefinitions[key] = field;
         return field;
     }
 

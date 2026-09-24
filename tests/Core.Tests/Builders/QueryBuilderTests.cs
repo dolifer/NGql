@@ -2204,17 +2204,18 @@ public class QueryBuilderTests
     }
 
     [Fact]
-    public void AddField_ComplexPath_AliasOnExistingFieldWithoutAlias_GetsAdopted()
+    public void AddField_ComplexPath_AliasAfterUnaliasedField_AddsAliasedCopy()
     {
-        // The complex-field code path (UpdateExistingField in FieldFactory) only runs for paths
-        // with type prefixes — the spaced-field syntax. First add creates "user.profile" with no
-        // alias; second add uses "User:user" alias on a complex (space-bearing) path.
+        // The complex-field code path only runs for paths with type prefixes (the spaced-field
+        // syntax). An alias never rewrites the existing unaliased field; the aliased one is added
+        // beside it under its alias key.
         var builder = QueryBuilder.CreateDefaultBuilder("Q")
             .AddField("Person user", subFields: new[] { "id" })
             .AddField("Person User:user", subFields: new[] { "name" });
 
-        var userField = builder.Definition.Fields["user"];
-        userField.Alias.Should().Be("User");
+        builder.Definition.Fields["user"].Alias.Should().BeNull();
+        builder.Definition.Fields.Values.Should().ContainSingle(f => f.Alias == "User");
+        builder.ToString().Should().Be("query Q{\n    user{\n        id\n    }\n    User:user{\n        name\n    }\n}");
     }
 
     [Fact]
@@ -2247,11 +2248,10 @@ public class QueryBuilderTests
     }
 
     [Fact]
-    public void AddField_NestedComplexPath_AliasAdoptedOnExistingChildField()
+    public void AddField_NestedComplexPath_AliasAfterUnaliasedChild_AddsAliasedSibling()
     {
-        // Routes through the FieldBuilder per-node path so FieldFactory.GetOrAddField(parent, ...)
-        // takes the FieldChildren variant of UpdateExistingField — exercises the alias-adoption
-        // branch on a previously-no-alias nested child.
+        // Routes through the FieldBuilder per-node path, so FieldFactory.GetOrAddField(parent, ...)
+        // takes the FieldChildren variant. The existing unaliased child keeps its response key.
         var builder = QueryBuilder.CreateDefaultBuilder("Q")
             .AddField("user", b =>
             {
@@ -2259,8 +2259,8 @@ public class QueryBuilderTests
                 b.AddField("Person Pro:profile", subFields: new[] { "email" });
             });
 
-        var profile = builder.Definition.Fields["user"].Fields["profile"];
-        profile.Alias.Should().Be("Pro");
+        builder.ToString().Should().Be(
+            "query Q{\n    user{\n        Pro:profile{\n            email\n        }\n        profile{\n            name\n        }\n    }\n}");
     }
 
     [Fact]

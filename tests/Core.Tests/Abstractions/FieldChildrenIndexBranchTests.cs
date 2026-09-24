@@ -67,17 +67,6 @@ public class FieldChildrenIndexBranchTests
     }
 
     [Fact]
-    public void Set_BySpanOnIndexedCollection_ReplacesInPlace()
-    {
-        var children = BuildIndexedChildren();
-
-        children.Set("field3".AsSpan(), new FieldDefinition("field3"));
-
-        children.Find("field3").Should().NotBeNull();
-        children.Count.Should().Be(AboveIndexThreshold);
-    }
-
-    [Fact]
     public void Set_ByKeyDifferingFromChildNameOnIndexedCollection_RepointsIndex()
     {
         var children = BuildIndexedChildren();

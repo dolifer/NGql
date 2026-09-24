@@ -19,6 +19,9 @@ internal static class QueryMerger
         QueryBuilder? queryBuilder,
         in QueryDefinition incomingQuery)
     {
+        // Checked before anything is merged, so a conflict leaves the target untouched.
+        ThrowOnVariableTypeConflict(targetDefinition, incomingQuery);
+
         // Named fragments are operation-scoped, not field-scoped: merge them even when the incoming
         // query declares nothing but fragments (an unusual but valid shape — the renderer emits
         // declared-but-unused fragment definitions).
@@ -73,6 +76,23 @@ internal static class QueryMerger
         FieldDefinitionExtensions.MergeSpreadNamesInto(ref target._spreadFragments, incoming._spreadFragments);
     }
 
+    private static void ThrowOnVariableTypeConflict(QueryDefinition targetDefinition, in QueryDefinition incomingQuery)
+    {
+        if (targetDefinition._variables is not { Count: > 0 } declared || incomingQuery._variables is not { Count: > 0 } incoming)
+        {
+            return;
+        }
+
+        foreach (var variable in incoming)
+        {
+            if (Helpers.FindTypeConflict(declared, variable) is { } existing)
+            {
+                throw new QueryMergeException(
+                    $"Cannot merge query '{incomingQuery.Name}': {Helpers.VariableTypeConflictMessage(existing, variable)}");
+            }
+        }
+    }
+
     private static void MergeVariables(QueryDefinition targetDefinition, in QueryDefinition incomingQuery)
     {
         var incomingVars = incomingQuery._variables;
@@ -114,8 +134,7 @@ internal static class QueryMerger
                     // field shares its Name) — resync the merge index by count on next use rather
                     // than tracking this path's insertions individually, since MergeByDefault
                     // never consults FindMergeTarget/the fingerprint index itself.
-                    FieldBuilder.Include(fields, incomingField);
-                    queryMap.SetMapping(queryName, originalFieldKey);
+                    queryMap.SetMapping(queryName, FieldBuilder.Include(fields, incomingField));
                     break;
 
                 case MergingStrategy.NeverMerge:

@@ -65,9 +65,12 @@ public sealed class FieldBuilder
     /// <exception cref="ArgumentNullException">Thrown when fieldDefinition is null.</exception>
     public FieldBuilder AddField(FieldDefinition fieldDefinition)
     {
+        ArgumentNullException.ThrowIfNull(fieldDefinition);
+        PromoteVariables(fieldDefinition._arguments);
         AddSubField(_fieldDefinition, fieldDefinition);
         return this;
     }
+
 
     /// <summary>
     /// Adds a field with nested subfields, optional arguments, and metadata to the builder.
@@ -424,6 +427,7 @@ public sealed class FieldBuilder
         string[]? subFields = null, Dictionary<string, object?>? metadata = null, Action<FieldBuilder>? action = null)
     {
         ValidateFieldNameSegments(fieldName.AsSpan());
+        PromoteVariables(arguments);
         var fieldType = type ?? Constants.DefaultFieldType;
         var field = FieldFactory.GetOrAddField(_fieldDefinition, fieldName, fieldType, arguments, _fieldDefinition.Path, metadata);
 
@@ -590,9 +594,9 @@ public sealed class FieldBuilder
     /// </summary>
     /// <param name="fields">Target field collection</param>
     /// <param name="fieldDefinition">Field definition to create/merge</param>
-    private static void RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    private static string RecursiveCreateField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
     {
-        var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition);
+        var parentField = FieldFactory.CreateOrMergeField(fields, fieldDefinition, out var key);
 
         // Carry over the incoming field's inline fragments, spreads, and directives (deep-cloned)
         // — CreateOrMergeField only copies name/type/alias/arguments/metadata, so without this the
@@ -615,6 +619,8 @@ public sealed class FieldBuilder
             // call) is now stale.
             parentField.ClearMergeMemo();
         }
+
+        return key;
     }
 
     private static void RecursiveCreateField(FieldChildren children, FieldDefinition fieldDefinition)
@@ -641,7 +647,8 @@ public sealed class FieldBuilder
         }
     }
 
-    internal static void Include(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    /// <summary>Merges <paramref name="fieldDefinition"/> into the root fields; returns the key it now lives under.</summary>
+    internal static string Include(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
         => RecursiveCreateField(fields, fieldDefinition);
 
     internal static void Include(FieldChildren children, FieldDefinition fieldDefinition)
@@ -659,6 +666,17 @@ public sealed class FieldBuilder
         // FieldDefinition._type is always set non-null by every constructor path.
         // _metadata, not Metadata: the public getter would attach an empty dictionary to every sub-field.
         FieldFactory.GetOrAddField(parent, fieldDefinition.Name, fieldDefinition._type!, fieldDefinition._arguments, parent.Path, fieldDefinition._metadata);
+    }
+
+    // Declares every Variable found in an argument value in the owning operation's signature, as
+    // QueryBuilder does for root-level arguments. Runs before the field changes, so a variable
+    // declared with a conflicting type throws without leaving a half-applied edit.
+    private void PromoteVariables(object? value)
+    {
+        if (value is not null && _variableOwner is not null)
+        {
+            Helpers.ExtractVariablesFromValue(value, _variableOwner.Variables);
+        }
     }
 
     private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
@@ -725,16 +743,11 @@ public sealed class FieldBuilder
     /// <returns>The current FieldBuilder instance for method chaining.</returns>
     public FieldBuilder Where(string key, object? value)
     {
-        // Ensure that _arguments exist (lazy initialization)
-        if (_fieldDefinition._arguments is null)
-        {
-            _fieldDefinition = _fieldDefinition with
-            {
-                _arguments = new(StringComparer.OrdinalIgnoreCase),
-                _deepArgumentFingerprint = null,
-                _subtreeHasAnyArguments = null,
-            };
-        }
+        PromoteVariables(value);
+
+        // Create the argument store on the field itself: replacing the field with a record copy
+        // would detach this builder from the tree whenever nothing writes the copy back.
+        _fieldDefinition._arguments ??= new(StringComparer.OrdinalIgnoreCase);
 
         // Determine the final value: merge dictionaries if both are dictionaries, otherwise set/override
         _fieldDefinition._arguments[key] = _fieldDefinition._arguments.TryGetValue(key, out var existingValue)
@@ -973,9 +986,9 @@ public sealed class FieldBuilder
             throw new ArgumentException("Directive name cannot consist only of '@' characters.", nameof(name));
         }
 
-        if (arguments?.Count > 0 && _variableOwner is not null)
+        if (arguments?.Count > 0)
         {
-            Helpers.ExtractVariablesFromValue(arguments, _variableOwner.Variables);
+            PromoteVariables(arguments);
         }
 
         _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
@@ -1029,16 +1042,14 @@ public sealed class FieldBuilder
                 nameof(condition));
         }
 
-        _fieldDefinition.AddDirective(ConditionalDirective(directiveName, condition));
-        InvalidateMergeMemoIfConditional(directiveName);
-
         // Same promotion path field-argument Variables already use (Helpers.ExtractVariablesFromValue
         // adds the Variable to the set, deduping via Variable's value equality) rather than a
-        // parallel mechanism.
-        if (_variableOwner is not null)
-        {
-            Helpers.ExtractVariablesFromValue(condition, _variableOwner.Variables);
-        }
+        // parallel mechanism. It runs first so a conflicting declaration throws before the
+        // directive is attached.
+        PromoteVariables(condition);
+
+        _fieldDefinition.AddDirective(ConditionalDirective(directiveName, condition));
+        InvalidateMergeMemoIfConditional(directiveName);
 
         return this;
     }

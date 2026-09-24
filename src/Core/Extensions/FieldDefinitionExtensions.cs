@@ -28,6 +28,19 @@ internal static class FieldDefinitionExtensions
     }
 
     /// <summary>
+    /// True when the default merging strategy may merge <paramref name="incoming"/> into
+    /// <paramref name="existing"/>: same name, the same <c>@include</c>/<c>@skip</c> state, and no
+    /// argument that both set to different values. An argument only one side sets is added, so a
+    /// fragment that only adds selections still merges into one that configures arguments. Aliases
+    /// are not compared: merging by path and remapping through <c>GetPathTo</c> is the strategy's
+    /// design. Children are not compared; merging them recurses with the same rule.
+    /// </summary>
+    internal static bool CanMergeByDefault(FieldDefinition existing, FieldDefinition incoming)
+        => string.Equals(existing.Name, incoming.Name, StringComparison.OrdinalIgnoreCase)
+            && !Helpers.HaveConflictingArguments(existing._arguments, incoming._arguments)
+            && AreConditionalDirectivesEqual(existing, incoming);
+
+    /// <summary>
     /// Compares the <c>@include</c>/<c>@skip</c> conditional state of two fields — the part of a
     /// field's directive list that is MERGE-IDENTITY-RELEVANT. Two fragments requesting the same
     /// field path under different runtime conditions (different <c>if</c> variables, or one

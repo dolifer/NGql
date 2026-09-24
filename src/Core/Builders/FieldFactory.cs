@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
+using NGql.Core.Features;
 using NGql.Core.Pooling;
 
 namespace NGql.Core.Builders;
@@ -198,6 +199,95 @@ internal static class FieldFactory
     }
 
     /// <summary>
+    /// Root counterpart of <see cref="FieldChildren.FindSegmentTarget"/>. Root fields are keyed by
+    /// name; a second field with the same name but a different response key is keyed by its alias.
+    /// Returns the field the segment addresses, or null with <paramref name="newKey"/> set to the key
+    /// a new field belongs under (<paramref name="nameText"/>, when given, is reused as that key).
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Rare fallback scan returning the first match; a plain loop allocates no enumerator.")]
+    internal static FieldDefinition? FindRootSegmentTarget(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> name, ReadOnlySpan<char> alias, bool isLastSegment, string? nameText, out string newKey)
+    {
+        newKey = null!;
+        if (!alias.IsEmpty)
+        {
+            // Keys compare case-insensitively, so the alias key can hit an unaliased field whose name
+            // merely matches the alias; only a field that carries the alias is this segment's target.
+            if (TryGetRootFieldBySpan(fields, alias, out var byAlias, out var aliasKey)
+                && alias.Equals(byAlias._alias.AsSpan(), StringComparison.OrdinalIgnoreCase)
+                && name.Equals(byAlias.Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return byAlias;
+            }
+
+            if (!TryGetRootFieldBySpan(fields, name, out var byName, out var nameKey))
+            {
+                newKey = nameText ?? nameKey;
+                return null;
+            }
+
+            if (alias.Equals(byName._alias.AsSpan(), StringComparison.OrdinalIgnoreCase)) return byName;
+            newKey = byAlias is null ? aliasKey : NextFreeKey(fields, alias.ToString());
+            return null;
+        }
+
+        if (!TryGetRootField(fields, name, ref nameText, out var field))
+        {
+            newKey = nameText!;
+            return null;
+        }
+
+        var isSameName = name.Equals(field.Name.AsSpan(), StringComparison.OrdinalIgnoreCase);
+        if (!isLastSegment || (isSameName && string.IsNullOrEmpty(field._alias))) return field;
+
+        // The last segment asks for the unaliased field, but its name key holds another field: an
+        // aliased one of the same name moves to its alias key (Dictionary reuses the freed entry, so
+        // enumeration order is unchanged); a different field aliased to this name keeps its key.
+        if (!isSameName)
+        {
+            // The name key belongs to a field aliased to this name, so a plain field with this name
+            // lives under a numbered key if it exists at all.
+            foreach (var candidate in fields.Values)
+            {
+                if (string.IsNullOrEmpty(candidate._alias) && name.Equals(candidate.Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                    return candidate;
+            }
+
+            newKey = NextFreeKey(fields, nameText ?? name.ToString());
+            return null;
+        }
+
+        newKey = nameText ?? name.ToString();
+        fields.Remove(newKey);
+        fields[fields.ContainsKey(field._alias!) ? NextFreeKey(fields, field._alias!) : field._alias!] = field;
+        return null;
+    }
+
+    // With the caller's string in hand, probe with it: a span probe materializes a key on a miss.
+    // On a miss nameText holds the key to store a new field under.
+    private static bool TryGetRootField(Dictionary<string, FieldDefinition> fields, ReadOnlySpan<char> name, ref string? nameText,
+        [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out FieldDefinition? field)
+    {
+        if (nameText is not null) return fields.TryGetValue(nameText, out field);
+
+        var found = TryGetRootFieldBySpan(fields, name, out field, out var key);
+        nameText = key;
+        return found;
+    }
+
+    /// <summary>
+    /// The key <paramref name="field"/> is stored under: normally its name; for a second field with
+    /// the same name, found by reference (its alias key, or a numbered one).
+    /// </summary>
+    internal static string RootKeyOf(Dictionary<string, FieldDefinition> fields, FieldDefinition field)
+        => ReferenceEquals(fields.GetValueOrDefault(field.Name), field) ? field.Name : KeyByReference(fields, field);
+
+    // Separate so the lambda's closure is allocated only on this rare path, not on every call.
+    private static string KeyByReference(Dictionary<string, FieldDefinition> fields, FieldDefinition field)
+        => fields.First(pair => ReferenceEquals(pair.Value, field)).Key;
+
+    /// <summary>
     /// Probes <paramref name="rootFields"/> (keyed <see cref="StringComparer.OrdinalIgnoreCase"/>) by
     /// span without allocating on .NET 9+, via
     /// <c>Dictionary&lt;TKey,TValue&gt;.GetAlternateLookup&lt;ReadOnlySpan&lt;char&gt;&gt;()</c>. On a
@@ -225,7 +315,8 @@ internal static class FieldFactory
     private static FieldDefinition GetOrCreateChildSegment(FieldDefinition parentField, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, string? fieldPathText, int pathStart, ReadOnlySpan<char> fieldType)
     {
         var children = parentField._children ??= new FieldChildren();
-        if (!children.TryGetValue(spanSegment.Name, out var field) || field is null)
+        var field = children.FindSegmentTarget(spanSegment.Name, ReadOnlySpan<char>.Empty, spanSegment.IsLastFragment);
+        if (field is null)
         {
             field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, fieldPathText, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
             children.Append(field);
@@ -438,26 +529,28 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition ProcessDottedSegment(FieldChildren children, ReadOnlySpan<char> segment, bool isLastSegment, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, ReadOnlySpan<char> segmentPath)
     {
-        if (!children.TryGetValue(segment, out var field))
+        var field = children.FindSegmentTarget(segment, ReadOnlySpan<char>.Empty, isLastSegment);
+        if (field is null)
         {
             field = CreateDottedSegmentField(segment, isLastSegment, fieldType, arguments, metadata, segmentPath);
             children.Append(field);
             return field;
         }
 
-        if (!isLastSegment) return PromoteIntermediateChildToObject(field!);
+        if (!isLastSegment) return PromoteIntermediateChildToObject(field);
         // FieldBuilder normalizes empty argument dictionaries to null upstream, so a
         // non-null `arguments` here always has Count > 0.
-        return arguments is null ? field! : MergeArgumentsIntoExistingChild(children, segment, field!, arguments);
+        return arguments is null ? field : MergeArgumentsIntoExistingChild(children, field, arguments);
     }
 
     // ProcessDottedFieldFastPath handles the args-null case before reaching here, and
     // FieldBuilder.Create normalizes empty argument dictionaries to null upstream — so by
     // the time we get here arguments is always a non-null dictionary with Count > 0.
-    private static FieldDefinition MergeArgumentsIntoExistingChild(FieldChildren children, ReadOnlySpan<char> segment, FieldDefinition existing, IDictionary<string, object?> arguments)
+    private static FieldDefinition MergeArgumentsIntoExistingChild(FieldChildren children, FieldDefinition existing, IDictionary<string, object?> arguments)
     {
         var merged = existing.MergeFieldArguments(arguments);
-        children.Set(segment, merged);
+        // By reference: existing was found by response key and may share its name with a sibling.
+        children.ReplaceReference(existing, merged);
         return merged;
     }
 
@@ -617,12 +710,10 @@ internal static class FieldFactory
     /// </summary>
     private static FieldDefinition ProcessFieldSegment(Dictionary<string, FieldDefinition> currentFields, SpanSegment segment, IDictionary<string, object?>? arguments, ReadOnlySpan<char> parsedFieldType, ReadOnlySpan<char> fullPath, Dictionary<string, object?>? metadata)
     {
-        if (!TryGetRootFieldBySpan(currentFields, segment.Name, out var field, out var segmentKey))
-        {
-            return CreateNewField(currentFields, segmentKey, segment, arguments, parsedFieldType, fullPath, metadata);
-        }
-
-        return UpdateExistingField(currentFields, segment, field, arguments, parsedFieldType);
+        var field = FindRootSegmentTarget(currentFields, segment.Name, segment.Alias, segment.IsLastFragment, null, out var key);
+        return field is null
+            ? CreateNewField(currentFields, key, segment, arguments, parsedFieldType, fullPath, metadata)
+            : UpdateExistingField(currentFields, segment, field, arguments, parsedFieldType);
     }
 
     /// <summary>
@@ -651,31 +742,7 @@ internal static class FieldFactory
     /// must still resolve to that one node, never fork a duplicate.
     /// </summary>
     private static FieldDefinition? FindExistingSegmentChild(FieldChildren children, SpanSegment segment)
-    {
-        var candidate = children.Find(segment.Name);
-        if (candidate is null) return null;
-        if (!segment.IsLastFragment) return candidate;
-
-        if (SegmentAliasMatches(segment, candidate)) return candidate;
-
-        foreach (var f in children.AsSpan())
-        {
-            if (f.Name.AsSpan().Equals(segment.Name, StringComparison.OrdinalIgnoreCase) && SegmentAliasMatches(segment, f))
-                return f;
-        }
-        return null;
-    }
-
-    // An existing child with NO alias yet always matches — it hasn't picked a response-key identity
-    // yet, so this segment either confirms the unaliased identity or (via ApplyIntermediateUpdates)
-    // adopts an incoming alias onto it, exactly like the FIRST time any alias is set on a field.
-    // Once a child HAS an alias, a segment only matches it when the aliases agree — a same-named
-    // segment carrying a DIFFERENT (or absent) alias is a distinct sibling, not the same field.
-    private static bool SegmentAliasMatches(SpanSegment segment, FieldDefinition field)
-        => field._alias is null
-            || (segment.HasAlias
-                ? segment.Alias.Equals(field._alias.AsSpan(), StringComparison.Ordinal)
-                : string.IsNullOrEmpty(field._alias));
+        => children.FindSegmentTarget(segment.Name, segment.Alias, segment.IsLastFragment);
 
     /// <summary>
     /// Creates a new field for complex field processing — root-Dict variant. <paramref name="segmentKey"/>
@@ -727,7 +794,7 @@ internal static class FieldFactory
             // field was found via a case-insensitive lookup keyed by this exact string (set at
             // insertion time in CreateNewField), so reusing it here — rather than re-materializing
             // segment.Name — both avoids a second allocation and targets the correct existing slot.
-            var fieldKey = field.Name;
+            var fieldKey = RootKeyOf(currentFields, field);
             field = currentFields[fieldKey] = field.MergeFieldArguments(arguments);
         }
         ApplyParsedFieldType(field, parsedFieldType);
@@ -754,11 +821,6 @@ internal static class FieldFactory
     // segment is the last fragment and the caller should continue with last-fragment updates.
     private static bool ApplyIntermediateUpdates(SpanSegment segment, FieldDefinition field)
     {
-        // segment.HasAlias <=> !Alias.IsEmpty by SpanSegment's invariant.
-        if (segment.HasAlias && field._alias is null)
-        {
-            field._alias = segment.Alias.ToString();
-        }
         if (!segment.IsLastFragment && field.ShouldConvertToObjectType())
         {
             field._type = Constants.ObjectFieldType;
@@ -776,54 +838,128 @@ internal static class FieldFactory
     }
 
     /// <summary>
-    /// Creates or merges a field definition into the target collection — root-Dict variant.
+    /// Merges <paramref name="fieldDefinition"/> into the root fields (the default merging strategy).
+    /// It merges into an existing field when the two can merge
+    /// (<see cref="FieldDefinitionExtensions.CanMergeByDefault"/>), preferring one with the same
+    /// alias; at the root a differently aliased field of the same name also qualifies, because
+    /// fragments tag their root with their query name and <c>GetPathTo</c> maps the merge. Otherwise a copy is added under its name key, or its alias key, or an auto-aliased key
+    /// (<c>users_1</c>) when both are taken, so no fragment receives another fragment's argument
+    /// values. <paramref name="key"/> is where the field ended up.
     /// </summary>
-    internal static FieldDefinition CreateOrMergeField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition)
+    internal static FieldDefinition CreateOrMergeField(Dictionary<string, FieldDefinition> fields, FieldDefinition fieldDefinition, out string key)
     {
-        // Try to find existing field to merge with
-        var existingField = Helpers.FindExistingField(fields, fieldDefinition);
-        if (existingField != null)
+        var target = FindMergeTarget(fields, fieldDefinition, sameAliasOnly: true, out key)
+            ?? FindMergeTarget(fields, fieldDefinition, sameAliasOnly: false, out key);
+        if (target is not null)
         {
-            var mergedField = existingField.MergeFieldArguments(fieldDefinition._arguments);
-            fields[existingField.Name] = mergedField;
-            return mergedField;
+            var merged = target.MergeFieldArguments(fieldDefinition._arguments);
+            if (!ReferenceEquals(merged, target)) fields[key] = merged;
+            return merged;
         }
 
         var newField = CloneFieldDefinitionForMerge(fieldDefinition);
-        fields[fieldDefinition.Name] = newField;
+        key = newField.Name;
+        if (fields.ContainsKey(key))
+        {
+            key = !string.IsNullOrEmpty(newField._alias) && !IsResponseKeyTaken(fields, newField._alias)
+                ? newField._alias
+                : NextFreeKey(fields, newField._effectiveName);
+            newField._alias = key;
+        }
+
+        fields[key] = newField;
         return newField;
     }
 
     /// <summary>
-    /// Creates or merges a field definition into the target collection — FieldChildren variant.
+    /// Nested counterpart of <see cref="CreateOrMergeField(Dictionary{string, FieldDefinition}, FieldDefinition, out string)"/>.
+    /// Below the root, siblings with the same name and different aliases are distinct response
+    /// keys, so only a field with the same alias is a merge target.
     /// </summary>
     internal static FieldDefinition CreateOrMergeField(FieldChildren children, FieldDefinition fieldDefinition)
     {
-        var existingField = Helpers.FindExistingField(children, fieldDefinition);
-        if (existingField != null)
+        var target = FindMergeTarget(children.AsSpan(), fieldDefinition);
+        if (target is not null)
         {
-            var mergedField = existingField.MergeFieldArguments(fieldDefinition._arguments);
-            // Replace by REFERENCE, not by name: existingField was matched by (Name, alias) above,
-            // and a name-keyed replace could instead overwrite a different same-named sibling that
-            // carries a different alias (see FieldChildren.ReplaceReference).
-            children.ReplaceReference(existingField, mergedField);
-            return mergedField;
+            var merged = target.MergeFieldArguments(fieldDefinition._arguments);
+            // By reference: a same-named sibling with another alias must stay untouched.
+            if (!ReferenceEquals(merged, target)) children.ReplaceReference(target, merged);
+            return merged;
         }
 
         var newField = CloneFieldDefinitionForMerge(fieldDefinition);
+        if (children.FindByResponseKey(newField._effectiveName) is not null)
+        {
+            newField._alias = KeyGenerator.GenerateUniqueKey(newField._effectiveName, children.AsSpan());
+        }
+
         children.Append(newField);
         return newField;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Returns the first match with its key; a plain loop allocates no enumerator.")]
+    private static FieldDefinition? FindMergeTarget(Dictionary<string, FieldDefinition> fields, FieldDefinition incoming, bool sameAliasOnly, out string key)
+    {
+        foreach (var (existingKey, existing) in fields)
+        {
+            if ((!sameAliasOnly || HasSameAlias(existing, incoming)) && FieldDefinitionExtensions.CanMergeByDefault(existing, incoming))
+            {
+                key = existingKey;
+                return existing;
+            }
+        }
+
+        key = null!;
+        return null;
+    }
+
+    private static FieldDefinition? FindMergeTarget(ReadOnlySpan<FieldDefinition> children, FieldDefinition incoming)
+    {
+        foreach (var existing in children)
+        {
+            if (HasSameAlias(existing, incoming) && FieldDefinitionExtensions.CanMergeByDefault(existing, incoming))
+                return existing;
+        }
+        return null;
+    }
+
+    private static bool HasSameAlias(FieldDefinition existing, FieldDefinition incoming)
+        => string.Equals(existing._alias ?? string.Empty, incoming._alias ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    // A key or response key no root field uses yet: baseKey_1, baseKey_2, …
+    private static string NextFreeKey(Dictionary<string, FieldDefinition> fields, string baseKey)
+    {
+        var suffix = 1;
+        while (IsResponseKeyTaken(fields, $"{baseKey}_{suffix}")) suffix++;
+        return $"{baseKey}_{suffix}";
+    }
+
+    // Root aliased fields are keyed by name, so a free key does not prove the response key is free.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Runs only when a merge needs a new key; a plain loop allocates no enumerator.")]
+    private static bool IsResponseKeyTaken(Dictionary<string, FieldDefinition> fields, string responseKey)
+    {
+        if (fields.ContainsKey(responseKey)) return true;
+        foreach (var field in fields.Values)
+        {
+            if (string.Equals(field._effectiveName, responseKey, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
     private static FieldDefinition CloneFieldDefinitionForMerge(FieldDefinition fieldDefinition)
     {
-        return Helpers.CreateFieldDefinition(
+        var clone = Helpers.CreateFieldDefinition(
             fieldDefinition.Name,
             fieldDefinition._type.AsSpan(),
             fieldDefinition._alias,
             fieldDefinition._arguments,
             fieldDefinition.Path,
             fieldDefinition._metadata);
+        return clone;
     }
 
     private static void ExtractDottedSegment(ReadOnlySpan<char> fieldPath, int pathStart, out SpanSegment segment, out int nextStart)

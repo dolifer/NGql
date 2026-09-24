@@ -63,6 +63,10 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     private Dictionary<string, int>? _index;
     private readonly object _lock = new();
 
+    // Set once any child carries an alias, and never cleared. Until then every child's response
+    // key is its name, so response-key lookups can use the name lookup instead of scanning.
+    private volatile bool _hasAliasedChild;
+
     // ── Counts ────────────────────────────────────────────────────────────────
 
     int IReadOnlyCollection<KeyValuePair<string, FieldDefinition>>.Count => Volatile.Read(ref _count);
@@ -130,6 +134,49 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
         }
     }
 
+    /// <summary>
+    /// Finds the child that answers to <paramref name="responseKey"/> in a GraphQL response: its
+    /// alias, or its name when it has none (case-insensitive, like name lookups). A child named
+    /// <paramref name="responseKey"/> but aliased to something else does not match.
+    /// </summary>
+    internal FieldDefinition? FindByResponseKey(ReadOnlySpan<char> responseKey)
+    {
+        if (!_hasAliasedChild)
+        {
+            return Find(responseKey);
+        }
+
+        foreach (var child in AsSpan())
+        {
+            if (responseKey.Equals(child._effectiveName.AsSpan(), StringComparison.OrdinalIgnoreCase))
+                return child;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves one segment of a field path among these children: the child with this name that
+    /// answers to the segment's response key (its alias, or its name when it has none). An alias
+    /// is never written onto an existing child. A bare segment that is not the last one falls back
+    /// to a same-named aliased child, so <c>profile.email</c> after <c>p:profile.name</c> extends
+    /// the one <c>profile</c> node. Returns null when a new child should be created.
+    /// </summary>
+    internal FieldDefinition? FindSegmentTarget(ReadOnlySpan<char> name, ReadOnlySpan<char> alias, bool isLastSegment)
+    {
+        var field = FindByResponseKey(alias.IsEmpty ? name : alias);
+        if (field is not null && name.Equals(field.Name.AsSpan(), StringComparison.OrdinalIgnoreCase))
+        {
+            return field;
+        }
+
+        return alias.IsEmpty && !isLastSegment ? Find(name) : null;
+    }
+
+    private void NoteAlias(FieldDefinition child)
+    {
+        if (!string.IsNullOrEmpty(child._alias)) _hasAliasedChild = true;
+    }
+
     internal bool TryGetValue(ReadOnlySpan<char> name, [MaybeNullWhen(false)] out FieldDefinition value)
     {
         value = Find(name)!;
@@ -176,6 +223,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         lock (_lock)
         {
+            NoteAlias(child);
             var items = _items;
             if (items != null)
             {
@@ -201,34 +249,6 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
                 }
             }
             AppendLocked(child);
-        }
-    }
-
-    /// <summary>
-    /// Replaces an existing child by span name (case-insensitive). The only call site —
-    /// <c>FieldFactory.ProcessDottedSegment</c> — invokes this strictly after a successful
-    /// <see cref="TryGetValue(ReadOnlySpan{char},out FieldDefinition)"/>, so the entry is
-    /// guaranteed to exist; below the index threshold the loop simply walks to the position of
-    /// the known match, and once indexed the index resolves that position directly.
-    /// </summary>
-    internal void Set(ReadOnlySpan<char> name, FieldDefinition child)
-    {
-        lock (_lock)
-        {
-            var items = _items!;
-            if (_index != null)
-            {
-                // Documented precondition (see method summary): name is guaranteed to already be a
-                // key, so the slot lookup itself never allocates a fallback string.
-                TryGetIndexSlot(name, out var slot);
-                items[slot] = child;
-                UpdateIndexKeyLocked(name, child.Name, slot);
-                return;
-            }
-
-            int i = 0;
-            while (!name.Equals(items[i].Name.AsSpan(), StringComparison.OrdinalIgnoreCase)) i++;
-            items[i] = child;
         }
     }
 
@@ -304,6 +324,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     {
         lock (_lock)
         {
+            NoteAlias(newChild);
             var items = _items!;
 
             if (_index != null && _index.TryGetValue(oldChild.Name, out var hintSlot)
@@ -343,6 +364,7 @@ internal sealed class FieldChildren : IReadOnlyDictionary<string, FieldDefinitio
     /// </summary>
     private void AppendLocked(FieldDefinition child)
     {
+        NoteAlias(child);
         var items = _items;
         if (items == null)
         {
