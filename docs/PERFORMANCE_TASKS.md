@@ -16,24 +16,24 @@ check and a measured result before it is closed.
   figures need to be regenerated; the original lived in the git-ignored `artifacts/` folder and
   was deleted by `make clean`.
 
-## Measured and deferred
+## Measured and not planned
 
-These were measured during the post-2.2.0 pass and left out on purpose. Each needs a design
-decision before it is worth doing.
+Measured during the post-2.2.0 pass. Each would change public behavior or trade memory for
+speed, so none is planned while the public API and its observable behavior must stay as they are.
 
-- [ ] **Cache the sorted child order per node.** Sorting dominates rendering wide selections:
-  500 fields take 20–30 µs to sort with any comparer (ordinal, case-insensitive, or a hand-written
-  ASCII loop), and introsort does not detect already-sorted input (18 µs). A cached order would
-  make repeated `ToString()` calls several times faster, but every mutation path (append, set,
-  in-place merge, alias changes) must invalidate it, and root fields live in a plain `Dictionary`
-  that many internal sites mutate directly.
-- [ ] **Replace `SortedDictionary` as field-argument storage.** A sorted-array map measured
-  60–70% less memory and about 2× faster for one field's argument lifecycle (1–8 arguments), or
-  roughly 10% of bytes on argument-heavy queries. It cannot be a plain swap: the public
-  `FieldDefinition` constructor keeps the caller's `SortedDictionary` (later changes to it, and
-  `Where()` writes, are shared), and `Arguments` returns that live instance. A compatible version
-  must switch storage back to `SortedDictionary` on the first public read, handle both forms at
-  every internal site, and audit the record `with` copies that share argument storage.
-- [ ] **Drop the per-collection lock object in `FieldChildren`** (24 B per node with children,
-  2–6% of build allocation on nested shapes). Locking on the instance instead is safe internally,
-  but the collection is reachable from user code through `FieldDefinition.Fields`.
+- **Cache the sorted child order per node.** Sorting dominates rendering wide selections: 500
+  fields take 20–30 µs with any comparer (ordinal, case-insensitive, or a hand-written ASCII
+  loop), and introsort does not detect already-sorted input (18 µs). Sorting children in place
+  would change the order `FieldDefinition.Fields` and `QueryDefinition.Fields` enumerate in, and
+  which same-named sibling internal lookups find first. A separate cached array keeps both but
+  adds an allocation to every first render (the common build-once, render-once pattern) and
+  retained memory to held queries, and every mutation path would have to invalidate it.
+- **Replace `SortedDictionary` as field-argument storage.** A sorted-array map measured 60–70%
+  less memory and about 2× faster for one field's argument lifecycle (1–8 arguments), roughly 10%
+  of bytes on argument-heavy queries. The public `FieldDefinition` constructor keeps the caller's
+  `SortedDictionary` (later changes to it, and `Where()` writes, are shared) and `Arguments`
+  returns that live instance, so a swap changes observable behavior. A compatible version would
+  switch storage back on the first public read and handle both forms at every internal site.
+- **Drop the per-collection lock object in `FieldChildren`** (24 B per node with children, 2–6% of
+  build allocation on nested shapes). Locking on the instance would contend with any user code
+  that locks on the collection returned by `FieldDefinition.Fields`.

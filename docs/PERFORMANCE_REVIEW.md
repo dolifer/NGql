@@ -8,7 +8,7 @@ A later pass on top of the 2.2.0 release is described in [Since 2.2.0](#since-22
 
 ## Since 2.2.0
 
-Branch `perf/post-2.2-pass` (`875f64f`…`8d52c0e`), compared with the `2.2.0` tag, whose
+Branch `perf/post-2.2-pass` (`875f64f`…`8e1d19a`), compared with the `2.2.0` tag, whose
 `src/Core` is identical to `main` at `bcf3b21`. Public signatures, rendered output,
 collection-sharing behavior and the argument key-collision rules are unchanged. One bug was
 fixed along the way (see below).
@@ -16,7 +16,9 @@ fixed along the way (see below).
 ### Release benchmark
 
 `VersionComparisonBenchmark`, in-process job (three warmups, five iterations), .NET 9.0.9,
-Apple M4, 2026-09-24. The 2.2.0 build ran first, the branch a few hours later on the same host;
+Apple M4, 2026-09-24, measured at `8d52c0e`. The vectorized scans in `8e1d19a` came later; in a
+short job against `8d52c0e` they took 200 dotted-path builds from 39.3 to 32.5 µs and the
+simple query from 347 to 324 ns, with unchanged allocation. The 2.2.0 build ran first, the branch a few hours later on the same host;
 the runs were not interleaved, so treat single-digit time changes as approximate. Bytes are
 exact. "Intervals" compares the 99.9% confidence intervals.
 
@@ -92,6 +94,7 @@ O(n), so they were quadratic. `RootsWithArguments` also no longer builds a throw
 | Classic blocks create their argument dictionary and variable set on first use (the public getters still return the live collections), sort field lists with a pooled stable sort instead of LINQ `OrderBy`, and skip enumerating empty sub-query variable sets | `QueryBlock` |
 | `IncludeIf`/`SkipIf` build their normalized arguments directly | `FieldBuilder` |
 | The merge index dropped two sets that duplicated existing data (names with built buckets; every root key) and creates its suffix counters on the first collision | `FieldMergeIndex` |
+| Path classification, field-name validation and string-escape detection use vectorized `IndexOfAny` / `SearchValues` searches instead of per-character loops (12–15× faster per check; a dotted `AddField` classifies its path up to three times) | `SpanExtensions`, `Helpers`, `ValueFormatter` |
 
 ### Fixed along the way
 
@@ -108,11 +111,12 @@ n such roots O(n²). Regression tests: `RootFieldCaseInsensitiveLookupTests`.
   no gain. The sampler misattributes on macOS arm64; confirm its findings with a benchmark
   before acting on them.
 - **Caching the sorted order, replacing argument storage, dropping the `FieldChildren` lock
-  object:** see [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md#measured-and-deferred).
+  object:** each changes public behavior or trades memory for speed; see
+  [PERFORMANCE_TASKS.md](PERFORMANCE_TASKS.md#measured-and-not-planned).
 
 ### Validation
 
-2,339 unit tests, 92 integration tests and 76 tool tests pass on each of .NET 8, 9 and 10, with
+2,344 unit tests, 92 integration tests and 76 tool tests pass on each of .NET 8, 9 and 10, with
 100% line and branch coverage (`make coverage`). New regression tests cover the root-case bug,
 argument collision rules on both dictionary sizes, shared-string identity, the lazy collections
 (including live-view getters), list ordering against LINQ `OrderBy` on 200 random mixed lists,
