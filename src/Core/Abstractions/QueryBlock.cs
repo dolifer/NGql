@@ -12,8 +12,9 @@ namespace NGql.Core.Abstractions;
 public sealed class QueryBlock
 {
     private readonly string _prefix;
-    private readonly SortedDictionary<string, object> _arguments;
-    private readonly SortedSet<Variable> _variables;
+    // Most blocks carry no arguments or variables, so both collections are created on first use.
+    private SortedDictionary<string, object>? _arguments;
+    private SortedSet<Variable>? _variables;
     private readonly List<object> _fieldsList;
 
     /// <summary>
@@ -24,28 +25,33 @@ public sealed class QueryBlock
     /// <summary>
     /// The collection of arguments related to <see cref="FieldsList"/>.
     /// </summary>
-    public IReadOnlyDictionary<string, object> Arguments => _arguments;
+    public IReadOnlyDictionary<string, object> Arguments => ArgumentsInternal;
 
     // Arguments are never removed, so while exactly one exists it is the first key written, in
     // its original casing. Rendering reads it directly: enumerating a SortedDictionary allocates
     // a traversal stack, and doing so through the interface also boxes the enumerator.
     private string? _firstArgumentKey;
 
-    internal SortedDictionary<string, object> ArgumentsInternal => _arguments;
+    internal SortedDictionary<string, object> ArgumentsInternal
+        => _arguments ??= new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
-    internal SortedSet<Variable> VariablesInternal => _variables;
+    internal SortedSet<Variable> VariablesInternal => _variables ??= [];
+
+    internal int ArgumentCount => _arguments?.Count ?? 0;
+
+    internal int VariableCount => _variables?.Count ?? 0;
 
     internal bool TryGetSingleArgument([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? key, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out object? value)
     {
         key = _firstArgumentKey;
         value = null;
-        return _arguments.Count == 1 && key is not null && _arguments.TryGetValue(key, out value);
+        return ArgumentCount == 1 && key is not null && _arguments!.TryGetValue(key, out value);
     }
 
     /// <summary>
     /// The collection of variables related to <see cref="FieldsList"/> or <see cref="Arguments"/>.
     /// </summary>
-    public IReadOnlyCollection<Variable> Variables => _variables;
+    public IReadOnlyCollection<Variable> Variables => VariablesInternal;
 
     /// <summary>
     /// The Query name.
@@ -167,9 +173,9 @@ public sealed class QueryBlock
 
         foreach (var (key, sortedValue) in staged)
         {
-            Helpers.ExtractVariablesFromValue(sortedValue, _variables);
-            if (_arguments.Count == 0) _firstArgumentKey = key;
-            _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
+            Helpers.ExtractVariablesFromValue(sortedValue, VariablesInternal);
+            if (ArgumentCount == 0) _firstArgumentKey = key;
+            ArgumentsInternal[key] = sortedValue!; // SortArgumentValue preserves non-null input
         }
     }
 
@@ -212,8 +218,7 @@ public sealed class QueryBlock
         Alias = alias;
 
         _fieldsList = new List<object>();
-        _variables = variables is null ? [] : [.. variables.DistinctBy(x => x.Name)];
-        _arguments = new SortedDictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        _variables = variables is { Length: > 0 } ? [.. variables.DistinctBy(x => x.Name)] : null;
     }
 
     public override string ToString()
@@ -313,9 +318,14 @@ public sealed class QueryBlock
 
     private void AddSubQuery(QueryBlock subQuery)
     {
-        foreach (var variable in subQuery.Variables)
+        // Enumerating a SortedSet allocates its traversal stack, and through the interface also
+        // boxes the enumerator; most sub-queries declare no variables.
+        if (subQuery._variables is { Count: > 0 } subQueryVariables)
         {
-            _variables.Add(variable);
+            foreach (var variable in subQueryVariables)
+            {
+                VariablesInternal.Add(variable);
+            }
         }
         _fieldsList.Add(subQuery);
     }
@@ -339,24 +349,48 @@ public sealed class QueryBlock
 
     private void AddListItems(IList list)
     {
-        var sortedItems = list.Cast<object>()
-            .OrderBy(x => x switch
-            {
-                string s => s,
-                QueryBlock q => q.Name,
-                _ => x.ToString()
-            })
-            .ToList();
-
-        foreach (var item in sortedItems)
+        // A stable sort by name with the default string comparer: the order LINQ OrderBy produced,
+        // without its iterator, sorter and key buffers.
+        var count = list.Count;
+        var entries = ArrayPool<(string? Key, int Index, object Item)>.Shared.Rent(count);
+        try
         {
-            HandleAddField(item);
+            for (var i = 0; i < count; i++)
+            {
+                var item = list[i]!;
+                entries[i] = (ListSortKey(item), i, item);
+            }
+            entries.AsSpan(0, count).Sort(ListItemComparer);
+
+            for (var i = 0; i < count; i++)
+            {
+                HandleAddField(entries[i].Item);
+            }
+        }
+        finally
+        {
+            Array.Clear(entries, 0, count);
+            ArrayPool<(string? Key, int Index, object Item)>.Shared.Return(entries);
         }
     }
 
+    private static string? ListSortKey(object item) => item switch
+    {
+        string s => s,
+        QueryBlock q => q.Name,
+        _ => item.ToString()
+    };
+
+    private static readonly Comparison<(string? Key, int Index, object Item)> ListItemComparer =
+        static (a, b) =>
+        {
+            var keyComparison = Comparer<string?>.Default.Compare(a.Key, b.Key);
+            return keyComparison != 0 ? keyComparison : a.Index.CompareTo(b.Index);
+        };
+
     private void HandleAddVariable(Variable variable)
     {
-        _variables.Add(variable);
+        VariablesInternal.Add(variable);
     }
 
     private void HandleAddArgument(string key, object value)
@@ -377,10 +411,10 @@ public sealed class QueryBlock
                 nameof(key));
         }
 
-        Helpers.ExtractVariablesFromValue(value, _variables);
+        Helpers.ExtractVariablesFromValue(value, VariablesInternal);
         var sortedValue = Helpers.SortArgumentValue(value);
-        if (_arguments.Count == 0) _firstArgumentKey = key;
-        _arguments[key] = sortedValue!; // SortArgumentValue preserves non-null input
+        if (ArgumentCount == 0) _firstArgumentKey = key;
+        ArgumentsInternal[key] = sortedValue!; // SortArgumentValue preserves non-null input
     }
 
     /// <summary>
@@ -393,7 +427,7 @@ public sealed class QueryBlock
         Justification = "Plain foreach over SortedDictionary.Keys short-circuits on the exact match without allocating a closure.")]
     private bool CollidesByCase(string key)
     {
-        if (!_arguments.ContainsKey(key)) return false;
+        if (_arguments is null || !_arguments.ContainsKey(key)) return false;
 
         foreach (var storedKey in _arguments.Keys)
         {

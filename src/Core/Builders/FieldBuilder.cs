@@ -987,6 +987,14 @@ public sealed class FieldBuilder
     // argument. The variable is normalized so callers may pass the name with or without the
     // leading `$`; it is always rendered with a single `$`. Does NOT promote — see the string
     // overloads' XML doc remarks for why.
+    // The normalized form FieldDirective's constructor would produce from { ["if"] = condition },
+    // built directly instead of from a temporary dictionary.
+    private static FieldDirective ConditionalDirective(string directiveName, Variable condition)
+        => new(directiveName)
+        {
+            Arguments = new SortedDictionary<string, object?>(StringComparer.OrdinalIgnoreCase) { ["if"] = condition },
+        };
+
     private FieldBuilder AddIfDirective(string directiveName, string ifVariable)
     {
         if (string.IsNullOrWhiteSpace(ifVariable))
@@ -1001,12 +1009,8 @@ public sealed class FieldBuilder
         {
             throw new ArgumentException("Directive variable must contain a name after the '$'.", nameof(ifVariable));
         }
-        var name = "$" + bareName;
-        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["if"] = new Variable(name, "Boolean!"),
-        };
-        _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+        var name = bareName.Length == ifVariable.Length - 1 ? ifVariable : "$" + bareName;
+        _fieldDefinition.AddDirective(ConditionalDirective(directiveName, new Variable(name, "Boolean!")));
         InvalidateMergeMemoIfConditional(directiveName);
         return this;
     }
@@ -1025,11 +1029,7 @@ public sealed class FieldBuilder
                 nameof(condition));
         }
 
-        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            ["if"] = condition,
-        };
-        _fieldDefinition.AddDirective(new FieldDirective(directiveName, arguments));
+        _fieldDefinition.AddDirective(ConditionalDirective(directiveName, condition));
         InvalidateMergeMemoIfConditional(directiveName);
 
         // Same promotion path field-argument Variables already use (Helpers.ExtractVariablesFromValue

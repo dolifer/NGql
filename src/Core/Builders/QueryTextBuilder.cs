@@ -679,24 +679,17 @@ internal sealed class QueryTextBuilder
             _stringBuilder.Append(directive.Name);
 
             var arguments = directive.Arguments;
-            if (arguments is { Count: > 0 })
+            if (arguments is not { Count: > 0 }) continue;
+
+            // FieldDirective's constructor normalizes arguments into a SortedDictionary; a record
+            // initializer can still supply any dictionary.
+            if (arguments is SortedDictionary<string, object?> sorted)
             {
-                _stringBuilder.Append('(');
-                bool first = true;
-                foreach (var (key, value) in arguments)
-                {
-                    if (!first)
-                    {
-                        _stringBuilder.Append(", ");
-                    }
-
-                    first = false;
-                    _stringBuilder.Append(key);
-                    _stringBuilder.Append(':');
-                    WriteObject(_stringBuilder, value);
-                }
-
-                _stringBuilder.Append(')');
+                WriteEntries(_stringBuilder, '(', ')', sorted.GetEnumerator());
+            }
+            else
+            {
+                WriteEntries(_stringBuilder, '(', ')', arguments.GetEnumerator());
             }
         }
     }
@@ -878,20 +871,20 @@ internal sealed class QueryTextBuilder
 
     private void AddArguments(QueryBlock queryBlock, bool isRootElement)
     {
-        if (queryBlock.Arguments.Count == 0 && (!isRootElement || queryBlock.Variables.Count == 0))
+        if (queryBlock.ArgumentCount == 0 && (!isRootElement || queryBlock.VariableCount == 0))
         {
             return;
         }
 
         _stringBuilder.Append('(');
-        if ((!isRootElement || queryBlock.Variables.Count == 0) && queryBlock.TryGetSingleArgument(out var singleKey, out var singleValue))
+        if ((!isRootElement || queryBlock.VariableCount == 0) && queryBlock.TryGetSingleArgument(out var singleKey, out var singleValue))
         {
             AppendArgument(singleKey, singleValue, isRootElement);
             _stringBuilder.Append(')');
             return;
         }
 
-        if (isRootElement && queryBlock.Arguments.Count == 0 && queryBlock.Variables.Count == 1)
+        if (isRootElement && queryBlock.ArgumentCount == 0 && queryBlock.VariableCount == 1)
         {
             var variable = queryBlock.VariablesInternal.Min!;
             variable.Print(_stringBuilder, variable.Name, true);
@@ -899,8 +892,8 @@ internal sealed class QueryTextBuilder
             return;
         }
 
-        var explicitCount = queryBlock.Arguments.Count;
-        var count = explicitCount + (isRootElement ? queryBlock.Variables.Count : 0);
+        var explicitCount = queryBlock.ArgumentCount;
+        var count = explicitCount + (isRootElement ? queryBlock.VariableCount : 0);
         var entries = ArrayPool<ArgumentEntry>.Shared.Rent(count);
         try
         {
