@@ -38,10 +38,6 @@ internal sealed class FieldMergeIndex
     // assumed away.
     private readonly Dictionary<string, Dictionary<ulong, List<string>>> _byNameFingerprint = new(StringComparer.OrdinalIgnoreCase);
 
-    // Names whose fingerprint sub-buckets have been built at least once, so a second call for the
-    // same name during the same synced generation reuses them instead of rebuilding.
-    private readonly HashSet<string> _fingerprintBucketsBuilt = new(StringComparer.OrdinalIgnoreCase);
-
     // Name (OrdinalIgnoreCase) -> key -> the fingerprint that key is CURRENTLY bucketed under in
     // _byNameFingerprint[name]. Reverse index of the same data _byNameFingerprint holds forward,
     // maintained in lock-step everywhere a key's bucket membership changes (build, IndexAdd,
@@ -52,11 +48,9 @@ internal sealed class FieldMergeIndex
     // cost O(bucket count) each time, i.e. O(N) per merge / O(N^2) over a chain of N Includes.
     private readonly Dictionary<string, Dictionary<string, ulong>> _keyFingerprint = new(StringComparer.OrdinalIgnoreCase);
 
-    // Every key currently in the root dictionary, plus a per-base-name suffix counter — backs
-    // KeyGenerator.GenerateUniqueKey(FieldMergeIndex, ...) so it can produce the next unique key
-    // directly instead of rebuilding a HashSet from fields.Keys on every call.
-    private readonly HashSet<string> _allKeys = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, int> _suffixCounters = new(StringComparer.OrdinalIgnoreCase);
+    // Per-base-name suffix counter backing NextUniqueKey, so the next unique key is found without
+    // re-probing every suffix already handed out. Created on the first key collision.
+    private Dictionary<string, int>? _suffixCounters;
 
     // Snapshot of the root dictionary's Count as of the last time this index was known to be
     // fully consistent with it. Compared against the live Count on every read — an O(1) staleness
@@ -78,20 +72,17 @@ internal sealed class FieldMergeIndex
     public void IndexAdd(string key, FieldDefinition field)
     {
         GetOrCreateBucket(field.Name).Add(key);
-        _allKeys.Add(key);
         _syncedCount++;
 
         // Only append to a name's fingerprint sub-buckets if they have already been built for this
         // name (i.e. GetMergeCandidatesByFingerprint has been called for it before) — otherwise
         // leave it to the lazy build, which will pick this key up from _byName along with every
-        // other key for that name the first time it is needed. _fingerprintBucketsBuilt and
-        // _byNameFingerprint entries are always created together (see EnsureFingerprintBucketsBuilt),
-        // so the outer dictionary lookup below is guaranteed to hit.
-        if (_fingerprintBucketsBuilt.Contains(field.Name))
+        // other key for that name the first time it is needed.
+        if (_byNameFingerprint.TryGetValue(field.Name, out var byFingerprint))
         {
             field.EnsureMergeMemoTracker().Attach(_memoScope);
             var fingerprint = FieldDefinitionExtensions.ComputeDeepFingerprint(field);
-            GetOrCreateFingerprintBucket(_byNameFingerprint[field.Name], fingerprint).Add(key);
+            GetOrCreateFingerprintBucket(byFingerprint, fingerprint).Add(key);
             SetKeyFingerprint(field.Name, key, fingerprint);
         }
     }
@@ -252,19 +243,19 @@ internal sealed class FieldMergeIndex
         if (liveEpoch == _syncedMergeMemoEpoch) return;
 
         _byNameFingerprint.Clear();
-        _fingerprintBucketsBuilt.Clear();
         _keyFingerprint.Clear();
         _syncedMergeMemoEpoch = liveEpoch;
     }
 
     // Returns `name`'s fingerprint sub-index, building it on first use for this synced/epoch
-    // generation. Always returns a live, non-null dictionary (created here if absent) — callers
-    // never need to re-check for its existence afterwards.
+    // generation. An entry in _byNameFingerprint means the name's buckets are built; both clears
+    // (EnsureSynced, EnsureFingerprintEpochCurrent) drop it. Always returns a live, non-null
+    // dictionary — callers never need to re-check for its existence afterwards.
     private Dictionary<ulong, List<string>> EnsureFingerprintBucketsBuilt(Dictionary<string, FieldDefinition> fields, string name)
     {
-        if (_fingerprintBucketsBuilt.Contains(name))
+        if (_byNameFingerprint.TryGetValue(name, out var built))
         {
-            return _byNameFingerprint[name];
+            return built;
         }
 
         var byFingerprint = new Dictionary<ulong, List<string>>();
@@ -283,7 +274,6 @@ internal sealed class FieldMergeIndex
             }
         }
 
-        _fingerprintBucketsBuilt.Add(name);
         return byFingerprint;
     }
 
@@ -299,18 +289,21 @@ internal sealed class FieldMergeIndex
     {
         EnsureSynced(fields);
 
-        if (!_allKeys.Contains(baseKey))
+        // Root keys are only ever added, never removed, so the root dictionary itself (same
+        // case-insensitive comparer) answers "is this key taken".
+        if (!fields.ContainsKey(baseKey))
         {
             return baseKey;
         }
 
+        _suffixCounters ??= new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var counter = _suffixCounters.GetValueOrDefault(baseKey, 0);
         string candidate;
         do
         {
             counter++;
             candidate = $"{baseKey}_{counter}";
-        } while (_allKeys.Contains(candidate));
+        } while (fields.ContainsKey(candidate));
 
         _suffixCounters[baseKey] = counter;
         return candidate;
@@ -322,14 +315,11 @@ internal sealed class FieldMergeIndex
 
         _byName.Clear();
         _byNameFingerprint.Clear();
-        _fingerprintBucketsBuilt.Clear();
         _keyFingerprint.Clear();
-        _allKeys.Clear();
-        _suffixCounters.Clear();
+        _suffixCounters?.Clear();
         foreach (var (key, field) in fields)
         {
             GetOrCreateBucket(field.Name).Add(key);
-            _allKeys.Add(key);
         }
         _syncedCount = fields.Count;
 

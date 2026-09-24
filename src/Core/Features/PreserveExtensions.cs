@@ -43,7 +43,7 @@ internal static class PreserveExtensions
         CopyReferencedNamedFragments(query.Definition, newQuery.Definition);
 
         // Extract variables from all preserved fields
-        ExtractVariablesFromFields(newQuery.Definition.FieldsInternal, newQuery.Definition.Variables);
+        ExtractVariablesFromFields(newQuery.Definition.FieldsInternal, newQuery.Definition);
 
         return newQuery;
     }
@@ -78,7 +78,7 @@ internal static class PreserveExtensions
 
             if (clone._fields is { Count: > 0 })
             {
-                ExtractVariablesFromFields(clone._fields, targetDefinition.Variables);
+                ExtractVariablesFromFields(clone._fields, targetDefinition);
             }
             CollectFragmentBodySpreadNames(clone._fields, clone._fragments, clone._spreadFragments, seen, pending);
         }
@@ -270,16 +270,35 @@ internal static class PreserveExtensions
     // is kept nullable to preserve the existing internal API signature.
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias(IReadOnlyDictionary<string, FieldDefinition>? fields, ReadOnlySpan<char> nameOrAlias)
-    {
-        foreach (var kvp in fields!)
+        // Field collections are the root Dictionary or FieldChildren; both have struct enumerators
+        // that the interface would box.
+        => fields switch
         {
-            if (MatchesKeyNameOrAlias(kvp, nameOrAlias))
-            {
-                return kvp;
-            }
-        }
+            Dictionary<string, FieldDefinition> root => FindFieldByNameOrAlias(root.GetEnumerator(), nameOrAlias),
+            FieldChildren children => FindFieldByNameOrAlias(children.GetEnumerator(), nameOrAlias),
+            _ => FindFieldByNameOrAlias(fields!.GetEnumerator(), nameOrAlias),
+        };
 
-        return null;
+    private static KeyValuePair<string, FieldDefinition>? FindFieldByNameOrAlias<TEnumerator>(TEnumerator fields, ReadOnlySpan<char> nameOrAlias)
+        where TEnumerator : IEnumerator<KeyValuePair<string, FieldDefinition>>
+    {
+        try
+        {
+            while (fields.MoveNext())
+            {
+                var kvp = fields.Current;
+                if (MatchesKeyNameOrAlias(kvp, nameOrAlias))
+                {
+                    return kvp;
+                }
+            }
+
+            return null;
+        }
+        finally
+        {
+            fields.Dispose();
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -289,20 +308,20 @@ internal static class PreserveExtensions
         || (!string.IsNullOrEmpty(kvp.Value.Alias) && nameOrAlias.Equals(kvp.Value.Alias.AsSpan(), StringComparison.OrdinalIgnoreCase));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ExtractVariablesFromFields(FieldChildren children, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromFields(FieldChildren children, QueryDefinition owner)
     {
         foreach (var field in children.AsSpan())
         {
-            ExtractVariablesFromField(field, variables);
+            ExtractVariablesFromField(field, owner);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void ExtractVariablesFromFields(Dictionary<string, FieldDefinition> fields, SortedSet<Variable> variables)
+    private static void ExtractVariablesFromFields(Dictionary<string, FieldDefinition> fields, QueryDefinition owner)
     {
         foreach (var field in fields.Values)
         {
-            ExtractVariablesFromField(field, variables);
+            ExtractVariablesFromField(field, owner);
         }
     }
 
@@ -313,11 +332,13 @@ internal static class PreserveExtensions
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
         Justification = "Plain foreach avoids a Where enumerator allocation on the preservation hot path.")]
-    private static void ExtractVariablesFromField(FieldDefinition field, SortedSet<Variable> variables)
+    // Takes the owning definition rather than its variable set so the set is only created when
+    // a preserved field carries arguments or directives that could hold a variable.
+    private static void ExtractVariablesFromField(FieldDefinition field, QueryDefinition owner)
     {
         if (field._arguments?.Count > 0)
         {
-            Helpers.ExtractVariablesFromValue(field._arguments, variables);
+            Helpers.ExtractVariablesFromValue(field._arguments, owner.Variables);
         }
         if (field._directives is { Count: > 0 } directives)
         {
@@ -325,13 +346,13 @@ internal static class PreserveExtensions
             {
                 if (directive.Arguments is { Count: > 0 })
                 {
-                    Helpers.ExtractVariablesFromValue(directive.Arguments, variables);
+                    Helpers.ExtractVariablesFromValue(directive.Arguments, owner.Variables);
                 }
             }
         }
         if (field._children is { Count: > 0 })
         {
-            ExtractVariablesFromFields(field._children, variables);
+            ExtractVariablesFromFields(field._children, owner);
         }
     }
 }
