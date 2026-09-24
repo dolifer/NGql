@@ -23,9 +23,11 @@ namespace NGql.Core;
 /// continues to render the same GraphQL output. It is also the only way to attach arguments to
 /// the root field of a <see cref="Mutation"/> built via the classic API; new mutation code should
 /// use <see cref="NGql.Core.Builders.QueryBuilder.CreateMutationBuilder(string)"/> instead, which
-/// avoids that round-trip. There is currently no removal timeline for <see cref="Query"/>.
+/// avoids that round-trip. <see cref="Query"/> is deprecated (diagnostic <c>NGQL0001</c>) and will be
+/// removed in NGql 3.0.
 /// </para>
 /// </remarks>
+[Obsolete(Deprecation.ClassicApiMessage, DiagnosticId = Deprecation.ClassicApiDiagnosticId, UrlFormat = Deprecation.ClassicApiUrl)]
 public sealed class Query
 {
     public QueryBlock Block { get; }

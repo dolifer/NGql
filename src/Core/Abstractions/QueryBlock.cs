@@ -9,6 +9,7 @@ namespace NGql.Core.Abstractions;
 /// <summary>
 /// Represents a GraphQL Query Block.
 /// </summary>
+[Obsolete(Deprecation.ClassicApiMessage, DiagnosticId = Deprecation.ClassicApiDiagnosticId, UrlFormat = Deprecation.ClassicApiUrl)]
 public sealed class QueryBlock
 {
     private readonly string _prefix;

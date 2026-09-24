@@ -20,11 +20,13 @@ namespace NGql.Core;
 /// </para>
 /// <para>
 /// <see cref="Mutation"/> remains supported for backwards compatibility with NGql 1.x call sites
-/// and continues to render the same GraphQL output. There is currently no removal timeline.
+/// and continues to render the same GraphQL output. It is deprecated (diagnostic <c>NGQL0001</c>)
+/// and will be removed in NGql 3.0.
 /// </para>
 /// </remarks>
 /// <param name="name">Operation name (rendered as <c>mutation Name(...)</c>).</param>
 /// <param name="variables">Operation variables; their <c>$name:Type</c> declarations appear in the operation signature.</param>
+[Obsolete(Deprecation.ClassicApiMessage, DiagnosticId = Deprecation.ClassicApiDiagnosticId, UrlFormat = Deprecation.ClassicApiUrl)]
 public sealed class Mutation(string name, params Variable[] variables)
 {
     private readonly QueryBlock _block = new(name, "mutation", variables: variables);

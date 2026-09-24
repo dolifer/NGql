@@ -3,6 +3,9 @@
         <RootNamespace>NGql.Core</RootNamespace>
         <AssemblyName>NGql.Core</AssemblyName>
         <ImplicitUsings>enable</ImplicitUsings>
+        <!-- The classic Query/Mutation API is deprecated (NGQL0001) and removed in 3.0; Core keeps
+             implementing it until then. S1133 flags the same intentional deprecation. -->
+        <NoWarn>$(NoWarn);NGQL0001;S1133</NoWarn>
     </PropertyGroup>
 
   <ItemGroup>

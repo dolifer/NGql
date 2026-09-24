@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
+        <!-- Exercises the deprecated classic API (NGQL0001) until its removal in 3.0. -->
+        <NoWarn>$(NoWarn);NGQL0001</NoWarn>
         <RootNamespace>NGql.Core.Tests</RootNamespace>
     </PropertyGroup>
 
