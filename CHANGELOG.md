@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 The companion Claude Code Skill is versioned independently — see [`.claude/skills/ngql-local/CHANGELOG.md`](.claude/skills/ngql-local/CHANGELOG.md).
 
+## [Unreleased]
+
+### Changed
+- **Allocation and CPU pass after 2.2.0.** No public signature, rendered output or collection-sharing behavior changes. Every workload in the shared release benchmark allocates less than 2.2.0; none allocates more. Representative figures (managed bytes per operation, .NET 9, 2.2.0 → Unreleased): simple query 1,413 → 1,034 (−27%); dictionary arguments ×50 185,999 → 126,802 (−32%); directives ×50 210,002 → 138,404 (−34%); classic 10-level nesting 13,363 → 6,001 (−55%); building 100 queries 204,001 → 160,000 (−22%); 200 dotted paths 232,059 → 202,988 (−12.5%). In the in-process job, 21 of the 30 workloads are faster with non-overlapping confidence intervals and none is slower (simple query −34%, directives ×50 −32%, dictionary arguments ×50 −24%). Where the savings come from: a new field's name, key and path share one string; arguments are sorted once instead of twice and enumerated without boxing; classic `QueryBlock`s create their argument and variable collections on first use and sort field lists without LINQ; `IncludeIf`/`SkipIf` build their arguments directly; the merge index no longer keeps two sets that duplicated existing data; and cycle detection, variable sets and name maps are only created when needed. Full tables: [`docs/PERFORMANCE_REVIEW.md`](docs/PERFORMANCE_REVIEW.md#since-220).
+- Adding many root fields with a lambda or with arguments is linear rather than quadratic: 1,000 roots with a lambda take 0.13 ms instead of 1.54 ms, and 1,000 roots with arguments 0.25 ms instead of 2.09 ms (`PostReleaseBenchmark`).
+
+### Fixed
+- A root field added with a lambda or with arguments was matched against existing roots case-sensitively, while the root dictionary is case-insensitive. `AddField("User", …)` followed by `AddField("user", …)` therefore replaced the first field and silently dropped its children. The second call now merges into the existing root, as nested fields already did.
+
 ## [2.2.0] - 2026-09-20
 
 ### Added
