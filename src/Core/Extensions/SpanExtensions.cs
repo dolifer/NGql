@@ -9,43 +9,38 @@ namespace NGql.Core.Extensions;
 internal static class SpanExtensions
 {
     /// <summary>
-    /// Try to get value from a dictionary using a span key without allocating string
+    /// Looks up a root field by span through the dictionary's own comparer (case-insensitive for
+    /// <see cref="QueryDefinition.Fields"/>), so span and string lookups agree. Allocation-free on
+    /// .NET 9+ via the alternate lookup; .NET 8 materializes the key.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static bool TryGetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, out FieldDefinition? value)
+    public static bool TryGetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, [NotNullWhen(true)] out FieldDefinition? value)
     {
-        value = null;
-        
-        // Fast path: check if any key matches the span length first to avoid unnecessary comparisons
-        var keyLength = key.Length;
-        foreach (var kvp in dictionary)
-        {
-            if (kvp.Key.Length != keyLength || !kvp.Key.AsSpan().SequenceEqual(key))
-            {
-                continue;
-            }
-
-            value = kvp.Value;
-            return true;
-        }
-        
-        return false;
+#if NET9_0_OR_GREATER
+        return dictionary.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(key, out value);
+#else
+        return dictionary.TryGetValue(key.ToString(), out value);
+#endif
     }
-    
+
     /// <summary>
-    /// Set value in a dictionary using a span key, converting to string only when needed
+    /// Sets a value by span key. Replacing an existing entry keeps its stored key and, on .NET 9+,
+    /// allocates nothing.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SetValue(this Dictionary<string, FieldDefinition> dictionary, ReadOnlySpan<char> key, FieldDefinition value)
     {
-        var keyString = key.ToString();
-        dictionary[keyString] = value;
+#if NET9_0_OR_GREATER
+        dictionary.GetAlternateLookup<ReadOnlySpan<char>>()[key] = value;
+#else
+        dictionary[key.ToString()] = value;
+#endif
     }
-    
+
     /// <summary>
     /// Get or add a simple field using a span key with optimized path building — FieldChildren variant
     /// </summary>
-    public static FieldDefinition GetOrAddSimpleField(this FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    public static FieldDefinition GetOrAddSimpleField(this FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata, string? fieldNameText = null)
     {
         if (children.TryGetValue(fieldName, out var existingField) && existingField is not null)
         {
@@ -54,27 +49,33 @@ internal static class SpanExtensions
             return existingField;
         }
 
-        return string.IsNullOrWhiteSpace(parentPath)
-            ? AppendNew(children, fieldName, fieldType, arguments, fieldName, metadata)
-            : AppendNewWithParentPath(children, fieldName, fieldType, arguments, parentPath, metadata);
+        var name = fieldNameText ?? fieldName.ToString();
+        var field = Helpers.CreateFieldDefinition(name, fieldType, null, arguments, JoinPath(parentPath, name), metadata);
+        children.Append(field);
+        return field;
     }
 
     /// <summary>
     /// Get or add a simple field using a span key with optimized path building
     /// </summary>
-    internal static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    internal static FieldDefinition GetOrAddSimpleField(this Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata, string? fieldNameText = null)
     {
-        if (fieldDefinitions.TryGetValue(fieldName, out var existingField) && existingField is not null)
+        if (fieldDefinitions.TryGetValue(fieldName, out var existingField))
         {
-            existingField = MergeArgumentsAndMetadata(existingField, arguments, metadata);
-            fieldDefinitions.SetValue(fieldName, existingField);
-            return existingField;
+            var merged = MergeArgumentsAndMetadata(existingField, arguments, metadata);
+            if (!ReferenceEquals(merged, existingField)) fieldDefinitions.SetValue(fieldName, merged);
+            return merged;
         }
 
-        return string.IsNullOrWhiteSpace(parentPath)
-            ? StoreNew(fieldDefinitions, fieldName, fieldType, arguments, fieldName, metadata)
-            : StoreNewWithParentPath(fieldDefinitions, fieldName, fieldType, arguments, parentPath, metadata);
+        // One string serves as the dictionary key, the field name and, at the root, its path.
+        var name = fieldNameText ?? fieldName.ToString();
+        var field = Helpers.CreateFieldDefinition(name, fieldType, null, arguments, JoinPath(parentPath, name), metadata);
+        fieldDefinitions[name] = field;
+        return field;
     }
+
+    private static string JoinPath(string? parentPath, string name)
+        => string.IsNullOrWhiteSpace(parentPath) ? name : string.Concat(parentPath, ".", name);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static FieldDefinition MergeArgumentsAndMetadata(FieldDefinition existing, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata)
@@ -89,54 +90,6 @@ internal static class SpanExtensions
             existing = existing with { Metadata = mergedMetadata };
         }
         return existing;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition AppendNew(FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
-    {
-        var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, path, metadata);
-        children.Append(field);
-        return field;
-    }
-
-    private static FieldDefinition AppendNewWithParentPath(FieldChildren children, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
-    {
-        var estimatedLength = parentPath.Length + 1 + fieldName.Length;
-        if (estimatedLength <= 256)
-        {
-            Span<char> pathBuffer = stackalloc char[estimatedLength];
-            var pathBuilder = new SpanPathBuilder(pathBuffer);
-            pathBuilder.Append(parentPath.AsSpan());
-            pathBuilder.Append(fieldName);
-            return AppendNew(children, fieldName, fieldType, arguments, pathBuilder.AsSpan(), metadata);
-        }
-
-        var fieldPath = $"{parentPath}.{fieldName}";
-        return AppendNew(children, fieldName, fieldType, arguments, fieldPath.AsSpan(), metadata);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition StoreNew(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, ReadOnlySpan<char> path, Dictionary<string, object?>? metadata)
-    {
-        var field = Helpers.CreateFieldDefinition(fieldName, fieldType, ReadOnlySpan<char>.Empty, arguments, path, metadata);
-        fieldDefinitions.SetValue(fieldName, field);
-        return field;
-    }
-
-    private static FieldDefinition StoreNewWithParentPath(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldName, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string parentPath, Dictionary<string, object?>? metadata)
-    {
-        var estimatedLength = parentPath.Length + 1 + fieldName.Length;
-        if (estimatedLength <= 256)
-        {
-            Span<char> pathBuffer = stackalloc char[estimatedLength];
-            var pathBuilder = new SpanPathBuilder(pathBuffer);
-            pathBuilder.Append(parentPath.AsSpan());
-            pathBuilder.Append(fieldName);
-            return StoreNew(fieldDefinitions, fieldName, fieldType, arguments, pathBuilder.AsSpan(), metadata);
-        }
-
-        var fieldPath = $"{parentPath}.{fieldName}";
-        return StoreNew(fieldDefinitions, fieldName, fieldType, arguments, fieldPath.AsSpan(), metadata);
     }
 
     /// <summary>

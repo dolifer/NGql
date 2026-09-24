@@ -22,20 +22,22 @@ public sealed class FieldBuilder
     // invalidate.
     private readonly FieldBuilder? _parent;
 
-    // The owning operation's variable set, threaded down from QueryBuilder.AddField(...) at the
-    // root and inherited by every nested Action<FieldBuilder> scope. Null for a FieldBuilder with
+    // The owning operation, whose variable set receives promoted variables. Threaded down from
+    // QueryBuilder.AddField(...) at the root and inherited by every nested Action<FieldBuilder>
+    // scope; holding the definition rather than its set means the set is only created when a
+    // variable is actually promoted. Null for a FieldBuilder with
     // no owning operation (the public FieldBuilder.Create(FieldDefinition) factory, used
     // standalone e.g. by tests or FieldFactory-adjacent code) — IncludeIf(Variable)/SkipIf(Variable)
     // still attach the directive in that case, they simply have nothing to promote the variable
     // into.
-    private readonly SortedSet<Variable>? _variableSink;
+    private readonly QueryDefinition? _variableOwner;
 
-    private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null, SortedSet<Variable>? variableSink = null)
+    private FieldBuilder(FieldDefinition fieldDefinition, FieldBuilder? parent = null, QueryDefinition? variableOwner = null)
     {
         _fieldDefinition = fieldDefinition;
         if (parent is null) fieldDefinition.EnsureMergeMemoTracker();
         _parent = parent;
-        _variableSink = variableSink ?? parent?._variableSink;
+        _variableOwner = variableOwner ?? parent?._variableOwner;
     }
 
     // Clears the memoized deep-fingerprint/subtree-has-arguments caches on every ancestor in this
@@ -473,7 +475,7 @@ public sealed class FieldBuilder
     /// <returns>A new FieldBuilder instance.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type = Constants.DefaultFieldType, IDictionary<string, object?>? arguments = null, Dictionary<string, object?>? metadata = null)
-        => Create(fieldDefinitions, fieldName, type, arguments, metadata, variableSink: null);
+        => Create(fieldDefinitions, fieldName, type, arguments, metadata, variableOwner: null);
 
     /// <summary>
     /// Internal counterpart of <see cref="Create(Dictionary{string, FieldDefinition}, string, string, IDictionary{string, object?}?, Dictionary{string, object?}?)"/>
@@ -485,7 +487,7 @@ public sealed class FieldBuilder
     /// set this flows from.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, SortedSet<Variable>? variableSink)
+    internal static FieldBuilder Create(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldName, string type, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, QueryDefinition? variableOwner)
     {
         // Empty/whitespace dotted segments are collapsed by FieldFactory.GetOrAddField below, the
         // same shared routine the instance AddField overloads use — so this factory no longer
@@ -498,7 +500,7 @@ public sealed class FieldBuilder
         // Use FieldFactory for field creation
         var field = FieldFactory.GetOrAddField(fieldDefinitions, fieldName, type, argumentsToUse, null, metadata);
 
-        return new FieldBuilder(field, CreateAncestorChain(fieldDefinitions, field, variableSink), variableSink);
+        return new FieldBuilder(field, CreateAncestorChain(fieldDefinitions, field, variableOwner), variableOwner);
     }
 
     /// <summary>
@@ -512,7 +514,7 @@ public sealed class FieldBuilder
     // after a merge index has fingerprinted the root, so it needs the same ancestor chain a nested
     // Action<FieldBuilder> scope gets: Where()/IncludeIf()/SkipIf() clear every ancestor's memo and
     // reach the root's tracker through it. Root-level fields return null and keep the direct path.
-    private static FieldBuilder? CreateAncestorChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, SortedSet<Variable>? variableSink)
+    private static FieldBuilder? CreateAncestorChain(Dictionary<string, FieldDefinition> fieldDefinitions, FieldDefinition field, QueryDefinition? variableOwner)
     {
         if (fieldDefinitions.TryGetValue(field._effectiveName, out var rootCandidate) && ReferenceEquals(rootCandidate, field))
         {
@@ -538,7 +540,7 @@ public sealed class FieldBuilder
         FieldBuilder? parent = null;
         foreach (var ancestor in ancestors)
         {
-            parent = new FieldBuilder(ancestor, parent, variableSink);
+            parent = new FieldBuilder(ancestor, parent, variableOwner);
         }
 
         return parent;
@@ -655,7 +657,8 @@ public sealed class FieldBuilder
         ValidateFieldNameSegments(fieldDefinition.Name.AsSpan());
 
         // FieldDefinition._type is always set non-null by every constructor path.
-        FieldFactory.GetOrAddField(parent, fieldDefinition.Name, fieldDefinition._type!, fieldDefinition._arguments, parent.Path, fieldDefinition.Metadata);
+        // _metadata, not Metadata: the public getter would attach an empty dictionary to every sub-field.
+        FieldFactory.GetOrAddField(parent, fieldDefinition.Name, fieldDefinition._type!, fieldDefinition._arguments, parent.Path, fieldDefinition._metadata);
     }
 
     private static void ValidateFieldNameSegments(ReadOnlySpan<char> fieldName)
@@ -793,7 +796,7 @@ public sealed class FieldBuilder
 
         var fragment = _fieldDefinition.GetOrAddInlineFragment(typeName);
         PopulateFragmentSurface($"__inline_fragment_{typeName}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, ref fragment._directives, action, _variableSink);
+            ref fragment._fragments, ref fragment._spreadFragments, ref fragment._directives, action, _variableOwner);
 
         return this;
     }
@@ -827,7 +830,7 @@ public sealed class FieldBuilder
         ref List<string>? spreadFragments,
         ref List<FieldDirective>? directives,
         Action<FieldBuilder> action,
-        SortedSet<Variable>? variableSink = null)
+        QueryDefinition? variableOwner = null)
     {
         var surface = new FieldDefinition(surfaceName, Constants.DefaultFieldType)
         {
@@ -837,7 +840,7 @@ public sealed class FieldBuilder
             _directives = directives,
         };
 
-        var builder = new FieldBuilder(surface, variableSink: variableSink);
+        var builder = new FieldBuilder(surface, variableOwner: variableOwner);
         action(builder);
 
         var final = builder._fieldDefinition;
@@ -970,9 +973,9 @@ public sealed class FieldBuilder
             throw new ArgumentException("Directive name cannot consist only of '@' characters.", nameof(name));
         }
 
-        if (arguments?.Count > 0 && _variableSink is not null)
+        if (arguments?.Count > 0 && _variableOwner is not null)
         {
-            Helpers.ExtractVariablesFromValue(arguments, _variableSink);
+            Helpers.ExtractVariablesFromValue(arguments, _variableOwner.Variables);
         }
 
         _fieldDefinition.AddDirective(new FieldDirective(normalizedName, arguments));
@@ -1032,9 +1035,9 @@ public sealed class FieldBuilder
         // Same promotion path field-argument Variables already use (Helpers.ExtractVariablesFromValue
         // adds the Variable to the set, deduping via Variable's value equality) rather than a
         // parallel mechanism.
-        if (_variableSink is not null)
+        if (_variableOwner is not null)
         {
-            Helpers.ExtractVariablesFromValue(condition, _variableSink);
+            Helpers.ExtractVariablesFromValue(condition, _variableOwner.Variables);
         }
 
         return this;

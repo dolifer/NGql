@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using NGql.Core.Abstractions;
 using NGql.Core.Extensions;
@@ -153,12 +154,7 @@ public sealed class QueryBuilder
             return AddFieldFastPath(field);
         }
         
-        if (arguments?.Count > 0)
-        {
-            SortedDictionary<string, object?>? sortedArgs = new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase);
-            return AddFieldCore(field, sortedArgs, null, metadata);
-        }
-        return AddFieldCore(field, null, null, metadata);
+        return AddFieldCore(field, NonEmpty(arguments), null, metadata);
     }
 
     /// <summary>
@@ -211,10 +207,7 @@ public sealed class QueryBuilder
         // Signature declares subFields non-nullable — fail fast like the previous eager
         // Select-based implementation did, instead of silently adding a bare leaf.
         ArgumentNullException.ThrowIfNull(subFields);
-        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
-            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
-            : null;
-        return AddFieldCore(field, sortedArgs, ToFieldDefinitions(subFields), metadata);
+        return AddFieldCore(field, NonEmpty(arguments), ToFieldDefinitions(subFields), metadata);
     }
 
     /// <summary>
@@ -228,10 +221,7 @@ public sealed class QueryBuilder
     /// <exception cref="ArgumentException">Thrown when the field is null or empty.</exception>
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, FieldDefinition[] subFields, Dictionary<string, object?>? metadata = null)
     {
-        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
-            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
-            : null;
-        return AddFieldCore(field, sortedArgs, subFields, metadata);
+        return AddFieldCore(field, NonEmpty(arguments), subFields, metadata);
     }
 
     /// <summary>
@@ -268,10 +258,7 @@ public sealed class QueryBuilder
     public QueryBuilder AddField(string field, Dictionary<string, object?> arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
     {
         ArgumentNullException.ThrowIfNull(fieldBuilder);
-        SortedDictionary<string, object?>? sortedArgs = arguments?.Count > 0
-            ? new SortedDictionary<string, object?>(arguments, StringComparer.OrdinalIgnoreCase)
-            : null;
-        return AddFieldBuilderCore(field, Constants.DefaultFieldType, sortedArgs, metadata, fieldBuilder);
+        return AddFieldBuilderCore(field, Constants.DefaultFieldType, NonEmpty(arguments), metadata, fieldBuilder);
     }
 
     /// <summary>
@@ -362,7 +349,7 @@ public sealed class QueryBuilder
         // is silently dropped, exactly as before this parameter was threaded through.
         List<FieldDirective>? discardedDirectives = null;
         FieldBuilder.PopulateFragmentSurface($"__named_fragment_{name}", fragment.GetOrCreateFieldsStore(),
-            ref fragment._fragments, ref fragment._spreadFragments, ref discardedDirectives, build, Definition.Variables);
+            ref fragment._fragments, ref fragment._spreadFragments, ref discardedDirectives, build, Definition);
 
         return this;
     }
@@ -379,20 +366,18 @@ public sealed class QueryBuilder
         var fieldSpan = field.AsSpan();
         if (fieldSpan.IsSimpleField())
         {
-            // Bypass FieldBuilder.Create for maximum performance
-            if (!Definition.Fields.ContainsKey(field))
+            // Bypass FieldBuilder.Create for maximum performance; one hash probe adds or finds.
+            ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(Definition.FieldsInternal, field, out var exists);
+            if (!exists)
             {
-                Definition.FieldsInternal[field] = new FieldDefinition(field, Constants.DefaultFieldType)
-                {
-                    Path = field
-                };
+                slot = new FieldDefinition(field, Constants.DefaultFieldType) { Path = field };
             }
         }
         else
         {
             // No builder escapes this overload, so avoid allocating its mutation tracker.
             // FieldFactory preserves the same dotted/typed/aliased path processing.
-            FieldFactory.GetOrAddField(Definition.FieldsInternal, fieldSpan, Constants.DefaultFieldTypeSpan, null);
+            FieldFactory.GetOrAddField(Definition.FieldsInternal, field, Constants.DefaultFieldTypeSpan, null);
         }
         
         // Phase 3: Invalidate caches after field addition
@@ -411,7 +396,7 @@ public sealed class QueryBuilder
     /// <param name="metadata">Optional metadata dictionary</param>
     /// <param name="fieldBuilder">The field builder action</param>
     /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldBuilderCore(string field, string fieldType, SortedDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
+    private QueryBuilder AddFieldBuilderCore(string field, string fieldType, IDictionary<string, object?>? arguments, Dictionary<string, object?>? metadata, Action<FieldBuilder> fieldBuilder)
     {
         if (string.IsNullOrWhiteSpace(field))
         {
@@ -426,10 +411,10 @@ public sealed class QueryBuilder
             Helpers.ExtractVariablesFromValue(arguments, Definition.Variables);
         }
 
-        // Use the provided field type. Threads Definition.Variables down into the builder (and
+        // Use the provided field type. Threads the definition down into the builder (and
         // every nested Action<FieldBuilder> scope it creates) so IncludeIf(Variable)/SkipIf(Variable)
         // called anywhere in the subtree promote into this operation's signature.
-        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, fieldType, arguments, metadata, Definition.Variables);
+        var builder = FieldBuilder.Create(Definition.FieldsInternal, field, fieldType, arguments, metadata, Definition);
         fieldBuilder(builder);
 
         QueryMapInstance.UpdateRootMapping(_definition);
@@ -466,7 +451,7 @@ public sealed class QueryBuilder
     /// <param name="subFields">Optional array of sub-field definitions</param>
     /// <param name="metadata">Optional metadata dictionary</param>
     /// <returns>Current QueryBuilder instance for method chaining</returns>
-    private QueryBuilder AddFieldCore(string field, SortedDictionary<string, object?>? arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata)
+    private QueryBuilder AddFieldCore(string field, IDictionary<string, object?>? arguments, FieldDefinition[]? subFields, Dictionary<string, object?>? metadata)
     {
         if (string.IsNullOrWhiteSpace(field))
             throw new ArgumentException("Field cannot be null or empty", nameof(field));
@@ -497,6 +482,52 @@ public sealed class QueryBuilder
         InvalidateLookupCaches();
         return this;
     }
+
+    // Field creation copies arguments into its own case-insensitive sorted store, so the caller's
+    // dictionary is passed through rather than sorted here first. Keys that collide under that
+    // store's comparer still throw, before any variable is extracted from the values.
+    private static IDictionary<string, object?>? NonEmpty(Dictionary<string, object?>? arguments)
+    {
+        if (arguments is not { Count: > 0 }) return null;
+        if (arguments.Count > 1 && !ReferenceEquals(arguments.Comparer, StringComparer.OrdinalIgnoreCase))
+        {
+            ThrowOnCaseCollision(arguments);
+        }
+        return arguments;
+    }
+
+    // Small dictionaries compare keys pairwise without allocating; larger ones use a hash set.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Major Code Smell", "S3267:Loops should be simplified using the \"Where\" LINQ method",
+        Justification = "Struct enumerators keep the check allocation-free.")]
+    private static void ThrowOnCaseCollision(Dictionary<string, object?> arguments)
+    {
+        const int PairwiseLimit = 16;
+        if (arguments.Count <= PairwiseLimit)
+        {
+            // Dictionary keys are distinct instances, so a reference match is the key itself.
+            foreach (var key in arguments.Keys)
+            {
+                foreach (var other in arguments.Keys)
+                {
+                    if (!ReferenceEquals(key, other) && string.Equals(key, other, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw KeyCollision(other, nameof(arguments));
+                    }
+                }
+            }
+            return;
+        }
+
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var key in arguments.Keys)
+        {
+            if (!keys.Add(key)) throw KeyCollision(key, nameof(arguments));
+        }
+    }
+
+    private static ArgumentException KeyCollision(string key, string parameterName)
+        => new($"An item with the same key has already been added. Colliding key: '{key}'.", parameterName);
 
     /// <summary>
     /// Materializes sub-field names into definitions once. A deferred Select here would be

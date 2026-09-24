@@ -17,19 +17,30 @@ internal static class FieldFactory
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+        => GetOrAddField(fieldDefinitions, fieldPath, null, type, arguments, parentPath, metadata);
+
+    /// <summary>
+    /// String overload of the root-level <c>GetOrAddField</c>: a simple field uses
+    /// <paramref name="fieldPath"/> itself as its name, and a dotted leaf uses it as its path.
+    /// </summary>
+    internal static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, string fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+        => GetOrAddField(fieldDefinitions, fieldPath.AsSpan(), fieldPath, type, arguments, parentPath, metadata);
+
+    // fieldPathText, when present, is the string fieldPath spans; created fields reuse it.
+    private static FieldDefinition GetOrAddField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? fieldPathText, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
 
         // FAST PATH: Simple field name
         if (fieldPath.IsSimpleField())
         {
-            return fieldDefinitions.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata);
+            return fieldDefinitions.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata, fieldPathText);
         }
 
         // MEDIUM PATH: Dotted field
         if (fieldPath.IsDottedField())
         {
-            return GetOrAddDottedField(fieldDefinitions, fieldPath, fieldType, arguments, parentPath, metadata);
+            return GetOrAddDottedField(fieldDefinitions, fieldPath, fieldPathText, fieldType, arguments, parentPath, metadata);
         }
 
         // SLOW PATH: Complex field processing
@@ -42,6 +53,16 @@ internal static class FieldFactory
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static FieldDefinition GetOrAddField(FieldDefinition parent, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+        => GetOrAddField(parent, fieldPath, null, type, arguments, parentPath, metadata);
+
+    /// <summary>
+    /// String overload of the per-node <c>GetOrAddField</c>: a simple field uses
+    /// <paramref name="fieldPath"/> itself as its name.
+    /// </summary>
+    internal static FieldDefinition GetOrAddField(FieldDefinition parent, string fieldPath, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath = null, Dictionary<string, object?>? metadata = null)
+        => GetOrAddField(parent, fieldPath.AsSpan(), fieldPath, type, arguments, parentPath, metadata);
+
+    private static FieldDefinition GetOrAddField(FieldDefinition parent, ReadOnlySpan<char> fieldPath, string? fieldPathText, ReadOnlySpan<char> type, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var fieldType = type.IsEmpty ? Constants.DefaultFieldTypeSpan : type;
         var children = parent._children ??= new FieldChildren();
@@ -59,7 +80,7 @@ internal static class FieldFactory
         // FAST PATH: Simple field name
         if (fieldPath.IsSimpleField())
         {
-            return children.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata);
+            return children.GetOrAddSimpleField(fieldPath, fieldType, arguments, parentPath, metadata, fieldPathText);
         }
 
         // MEDIUM PATH: Dotted field
@@ -76,7 +97,7 @@ internal static class FieldFactory
     /// Gets or adds a dotted field (contains dots for nested access) — root-level variant.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
+    private static FieldDefinition GetOrAddDottedField(Dictionary<string, FieldDefinition> fieldDefinitions, ReadOnlySpan<char> fieldPath, string? fieldPathText, ReadOnlySpan<char> fieldType, IDictionary<string, object?>? arguments, string? parentPath, Dictionary<string, object?>? metadata)
     {
         var hasNoArguments = arguments == null;
         var hasNoMetadata = metadata == null;
@@ -84,7 +105,7 @@ internal static class FieldFactory
         // FAST PATH: No arguments/metadata - use optimized processing
         if (hasNoArguments && hasNoMetadata)
         {
-            return ProcessDottedFieldFastPath(fieldDefinitions, fieldPath, fieldType);
+            return ProcessDottedFieldFastPath(fieldDefinitions, fieldPath, fieldPathText, fieldType);
         }
 
         // SLOW PATH: With arguments/metadata
@@ -114,7 +135,7 @@ internal static class FieldFactory
     /// </summary>
     // Callers reach here only via IsDottedField() which guarantees fieldPath contains '.',
     // so the loop runs at least twice and parentField is non-null on exit.
-    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition ProcessDottedFieldFastPath(Dictionary<string, FieldDefinition> rootFields, ReadOnlySpan<char> fieldPath, string? fieldPathText, ReadOnlySpan<char> fieldType)
     {
         FieldDefinition? parentField = null;
         var pathStart = 0;
@@ -129,7 +150,7 @@ internal static class FieldFactory
             }
             parentField = parentField is null
                 ? GetOrCreateRootSegment(rootFields, spanSegment, fieldPath, pathStart, fieldType)
-                : GetOrCreateChildSegment(parentField, spanSegment, fieldPath, pathStart, fieldType);
+                : GetOrCreateChildSegment(parentField, spanSegment, fieldPath, fieldPathText, pathStart, fieldType);
             pathStart = nextStart;
         }
 
@@ -155,7 +176,7 @@ internal static class FieldFactory
                 pathStart = nextStart;
                 continue;
             }
-            currentParent = GetOrCreateChildSegment(currentParent, spanSegment, fieldPath, pathStart, fieldType);
+            currentParent = GetOrCreateChildSegment(currentParent, spanSegment, fieldPath, null, pathStart, fieldType);
             pathStart = nextStart;
         }
 
@@ -166,7 +187,9 @@ internal static class FieldFactory
     {
         if (!TryGetRootFieldBySpan(rootFields, spanSegment.Name, out var field, out var segmentName))
         {
-            field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+            // The key string doubles as the name and, unless empty segments lead the path, the path.
+            var segmentPath = pathStart == 0 ? segmentName : fieldPath[..(pathStart + segmentName.Length)].ToString();
+            field = Helpers.CreateFieldDefinition(segmentName, SegmentType(spanSegment.IsLastFragment, fieldType), null, null, segmentPath);
             rootFields[segmentName] = field;
             return field;
         }
@@ -199,12 +222,12 @@ internal static class FieldFactory
 #endif
     }
 
-    private static FieldDefinition GetOrCreateChildSegment(FieldDefinition parentField, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, int pathStart, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition GetOrCreateChildSegment(FieldDefinition parentField, SpanSegment spanSegment, ReadOnlySpan<char> fieldPath, string? fieldPathText, int pathStart, ReadOnlySpan<char> fieldType)
     {
         var children = parentField._children ??= new FieldChildren();
         if (!children.TryGetValue(spanSegment.Name, out var field) || field is null)
         {
-            field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
+            field = CreateDottedFieldSegment(spanSegment.Name, fieldPath, fieldPathText, pathStart + spanSegment.Name.Length, spanSegment.IsLastFragment, fieldType);
             children.Append(field);
             return field;
         }
@@ -374,13 +397,18 @@ internal static class FieldFactory
     /// <summary>
     /// Creates a field segment for dotted field processing.
     /// </summary>
-    private static FieldDefinition CreateDottedFieldSegment(ReadOnlySpan<char> segment, ReadOnlySpan<char> fullPath, int segmentEnd, bool isLastSegment, ReadOnlySpan<char> fieldType)
+    private static FieldDefinition CreateDottedFieldSegment(ReadOnlySpan<char> segment, ReadOnlySpan<char> fullPath, string? fullPathText, int segmentEnd, bool isLastSegment, ReadOnlySpan<char> fieldType)
     {
-        var segmentType = isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
-        var segmentPath = fullPath.Slice(0, segmentEnd);
-        
-        return Helpers.CreateFieldDefinition(segment, segmentType, ReadOnlySpan<char>.Empty, null, segmentPath, null);
+        // A segment that runs to the end of the caller's string has that string as its path.
+        var segmentPath = fullPathText is not null && segmentEnd == fullPathText.Length
+            ? fullPathText
+            : fullPath[..segmentEnd].ToString();
+
+        return Helpers.CreateFieldDefinition(segment.ToString(), SegmentType(isLastSegment, fieldType), null, null, segmentPath);
     }
+
+    private static ReadOnlySpan<char> SegmentType(bool isLastSegment, ReadOnlySpan<char> fieldType)
+        => isLastSegment ? fieldType : Constants.ObjectFieldTypeSpan;
 
     /// <summary>
     /// Processes a single dotted segment with arguments and metadata — root-Dict variant.

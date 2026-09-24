@@ -424,7 +424,11 @@ internal sealed class QueryTextBuilder
         if (count == 0) return;
         if (count == 1)
         {
-            foreach (var field in fields.Values) RenderFields(new ReadOnlySpan<FieldDefinition>(in field), indent);
+            // Read the entry directly, not via .Values: its first access allocates a cached wrapper.
+            using var enumerator = fields.GetEnumerator();
+            enumerator.MoveNext();
+            var field = enumerator.Current.Value;
+            RenderFields(new ReadOnlySpan<FieldDefinition>(in field), indent);
             return;
         }
 
@@ -434,7 +438,7 @@ internal sealed class QueryTextBuilder
         try
         {
             int i = 0;
-            foreach (var f in fields.Values) arr[i++] = f;
+            foreach (var pair in fields) arr[i++] = pair.Value;
             RenderSortedFields(arr, count, indent);
         }
         finally
@@ -697,27 +701,8 @@ internal sealed class QueryTextBuilder
         }
     }
 
-    private void BuildFieldArguments(IReadOnlyDictionary<string, object?> arguments)
-    {
-        _stringBuilder.Append('(');
-
-        bool first = true;
-        foreach (var (key, value) in arguments)
-        {
-            if (!first)
-            {
-                _stringBuilder.Append(", ");
-            }
-
-            first = false;
-
-            _stringBuilder.Append(key);
-            _stringBuilder.Append(':');
-            WriteObject(_stringBuilder, value);
-        }
-
-        _stringBuilder.Append(')');
-    }
+    private void BuildFieldArguments(SortedDictionary<string, object?> arguments)
+        => WriteEntries(_stringBuilder, '(', ')', arguments.GetEnumerator());
 
     internal static void WriteObject(StringBuilder builder, object? value)
     {
@@ -746,9 +731,15 @@ internal sealed class QueryTextBuilder
             // Enumerating it through the generic enumerator writes each key directly and recurses
             // on the value with no boxed KeyValuePair and no reflected PropertyInfo.GetValue —
             // exactly the same {k:v, …} output the non-generic IDictionary path below would emit.
+            case SortedDictionary<string, object?> sortedDict:
+                {
+                    WriteEntries(builder, '{', '}', sortedDict.GetEnumerator());
+                    break;
+                }
+
             case IDictionary<string, object?> typedDict:
                 {
-                    WriteTypedDictionary(builder, typedDict);
+                    WriteEntries(builder, '{', '}', typedDict.GetEnumerator());
                     break;
                 }
 
@@ -766,19 +757,29 @@ internal sealed class QueryTextBuilder
         }
     }
 
-    private static void WriteTypedDictionary(StringBuilder builder, IDictionary<string, object?> dictionary)
+    // Writes `open k:v, k:v close`. Generic over the enumerator so a concrete dictionary's struct
+    // enumerator is used as-is instead of being boxed behind IEnumerator.
+    private static void WriteEntries<TEnumerator>(StringBuilder builder, char open, char close, TEnumerator entries)
+        where TEnumerator : IEnumerator<KeyValuePair<string, object?>>
     {
-        builder.Append('{');
-        bool first = true;
-        foreach (var kvp in dictionary)
+        try
         {
-            if (!first) builder.Append(", ");
-            first = false;
-            builder.Append(kvp.Key);
-            builder.Append(':');
-            WriteObject(builder, kvp.Value);
+            builder.Append(open);
+            var first = true;
+            while (entries.MoveNext())
+            {
+                if (!first) builder.Append(", ");
+                first = false;
+                var (key, value) = entries.Current;
+                builder.Append(key).Append(':');
+                WriteObject(builder, value);
+            }
+            builder.Append(close);
         }
-        builder.Append('}');
+        finally
+        {
+            entries.Dispose();
+        }
     }
 
     private static bool ExtractKeyValuePairProperties(StringBuilder builder, object value, Type valueType)

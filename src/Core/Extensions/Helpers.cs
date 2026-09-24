@@ -49,25 +49,37 @@ internal static class Helpers
     private static void ExtractVariablesFromDictionary(IDictionary dict, SortedSet<Variable> variables, HashSet<object>? visited)
     {
         if (dict.Count == 0) return;
-        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
-        if (!visited.Add(dict)) return; // cycle detected
-        
+        if (visited is not null && !visited.Add(dict)) return; // cycle detected
+
         foreach (var val in dict.Values)
         {
-            ExtractVariablesFromValueCore(val, variables, visited);
+            ExtractVariablesFromChild(dict, val, variables, ref visited);
         }
     }
 
     private static void ExtractVariablesFromList(IList list, SortedSet<Variable> variables, HashSet<object>? visited)
     {
         if (list.Count == 0) return;
-        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
-        if (!visited.Add(list)) return; // cycle detected
-        
+        if (visited is not null && !visited.Add(list)) return; // cycle detected
+
         foreach (var item in list)
         {
-            ExtractVariablesFromValueCore(item, variables, visited);
+            ExtractVariablesFromChild(list, item, variables, ref visited);
         }
+    }
+
+    // A cycle needs a nested container, so the visited set is created only on the first descent
+    // into one, seeded with the container being walked. Flat collections never allocate it.
+    private static void ExtractVariablesFromChild(object container, object? child, SortedSet<Variable> variables, ref HashSet<object>? visited)
+    {
+        if (child is null or Variable || ValueFormatter.IsPrimitiveType(child))
+        {
+            ExtractVariablesFromValueCore(child, variables, visited);
+            return;
+        }
+
+        visited ??= new HashSet<object>(ReferenceEqualityComparer.Instance) { container };
+        ExtractVariablesFromValueCore(child, variables, visited);
     }
 
     private static bool ShouldExtractFromObjectProperties(object obj)

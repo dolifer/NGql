@@ -8,19 +8,46 @@ namespace NGql.Core.Features;
 /// </summary>
 internal sealed class QueryMap
 {
-    private readonly Dictionary<string, string> _mappings = new();
+    // Most builders only ever map their own name, so the first mapping lives inline and the
+    // dictionary is created only when an Include maps a second query name.
+    private string? _firstName;
+    private string? _firstKey;
+    private Dictionary<string, string>? _mappings;
 
     /// <summary>
     /// Sets a single query-name → field-key mapping.
     /// </summary>
-    public void SetMapping(string queryName, string fieldKey) => _mappings[queryName] = fieldKey;
+    public void SetMapping(string queryName, string fieldKey)
+    {
+        if (_firstName is null || _firstName == queryName)
+        {
+            _firstName = queryName;
+            _firstKey = fieldKey;
+            return;
+        }
+
+        _mappings ??= new();
+        _mappings[queryName] = fieldKey;
+    }
+
+    private bool TryGetMapping(string queryName, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? fieldKey)
+    {
+        if (_firstName == queryName)
+        {
+            fieldKey = _firstKey!;
+            return true;
+        }
+
+        fieldKey = null;
+        return _mappings?.TryGetValue(queryName, out fieldKey) == true;
+    }
 
     /// <summary>
     /// Gets the mapped path for a query name or returns the original name if no mapping exists.
     /// </summary>
     /// <param name="queryName">The query name to look up</param>
     /// <returns>The mapped path or the original query name</returns>
-    private string GetMappedPath(string queryName) => _mappings.GetValueOrDefault(queryName, queryName);
+    private string GetMappedPath(string queryName) => TryGetMapping(queryName, out var fieldKey) ? fieldKey : queryName;
 
     /// <summary>
     /// Updates the QueryMap entry for the root query to point to its first field's alias/name.
@@ -32,7 +59,7 @@ internal sealed class QueryMap
         if (definition.Fields.Count > 0)
         {
             // Keep existing root mapping if it exists and points to a valid field
-            if (_mappings.TryGetValue(definition.Name, out var existingPath) &&
+            if (TryGetMapping(definition.Name, out var existingPath) &&
                 definition.Fields.ContainsKey(existingPath))
             {
                 return; // Keep the existing valid mapping
@@ -44,7 +71,7 @@ internal sealed class QueryMap
             using var enumerator = definition.FieldsInternal.GetEnumerator();
             if (enumerator.MoveNext())
             {
-                _mappings[definition.Name] = enumerator.Current.Value._effectiveName;
+                SetMapping(definition.Name, enumerator.Current.Value._effectiveName);
             }
         }
     }
