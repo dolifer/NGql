@@ -1,7 +1,8 @@
 # 2.2.1
 
-NGql 2.2.1 deprecates the classic `Query`/`Mutation` API ahead of its removal in 3.0, fixes a root-field
-merge bug, and makes every workload in the release benchmark allocate less than 2.2.0. No public
+NGql 2.2.1 deprecates the classic `Query`/`Mutation` API ahead of its removal in 3.0, fixes six bugs
+that silently produced wrong or invalid queries, and makes every workload in the release benchmark
+allocate less than 2.2.0. No public
 signature changes. The full list of changes is in the [changelog](../../CHANGELOG.md); this page
 covers what matters for an upgrade decision.
 
@@ -50,11 +51,29 @@ or wrap the call sites in `#pragma warning disable NGQL0001`. Other obsolete-API
 
 ## Fixed
 
-A root field added with a lambda or with arguments was matched against existing roots
-case-sensitively, while the root dictionary is case-insensitive. `AddField("User", …)` followed by
-`AddField("user", …)` therefore replaced the first field and **silently dropped its children**. The
-second call now merges into the existing root, as nested fields already did. The same lookup made
-adding many such roots quadratic: 1,000 roots with a lambda now take 0.13 ms instead of 1.54 ms.
+These produced wrong or invalid queries without any error. All were present in 2.2.0 as well.
+
+- **Aliased fields no longer replace plain ones.** `AddField("name").AddField("aaa:name")` rendered
+  only `aaa:name`; the reverse order, nested fields, and two aliases of one root field
+  (`a:user.id`, `b:user.name`) lost a field the same way. Every requested response key is now kept,
+  and an alias never renames an existing field.
+- **Conflicting variable types throw.** Declaring `$id` as both `ID!` and `Int` rendered
+  `query Q($id:ID!, $id:Int)`, which servers reject. It now throws `ArgumentException`
+  (`QueryMergeException` from `Include`) before the query changes.
+- **Variables inside `FieldBuilder` lambdas are declared.** A `Variable` passed to a nested
+  `AddField`, to `Where`, or inside a sub-field `FieldDefinition` rendered as `$n` with no
+  declaration.
+- **`Where` inside a lambda keeps the field attached.** On a field without arguments, `Where`
+  detached the builder, so `u.Where("id", $id).AddField("name")` rendered a bare field.
+- **The default merging strategy keeps each fragment's arguments.** Including `users(first:1){id}`
+  and `users(first:2){name}` rendered `users(first:2){id name}`. The second is now kept as
+  `users_1:users(first:2){name}`, and `GetPathTo` points its fragment there. Arguments only one side
+  sets are still combined, so a base query that sets arguments plus fragments that add selections
+  merge exactly as before.
+- **Case-differing root fields merge.** A root field added with a lambda or arguments was matched
+  case-sensitively, so `AddField("User", …)` then `AddField("user", …)` dropped the first field's
+  children. The same lookup made adding many such roots quadratic: 1,000 roots with a lambda now take
+  0.13 ms instead of 1.54 ms.
 
 ## Performance
 
@@ -91,8 +110,15 @@ dropping the per-collection lock object (the collection is reachable through `Fi
 
 ## Compatibility
 
-No public signature changed. Rendered output is unchanged, except for the fix above: two root
-fields whose names differ only in case now merge instead of the second replacing the first.
+No public signature changed. Output changes only where 2.2.0 produced a wrong or invalid query:
+
+- Paths that differ only by alias now yield both fields instead of one.
+- Code that declared one variable name with two types now throws instead of rendering invalid
+  GraphQL.
+- Variables used only inside `FieldBuilder` lambdas now appear in the operation signature.
+- `MergeByDefault` includes whose arguments conflict now produce an auto-aliased field; read its
+  data through `GetPathTo(fragmentName)`.
+- Root fields whose names differ only in case now merge.
 
 ## Tooling
 

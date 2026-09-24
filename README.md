@@ -22,7 +22,7 @@ A **zero-dependency**, schema-less GraphQL query builder for .NET. Compose Graph
 - **Runtime fragment merging** — `Include(otherBuilder)` joins disjoint fragments; `MergingStrategy` picks how to handle duplicates (default merge, never merge, or merge-by-field-path with auto-aliasing on conflict)
 - **Field preservation** — keep a subset of an existing query by string path (`PreservationBuilder.Preserve`) or by C# expression (`PreserveFromExpression<T>(x => x.user.profile.email != null)`)
 - **Variables, enums, nested arguments** — `Variable`/`EnumValue` types render to native GraphQL syntax; nested `Dictionary<string, object?>` arguments produce nested input objects
-- **Hot-path optimized** — span-based path parsing, lock-free reads on `FieldChildren`, in-place merge in `Include()`. Reflection is used only by the LINQ-expression preservation path; query rendering itself is reflection-free
+- **Hot-path optimized** — span-based path parsing, lock-free reads on `FieldChildren`, in-place merge in `Include()`. Reflection is used only for object/anonymous-type arguments and LINQ-expression preservation; query rendering itself is reflection-free
 
 ---
 
@@ -78,8 +78,8 @@ Then `/ngql:ngql build me a query for…` from any project. Two channels — `ng
 ## Quick Start
 
 > All sample output blocks below are pasted verbatim from `QueryBuilder.ToString()`.
-> Field order follows insertion-independent canonical sorting (alphabetical, with aliased
-> duplicates appended after the un-aliased one).
+> Fields render in a canonical order that does not depend on insertion: alphabetical by response
+> key (the alias, or the name when there is none), case-insensitive.
 
 ### 1. Build a Simple Query
 
@@ -147,8 +147,10 @@ query SearchUsers{
 ### 3. Use Variables
 
 `Variable` lives in `NGql.Core` (not `NGql.Core.Builders`) — make sure both `using`
-directives are in scope. Pass a `Variable` instance as an argument value and it is
-auto-promoted to the operation signature.
+directives are in scope. Pass a `Variable` instance as an argument value — at the root, inside a
+`FieldBuilder` lambda, in `Where`, or in `IncludeIf`/`SkipIf` — and it is added to the operation
+signature. Declaring one variable name with two different types throws `ArgumentException`
+(`QueryMergeException` from `Include`), because GraphQL allows one declaration per name.
 
 <table>
 <tr><th>C#</th><th>GraphQL</th></tr>
@@ -262,15 +264,18 @@ query TypedFields{
 </table>
 
 **About Type Annotations:**
-- Type annotations (`String`, `Int`, `Post[]`) are stored in metadata; they do **not** appear in the rendered GraphQL output
+- Type annotations (`String`, `Int`, `Post[]`) are stored on `FieldDefinition.Type`; they do **not** appear in the rendered GraphQL output
 - Use them as inline documentation when round-tripping through serializers, or to drive your own tooling that reads `FieldDefinition.Type`
 - NGql does **not** validate types against a schema — they are metadata only
 
 ### 3. Field Aliases
 
 Use `alias:name` syntax inside any segment of a dotted path to alias the corresponding
-node. Subsequent additions that share the same path **merge into the same node**, so
-adding more subfields under an aliased root accumulates them under that single alias.
+node. Subsequent additions that use the same alias **merge into the same node**, so adding more
+subfields under an aliased root accumulates them under that single alias. An alias never renames
+an existing field: `user.name` followed by `u:user.email` produces both `user` and `u:user`. A
+segment without an alias that is not the last one still reaches an aliased node of that name, so
+`primaryName:user.name` followed by `user.email` extends `primaryName:user`.
 
 <table>
 <tr><th>C#</th><th>GraphQL</th></tr>
@@ -424,8 +429,8 @@ query UserProfile{
 
 | Strategy | Behavior | Use Case |
 |----------|----------|----------|
-| `MergeByDefault` | Default — append fragments without alias collision detection | Compose disjoint fragments |
-| `MergeByFieldPath` | Merge compatible same-path fields; auto-alias on argument conflict | Optimize overlapping queries |
+| `MergeByDefault` | Default — merge same-path fields; arguments only one side sets are combined; if both set one argument to different values, the second field becomes an auto-aliased copy (`users_1`) | Compose a base query with fragments that add selections |
+| `MergeByFieldPath` | Merge same-path fields only when their arguments are identical; any difference auto-aliases | Optimize overlapping queries |
 | `NeverMerge` | Each fragment becomes its own auto-aliased copy | Force separation |
 
 #### MergeByFieldPath (Optimizing)
@@ -862,7 +867,7 @@ QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByFieldPath);
 // Force every fragment into its own aliased field
 QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.NeverMerge);
 
-// Default — append fragments without alias-conflict detection
+// Default — merge same-path fields; conflicting argument values auto-alias
 QueryBuilder.CreateDefaultBuilder("Q");
 // or explicitly:
 QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByDefault);
@@ -871,7 +876,7 @@ QueryBuilder.CreateDefaultBuilder("Q", MergingStrategy.MergeByDefault);
 ### Reuse `Variable` instances across calls
 
 A single `Variable` instance can be passed as an argument value in many places — NGql
-detects it via reference and adds it to the operation signature exactly once.
+declares it in the operation signature exactly once (variables are matched by name and type).
 
 <table>
 <tr><th>C#</th><th>GraphQL</th></tr>
@@ -909,11 +914,11 @@ query DualLookup($userId:ID!){
 
 Hot-path design choices, in rough order of impact:
 
-- **Span-based field-path parsing** — dotted paths are walked over `ReadOnlySpan<char>`, not `string.Split`, with stack-allocated buffers up to 256 chars and a pooled fallback above that
-- **Lock-free reads on `FieldChildren`** — small collections use a volatile array snapshot; the lookup index activates only past 16 children
+- **Span-based field-path parsing** — dotted paths are walked over `ReadOnlySpan<char>`, not `string.Split`; path classification, name validation and string escaping use vectorized `IndexOfAny` searches
+- **Lock-free reads on `FieldChildren`** — small collections use a volatile array snapshot; a name index is built once a node has 16 children
 - **In-place merge in `Include()`** — `MergeFieldsInPlace` mutates the existing field tree instead of cloning, so merging N fragments into a parent is O(N) work, not O(N²)
-- **Path-and-field-lookup caches** — `_pathIndex` caches `GetPathTo(rootName, nodePath)` results; both invalidate on field mutation
-- **Reflection is opt-in** — `QueryBuilder`/`FieldBuilder` rendering is reflection-free. Reflection runs only when you call `PreserveFromExpression<T>(...)` or `Include<T>(...)`, where it walks the expression tree / type's properties
+- **Cached path lookups** — `GetPathTo(rootName, nodePath)` results are cached per builder and invalidated when fields change
+- **Reflection is opt-in** — `QueryBuilder`/`FieldBuilder` rendering is reflection-free. Reflection runs only when you pass an object or anonymous type as an argument value (its public properties become input fields) or call `PreserveFromExpression<T>(...)`
 - **`BenchmarkRunner`** project ships with the repo if you want to measure your own scenarios
 
 ---
