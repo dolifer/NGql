@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Text;
 
@@ -103,14 +104,18 @@ internal static class ValueFormatter
     /// transport carries UTF-8.
     /// </summary>
     private static bool NeedsEscape(string s)
+        => s.AsSpan().IndexOfAny(CharactersToEscape) >= 0;
+
+    private static readonly SearchValues<char> CharactersToEscape = CreateCharactersToEscape();
+
+    // '"', '\\' and the C0 control characters U+0000–U+001F.
+    private static SearchValues<char> CreateCharactersToEscape()
     {
-        for (var i = 0; i < s.Length; i++)
-        {
-            var c = s[i];
-            if (c == '"' || c == '\\' || c < 0x20)
-                return true;
-        }
-        return false;
+        Span<char> characters = stackalloc char[0x20 + 2];
+        for (var c = 0; c < 0x20; c++) characters[c] = (char)c;
+        characters[0x20] = '"';
+        characters[0x21] = '\\';
+        return SearchValues.Create(characters);
     }
 
     private static void AppendEscapedBody(StringBuilder builder, string s)

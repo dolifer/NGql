@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
@@ -766,18 +767,20 @@ internal static class Helpers
         if (!IsValidGraphQlNameStart(name[0]))
             throw new ArgumentException($"Invalid GraphQL field name '{name.ToString()}': must start with a letter or underscore.");
 
-        for (int i = 1; i < name.Length; i++)
+        var invalid = name[1..].IndexOfAnyExcept(GraphQlNameChars);
+        if (invalid >= 0)
         {
-            if (!IsValidGraphQlNameChar(name[i]))
-                throw new ArgumentException($"Invalid GraphQL field name '{name.ToString()}': contains invalid character '{name[i]}' at position {i}.");
+            var position = invalid + 1;
+            throw new ArgumentException($"Invalid GraphQL field name '{name.ToString()}': contains invalid character '{name[position]}' at position {position}.");
         }
     }
 
     private static bool IsValidGraphQlNameStart(char c)
         => c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
 
-    private static bool IsValidGraphQlNameChar(char c)
-        => c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    // GraphQL name characters (spec §2.1.9); a vectorized search finds the first one outside it.
+    private static readonly SearchValues<char> GraphQlNameChars =
+        SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_");
 
     /// <summary>
     /// Writes a collection with specified prefix/suffix characters and custom item writer

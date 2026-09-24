@@ -10,25 +10,22 @@ namespace NGql.Core.Tests.Builders;
 public class SpanExtensionsTests
 {
     [Theory]
-    [InlineData("fieldname", false, false, false)]
-    [InlineData("user.profile.name", false, true, false)]
-    [InlineData("String:fieldname", false, false, true)]
-    [InlineData("my field", true, false, false)]
-    [InlineData("my.field:Type", false, true, true)]
-    [InlineData("user.name profile:Type", true, true, true)]
-    [InlineData("", false, false, false)]
-    public void ClassifyFieldFast_VariousInputs(string input, bool expectedHasSpaces, bool expectedHasDots, bool expectedHasColons)
+    [InlineData("fieldname", true, false)]
+    [InlineData("user.profile.name", false, true)]
+    [InlineData("String:fieldname", false, false)]
+    [InlineData("my field", false, false)]
+    [InlineData("my.field:Type", false, false)]
+    [InlineData("user.name profile:Type", false, false)]
+    [InlineData("user.name Type", false, false)]
+    [InlineData("", true, false)]
+    public void Classification_VariousInputs(string input, bool expectedSimple, bool expectedDotted)
     {
         // Arrange
         var span = input.AsSpan();
 
-        // Act
-        var (hasSpaces, hasDots, hasColons) = span.ClassifyFieldFast();
-
-        // Assert
-        hasSpaces.Should().Be(expectedHasSpaces, $"hasSpaces for '{input}'");
-        hasDots.Should().Be(expectedHasDots, $"hasDots for '{input}'");
-        hasColons.Should().Be(expectedHasColons, $"hasColons for '{input}'");
+        // Act & Assert
+        span.IsSimpleField().Should().Be(expectedSimple, $"IsSimpleField for '{input}'");
+        span.IsDottedField().Should().Be(expectedDotted, $"IsDottedField for '{input}'");
     }
 
     [Theory]
