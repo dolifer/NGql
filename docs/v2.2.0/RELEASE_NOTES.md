@@ -69,7 +69,7 @@ In the in-process benchmark job, 22 of the 24 workloads are also faster than 2.1
 
 Memory held by long-lived state is bounded: the per-thread render-builder pool keeps at most 262,144 characters in total, custom type names are cached in two generations of 2,048, and reflection caches no longer keep collectible assemblies alive. A merged query held in memory retains 2,352 B where 2.1.0 retained 3,008 B.
 
-These are microbenchmarks on one machine; they do not predict the throughput of a service. Full tables are in [BENCHMARKS.md](BENCHMARKS.md); method and the costs accepted along the way are in [`docs/PERFORMANCE_REVIEW.md`](../PERFORMANCE_REVIEW.md).
+These are microbenchmarks on one machine; they do not predict the throughput of a service. Full tables are in [BENCHMARKS.md](BENCHMARKS.md); method and the costs accepted along the way are in [`docs/PERFORMANCE_REVIEW.md` at 2.2.0](https://github.com/dolifer/NGql/blob/2.2.0/docs/PERFORMANCE_REVIEW.md).
 
 **Costs to know about.** Fields that carry metadata, directives or fragments pay a 48 B holder, and cold builds of metadata-bearing fields are about 12% slower than before the layout change. Signed integers render about 4 ns slower each, in exchange for an ASCII minus sign under every culture.
 

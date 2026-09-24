@@ -1,6 +1,6 @@
 # Legacy: Classic API (NGql 1.x)
 
-> **⚠️ Deprecated**: This API is no longer recommended. New projects should use the [QueryBuilder API](https://github.com/dolifer/NGql/blob/main/README.md) introduced in NGql 2.0.
+> **⚠️ Deprecated**: Since NGql 2.2.1, `Query`, `Mutation` and `QueryBlock` raise compiler warning `NGQL0001`, and **NGql 3.0 removes them**. New projects should use the [QueryBuilder API](https://github.com/dolifer/NGql/blob/main/README.md) introduced in NGql 2.0.
 > 
 > If you're migrating from NGql 1.x, see the [Migration Guide](MIGRATION.md) for step-by-step instructions.
 

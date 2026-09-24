@@ -765,7 +765,7 @@ subscription OnUserCreated{
 </td></tr>
 </table>
 
-The classic `Mutation` type is still supported; see the [Legacy API Reference](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md).
+The classic `Mutation` type is deprecated (`NGQL0001`) and will be removed in 3.0; see the [Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md).
 
 ---
 
@@ -920,7 +920,7 @@ Hot-path design choices, in rough order of impact:
 
 ## Upgrading from 1.5.x
 
-The classic `Query` / `Mutation` API from 1.x still works and renders independently of `QueryBuilder`. See the **[Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md)** for a step-by-step upgrade and the **[Legacy API Reference](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md)** for classic-API documentation and a side-by-side comparison.
+The classic `Query` / `Mutation` API from 1.x still works in 2.x but is deprecated since 2.2.1 (compiler warning `NGQL0001`) and will be removed in 3.0. See the **[Migration Guide](https://github.com/dolifer/NGql/blob/main/docs/reference/MIGRATION.md)** for a step-by-step upgrade and the **[Legacy API Reference](https://github.com/dolifer/NGql/blob/main/docs/reference/LEGACY.md)** for classic-API documentation and a side-by-side comparison.
 
 ---
 

@@ -160,7 +160,7 @@ tests/BenchmarkRunner/         # BenchmarkDotNet performance harness
    - `.PreserveFromExpression<T>(Expression<Func<T,bool>>)` — extract paths from a LINQ predicate
    - `.Build()` — return a new `QueryBuilder` containing only the preserved subset
 
-3. **Query / Mutation** (classic API)
+3. **Query / Mutation** (classic API — deprecated since 2.2.1 as `NGQL0001`, removed in 3.0)
    - `new Query(name, params Variable[])` / `new Mutation(name, params Variable[])`
    - `.Variable(name, type)` to add variables
    - `.Select(...)` to add fields, sub-queries, or other Query objects
@@ -428,7 +428,7 @@ Recommended (configure in repo settings as needed):
 
 - **README.md** — User guide with API examples and best practices
 - **docs/reference/MIGRATION.md** — Upgrade guide from 1.5.x to 2.x
-- **docs/reference/LEGACY.md** — Deprecated API reference (still functional)
+- **docs/reference/LEGACY.md** — Deprecated API reference (warns as `NGQL0001`, removed in 3.0)
 
 ---
 

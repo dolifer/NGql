@@ -2,6 +2,12 @@
 
 This guide helps you migrate from NGql 1.5.x (Classic API) to NGql 2.x (QueryBuilder API) with step-by-step examples and best practices.
 
+> **Deprecated in 2.2.1, removed in 3.0.** `Query`, `Mutation` and `QueryBlock` are marked
+> `[Obsolete]` with diagnostic ID **`NGQL0001`**. Builds that treat warnings as errors will fail on
+> them; to keep building while you migrate, suppress that one ID with
+> `<NoWarn>$(NoWarn);NGQL0001</NoWarn>` in the project file (or `#pragma warning disable NGQL0001`
+> around the call sites). NGql 3.0 removes these types; `QueryBuilder` covers everything they do.
+
 ---
 
 ## Quick Start
@@ -434,6 +440,7 @@ var query = QueryBuilder
 
 ## Timeline
 
-- **NGql 1.5.x**: Original Classic API (legacy, supported)
+- **NGql 1.5.x**: Original Classic API
 - **NGql 2.0.0**: QueryBuilder API release (recommended)
-- **Future**: Classic API may be moved to separate NuGet package
+- **NGql 2.2.1**: Classic API deprecated with compiler warning `NGQL0001`
+- **NGql 3.0**: Classic API (`Query`, `Mutation`, `QueryBlock`) removed
